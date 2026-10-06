@@ -1,7 +1,7 @@
 .PHONY: help setup install test live db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
-PIP := .venv/bin/pip
+PYTHONPATH_SRC := PYTHONPATH=src
 
 help:
 	@echo "Available commands:"
@@ -21,25 +21,16 @@ setup:
 	$(PYTHON) -m pip install -e ".[dev]"
 
 install:
-	@if [ ! -x "$(PYTHON)" ]; then \
-		echo ".venv not found. Run: make setup"; \
-		exit 1; \
-	fi
+	@if [ ! -x "$(PYTHON)" ]; then 		echo ".venv not found. Run: make setup"; 		exit 1; 	fi
 	$(PYTHON) -m pip install -e ".[dev]"
 
 test:
-	@if [ ! -x "$(PYTHON)" ]; then \
-		echo ".venv not found. Run: make setup"; \
-		exit 1; \
-	fi
-	$(PYTHON) -m pytest
+	@if [ ! -x "$(PYTHON)" ]; then 		echo ".venv not found. Run: make setup"; 		exit 1; 	fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m pytest
 
 live:
-	@if [ ! -x "$(PYTHON)" ]; then \
-		echo ".venv not found. Run: make setup"; \
-		exit 1; \
-	fi
-	$(PYTHON) -m crypto_signal_engine.examples.live_market_snapshot
+	@if [ ! -x "$(PYTHON)" ]; then 		echo ".venv not found. Run: make setup"; 		exit 1; 	fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.live_market_snapshot
 
 db-up:
 	docker compose up -d db
