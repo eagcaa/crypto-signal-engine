@@ -1,0 +1,19 @@
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_DB: crypto_signal_engine
+      POSTGRES_USER: crypto
+      POSTGRES_PASSWORD: crypto
+    ports:
+      - "5432:5432"
+    volumes:
+      - crypto_signal_engine_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crypto -d crypto_signal_engine"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  crypto_signal_engine_db:
