@@ -1,3 +1,4 @@
+from crypto_signal_engine.db.coinglass_repository import CoinGlassSnapshotRepository
 from crypto_signal_engine.db.prediction_repository import PredictionRepository
 from crypto_signal_engine.db.repository import MarketSnapshotRepository
 from crypto_signal_engine.db.session import (
@@ -7,6 +8,7 @@ from crypto_signal_engine.db.session import (
 )
 
 __all__ = [
+    "CoinGlassSnapshotRepository",
     "MarketSnapshotRepository",
     "PredictionRepository",
     "create_database_engine",
