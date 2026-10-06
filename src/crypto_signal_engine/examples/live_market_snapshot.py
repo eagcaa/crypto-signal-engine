@@ -10,6 +10,13 @@ from crypto_signal_engine.collectors.bybit import (
     BybitSpotOrderBookCollector,
     BybitSpotTradeCollector,
 )
+from crypto_signal_engine.config.settings import get_settings
+from crypto_signal_engine.db import (
+    MarketSnapshotRepository,
+    create_database_engine,
+    create_session_factory,
+    initialize_database,
+)
 from crypto_signal_engine.domain.models import Exchange
 from crypto_signal_engine.features.orderbook import calculate_order_book_metrics
 from crypto_signal_engine.market import MarketSnapshotAggregator
@@ -34,14 +41,17 @@ async def consume_order_book(
         )
 
 
-async def print_snapshots(
+async def persist_snapshots(
     aggregator: MarketSnapshotAggregator,
+    repository: MarketSnapshotRepository,
     *,
     interval_seconds: float = 5.0,
 ) -> None:
     while True:
         await asyncio.sleep(interval_seconds)
         snapshot = await aggregator.snapshot()
+
+        await repository.add(snapshot)
 
         print()
         print(f"{snapshot.symbol} | {snapshot.timestamp.isoformat()}")
@@ -79,53 +89,65 @@ async def print_snapshots(
             f"binance_book={snapshot.binance_book_age_ms} "
             f"bybit_book={snapshot.bybit_book_age_ms}"
         )
-        print(f"data_quality={snapshot.data_quality:.2f}")
+        print(f"data_quality={snapshot.data_quality:.2f} persisted=yes")
 
 
 async def main() -> None:
+    settings = get_settings()
+    engine = create_database_engine(settings.database_url)
+
+    await initialize_database(engine)
+
+    session_factory = create_session_factory(engine)
+    repository = MarketSnapshotRepository(session_factory)
+
     symbols = ["BTCUSDT"]
     aggregator = MarketSnapshotAggregator("BTCUSDT")
 
-    async with asyncio.TaskGroup() as task_group:
-        task_group.create_task(
-            consume_trades(BinanceSpotTradeCollector(symbols), aggregator)
-        )
-        task_group.create_task(
-            consume_trades(BinanceFuturesTradeCollector(symbols), aggregator)
-        )
-        task_group.create_task(
-            consume_trades(BybitSpotTradeCollector(symbols), aggregator)
-        )
-        task_group.create_task(
-            consume_trades(BybitFuturesTradeCollector(symbols), aggregator)
-        )
-        task_group.create_task(
-            consume_order_book(
-                Exchange.BINANCE,
-                BinanceSpotOrderBookCollector(
-                    symbols,
-                    depth=20,
-                    update_ms=100,
-                ),
-                aggregator,
+    try:
+        async with asyncio.TaskGroup() as task_group:
+            task_group.create_task(
+                consume_trades(BinanceSpotTradeCollector(symbols), aggregator)
             )
-        )
-        task_group.create_task(
-            consume_order_book(
-                Exchange.BYBIT,
-                BybitSpotOrderBookCollector(
-                    symbols,
-                    depth=50,
-                ),
-                aggregator,
+            task_group.create_task(
+                consume_trades(BinanceFuturesTradeCollector(symbols), aggregator)
             )
-        )
-        task_group.create_task(
-            print_snapshots(
-                aggregator,
-                interval_seconds=5.0,
+            task_group.create_task(
+                consume_trades(BybitSpotTradeCollector(symbols), aggregator)
             )
-        )
+            task_group.create_task(
+                consume_trades(BybitFuturesTradeCollector(symbols), aggregator)
+            )
+            task_group.create_task(
+                consume_order_book(
+                    Exchange.BINANCE,
+                    BinanceSpotOrderBookCollector(
+                        symbols,
+                        depth=20,
+                        update_ms=100,
+                    ),
+                    aggregator,
+                )
+            )
+            task_group.create_task(
+                consume_order_book(
+                    Exchange.BYBIT,
+                    BybitSpotOrderBookCollector(
+                        symbols,
+                        depth=50,
+                    ),
+                    aggregator,
+                )
+            )
+            task_group.create_task(
+                persist_snapshots(
+                    aggregator,
+                    repository,
+                    interval_seconds=5.0,
+                )
+            )
+    finally:
+        await engine.dispose()
 
 
 if __name__ == "__main__":
