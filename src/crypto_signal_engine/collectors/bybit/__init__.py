@@ -1,3 +1,6 @@
+from crypto_signal_engine.collectors.bybit.orderbook import (
+    BybitSpotOrderBookCollector,
+)
 from crypto_signal_engine.collectors.bybit.trades import (
     BybitFuturesTradeCollector,
     BybitSpotTradeCollector,
@@ -6,4 +9,5 @@ from crypto_signal_engine.collectors.bybit.trades import (
 __all__ = [
     "BybitSpotTradeCollector",
     "BybitFuturesTradeCollector",
+    "BybitSpotOrderBookCollector",
 ]
