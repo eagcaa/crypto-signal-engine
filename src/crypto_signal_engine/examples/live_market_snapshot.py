@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta
 
 from crypto_signal_engine.collectors.binance import (
     BinanceFuturesTradeCollector,
@@ -13,6 +14,7 @@ from crypto_signal_engine.collectors.bybit import (
 from crypto_signal_engine.config.settings import get_settings
 from crypto_signal_engine.db import (
     MarketSnapshotRepository,
+    PredictionRepository,
     create_database_engine,
     create_session_factory,
     initialize_database,
@@ -20,6 +22,7 @@ from crypto_signal_engine.db import (
 from crypto_signal_engine.domain.models import Exchange
 from crypto_signal_engine.features.orderbook import calculate_order_book_metrics
 from crypto_signal_engine.market import MarketSnapshotAggregator
+from crypto_signal_engine.predictions import BaselinePredictionEngine
 
 
 async def consume_trades(collector, aggregator: MarketSnapshotAggregator) -> None:
@@ -43,15 +46,55 @@ async def consume_order_book(
 
 async def persist_snapshots(
     aggregator: MarketSnapshotAggregator,
-    repository: MarketSnapshotRepository,
+    snapshot_repository: MarketSnapshotRepository,
+    prediction_repository: PredictionRepository,
+    prediction_engine: BaselinePredictionEngine,
     *,
     interval_seconds: float = 5.0,
+    prediction_interval_seconds: int = 60,
 ) -> None:
+    last_prediction_at = None
+    horizons = (300, 900)
+
     while True:
         await asyncio.sleep(interval_seconds)
         snapshot = await aggregator.snapshot()
 
-        await repository.add(snapshot)
+        await snapshot_repository.add(snapshot)
+
+        evaluations = await prediction_repository.evaluate_due(snapshot.timestamp)
+        for evaluation in evaluations:
+            print(
+                "EVALUATED "
+                f"id={evaluation.prediction_id} "
+                f"return={evaluation.return_pct:.4f}% "
+                f"success={evaluation.success}"
+            )
+
+        should_generate = (
+            last_prediction_at is None
+            or snapshot.timestamp - last_prediction_at
+            >= timedelta(seconds=prediction_interval_seconds)
+        )
+
+        if should_generate:
+            for horizon_seconds in horizons:
+                prediction = prediction_engine.generate(
+                    snapshot,
+                    horizon_seconds=horizon_seconds,
+                )
+                if prediction is not None:
+                    await prediction_repository.add(prediction)
+                    print(
+                        "PREDICTION "
+                        f"id={prediction.id} "
+                        f"horizon={prediction.horizon_seconds}s "
+                        f"direction={prediction.direction.value} "
+                        f"raw_score={prediction.raw_score:.4f} "
+                        f"entry={prediction.entry_price}"
+                    )
+
+            last_prediction_at = snapshot.timestamp
 
         print()
         print(f"{snapshot.symbol} | {snapshot.timestamp.isoformat()}")
@@ -99,7 +142,9 @@ async def main() -> None:
     await initialize_database(engine)
 
     session_factory = create_session_factory(engine)
-    repository = MarketSnapshotRepository(session_factory)
+    snapshot_repository = MarketSnapshotRepository(session_factory)
+    prediction_repository = PredictionRepository(session_factory)
+    prediction_engine = BaselinePredictionEngine()
 
     symbols = ["BTCUSDT"]
     aggregator = MarketSnapshotAggregator("BTCUSDT")
@@ -142,8 +187,11 @@ async def main() -> None:
             task_group.create_task(
                 persist_snapshots(
                     aggregator,
-                    repository,
+                    snapshot_repository,
+                    prediction_repository,
+                    prediction_engine,
                     interval_seconds=5.0,
+                    prediction_interval_seconds=60,
                 )
             )
     finally:
