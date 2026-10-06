@@ -27,7 +27,11 @@ async def consume_order_book(
 ) -> None:
     async for snapshot in collector.snapshots():
         metrics = calculate_order_book_metrics(snapshot, depth_levels=20)
-        await aggregator.update_order_book(exchange, metrics)
+        await aggregator.update_order_book(
+            exchange,
+            metrics,
+            event_time=snapshot.event_time,
+        )
 
 
 async def print_snapshots(
@@ -66,6 +70,16 @@ async def print_snapshots(
             f"buy={snapshot.buy_pressure} "
             f"sell={snapshot.sell_pressure}"
         )
+        print(
+            "freshness_ms "
+            f"binance_spot={snapshot.binance_spot_age_ms} "
+            f"binance_futures={snapshot.binance_futures_age_ms} "
+            f"bybit_spot={snapshot.bybit_spot_age_ms} "
+            f"bybit_futures={snapshot.bybit_futures_age_ms} "
+            f"binance_book={snapshot.binance_book_age_ms} "
+            f"bybit_book={snapshot.bybit_book_age_ms}"
+        )
+        print(f"data_quality={snapshot.data_quality:.2f}")
 
 
 async def main() -> None:
