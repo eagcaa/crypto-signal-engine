@@ -1,9 +1,3 @@
-from crypto_signal_engine.market.snapshot import (
-    MarketSnapshot,
-    MarketSnapshotAggregator,
-)
+from crypto_signal_engine.market.snapshot import MarketSnapshot, MarketSnapshotAggregator
 
-__all__ = [
-    "MarketSnapshot",
-    "MarketSnapshotAggregator",
-]
+__all__ = ["MarketSnapshot", "MarketSnapshotAggregator"]
