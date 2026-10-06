@@ -117,3 +117,55 @@ class CoinGlassSnapshotRow(Base):
     taker_sell_ratio: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
     taker_buy_volume_usd: Mapped[Decimal | None] = mapped_column(Numeric(30, 6))
     taker_sell_volume_usd: Mapped[Decimal | None] = mapped_column(Numeric(30, 6))
+
+
+class ExchangeDerivativesSnapshotRow(Base):
+    __tablename__ = "exchange_derivatives_snapshots"
+
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        primary_key=True,
+    )
+    exchange: Mapped[str] = mapped_column(
+        String(16),
+        primary_key=True,
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(32),
+        primary_key=True,
+    )
+    open_interest: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
+    open_interest_value_usd: Mapped[Decimal | None] = mapped_column(Numeric(30, 6))
+    oi_change_5m_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
+    oi_change_15m_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
+    funding_rate: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
+    long_short_ratio: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
+    long_account_ratio: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
+    short_account_ratio: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
+    top_trader_long_short_ratio: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 10)
+    )
+    taker_buy_sell_ratio: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
+    taker_buy_volume: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
+    taker_sell_volume: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
+
+
+class LiquidationEventRow(Base):
+    __tablename__ = "liquidation_events"
+
+    exchange: Mapped[str] = mapped_column(
+        String(16),
+        primary_key=True,
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(32),
+        primary_key=True,
+    )
+    event_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        primary_key=True,
+    )
+    position_side: Mapped[str] = mapped_column(String(16), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    notional_usd: Mapped[Decimal] = mapped_column(Numeric(30, 6), nullable=False)
