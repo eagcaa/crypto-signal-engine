@@ -13,11 +13,13 @@ class Settings(BaseSettings):
 
     binance_enabled: bool = True
     bybit_enabled: bool = True
+    coinglass_enabled: bool = False
 
     binance_api_key: str = ""
     binance_api_secret: str = ""
     bybit_api_key: str = ""
     bybit_api_secret: str = ""
+    coinglass_api_key: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
