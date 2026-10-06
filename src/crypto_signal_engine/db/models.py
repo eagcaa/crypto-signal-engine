@@ -153,17 +153,13 @@ class ExchangeDerivativesSnapshotRow(Base):
 class LiquidationEventRow(Base):
     __tablename__ = "liquidation_events"
 
-    exchange: Mapped[str] = mapped_column(
-        String(16),
-        primary_key=True,
-    )
-    symbol: Mapped[str] = mapped_column(
-        String(32),
-        primary_key=True,
-    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    exchange: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     event_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        primary_key=True,
+        nullable=False,
+        index=True,
     )
     position_side: Mapped[str] = mapped_column(String(16), nullable=False)
     price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
