@@ -2,18 +2,23 @@ import asyncio
 from datetime import timedelta
 
 from crypto_signal_engine.collectors.binance import (
+    BinanceDerivativesClient,
     BinanceFuturesTradeCollector,
+    BinanceLiquidationCollector,
     BinanceSpotOrderBookCollector,
     BinanceSpotTradeCollector,
 )
 from crypto_signal_engine.collectors.bybit import (
+    BybitDerivativesClient,
     BybitFuturesTradeCollector,
+    BybitLiquidationCollector,
     BybitSpotOrderBookCollector,
     BybitSpotTradeCollector,
 )
 from crypto_signal_engine.config.settings import get_settings
 from crypto_signal_engine.db import (
     CoinGlassSnapshotRepository,
+    DerivativesRepository,
     MarketSnapshotRepository,
     PredictionRepository,
     create_database_engine,
@@ -47,6 +52,56 @@ async def consume_order_book(
         )
 
 
+
+
+
+
+async def poll_derivatives(
+    client,
+    repository: DerivativesRepository,
+    *,
+    symbol: str,
+    interval_seconds: float = 30.0,
+) -> None:
+    while True:
+        try:
+            snapshot = await client.fetch_snapshot(symbol)
+            await repository.add_snapshot(snapshot)
+
+            print(
+                "DERIVATIVES "
+                f"exchange={snapshot.exchange.value} "
+                f"oi={snapshot.open_interest} "
+                f"oi_usd={snapshot.open_interest_value_usd} "
+                f"oi_5m={snapshot.oi_change_5m_pct}% "
+                f"oi_15m={snapshot.oi_change_15m_pct}% "
+                f"funding={snapshot.funding_rate} "
+                f"long_short={snapshot.long_short_ratio} "
+                f"top_trader={snapshot.top_trader_long_short_ratio} "
+                f"taker_buy_sell={snapshot.taker_buy_sell_ratio}"
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"DERIVATIVES unavailable: {type(client).__name__}: {exc}")
+
+        await asyncio.sleep(interval_seconds)
+
+
+async def consume_liquidations(
+    collector,
+    repository: DerivativesRepository,
+) -> None:
+    async for event in collector.events():
+        await repository.add_liquidation(event)
+        print(
+            "LIQUIDATION "
+            f"exchange={event.exchange.value} "
+            f"symbol={event.symbol} "
+            f"side={event.position_side.value} "
+            f"notional_usd={event.notional_usd:.2f} "
+            f"price={event.price}"
+        )
 
 
 async def poll_coinglass(
@@ -180,6 +235,7 @@ async def main() -> None:
     snapshot_repository = MarketSnapshotRepository(session_factory)
     prediction_repository = PredictionRepository(session_factory)
     coinglass_repository = CoinGlassSnapshotRepository(session_factory)
+    derivatives_repository = DerivativesRepository(session_factory)
     prediction_engine = BaselinePredictionEngine()
 
     symbols = ["BTCUSDT"]
@@ -228,6 +284,35 @@ async def main() -> None:
                     prediction_engine,
                     interval_seconds=5.0,
                     prediction_interval_seconds=60,
+                )
+            )
+
+            task_group.create_task(
+                poll_derivatives(
+                    BinanceDerivativesClient(),
+                    derivatives_repository,
+                    symbol="BTCUSDT",
+                    interval_seconds=30.0,
+                )
+            )
+            task_group.create_task(
+                poll_derivatives(
+                    BybitDerivativesClient(),
+                    derivatives_repository,
+                    symbol="BTCUSDT",
+                    interval_seconds=30.0,
+                )
+            )
+            task_group.create_task(
+                consume_liquidations(
+                    BinanceLiquidationCollector(symbols),
+                    derivatives_repository,
+                )
+            )
+            task_group.create_task(
+                consume_liquidations(
+                    BybitLiquidationCollector(symbols),
+                    derivatives_repository,
                 )
             )
 
