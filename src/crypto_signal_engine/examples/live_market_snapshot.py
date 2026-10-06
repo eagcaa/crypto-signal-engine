@@ -13,6 +13,7 @@ from crypto_signal_engine.collectors.bybit import (
 )
 from crypto_signal_engine.config.settings import get_settings
 from crypto_signal_engine.db import (
+    CoinGlassSnapshotRepository,
     MarketSnapshotRepository,
     PredictionRepository,
     create_database_engine,
@@ -21,6 +22,8 @@ from crypto_signal_engine.db import (
 )
 from crypto_signal_engine.domain.models import Exchange
 from crypto_signal_engine.features.orderbook import calculate_order_book_metrics
+from crypto_signal_engine.integrations import CoinGlassClient
+from crypto_signal_engine.integrations.coinglass import CoinGlassApiError
 from crypto_signal_engine.market import MarketSnapshotAggregator
 from crypto_signal_engine.predictions import BaselinePredictionEngine
 
@@ -42,6 +45,38 @@ async def consume_order_book(
             metrics,
             event_time=snapshot.event_time,
         )
+
+
+
+
+async def poll_coinglass(
+    client: CoinGlassClient,
+    repository: CoinGlassSnapshotRepository,
+    *,
+    symbol: str,
+    interval_seconds: float = 20.0,
+) -> None:
+    while True:
+        try:
+            snapshot = await client.fetch_market_snapshot(symbol=symbol)
+            await repository.add(snapshot)
+
+            print(
+                "COINGLASS "
+                f"oi_usd={snapshot.open_interest_usd} "
+                f"oi_5m={snapshot.oi_change_5m_pct}% "
+                f"oi_15m={snapshot.oi_change_15m_pct}% "
+                f"funding_binance={snapshot.funding_rate_binance} "
+                f"funding_bybit={snapshot.funding_rate_bybit} "
+                f"taker_buy={snapshot.taker_buy_ratio}% "
+                f"taker_sell={snapshot.taker_sell_ratio}%"
+            )
+        except (CoinGlassApiError, TimeoutError) as exc:
+            print(f"COINGLASS unavailable: {exc}")
+        except Exception as exc:
+            print(f"COINGLASS unexpected error: {exc}")
+
+        await asyncio.sleep(interval_seconds)
 
 
 async def persist_snapshots(
@@ -144,6 +179,7 @@ async def main() -> None:
     session_factory = create_session_factory(engine)
     snapshot_repository = MarketSnapshotRepository(session_factory)
     prediction_repository = PredictionRepository(session_factory)
+    coinglass_repository = CoinGlassSnapshotRepository(session_factory)
     prediction_engine = BaselinePredictionEngine()
 
     symbols = ["BTCUSDT"]
@@ -194,6 +230,21 @@ async def main() -> None:
                     prediction_interval_seconds=60,
                 )
             )
+
+            if settings.coinglass_enabled and settings.coinglass_api_key:
+                task_group.create_task(
+                    poll_coinglass(
+                        CoinGlassClient(settings.coinglass_api_key),
+                        coinglass_repository,
+                        symbol="BTCUSDT",
+                        interval_seconds=20.0,
+                    )
+                )
+            elif settings.coinglass_enabled:
+                print(
+                    "COINGLASS enabled but COINGLASS_API_KEY is empty; "
+                    "integration disabled."
+                )
     finally:
         await engine.dispose()
 
