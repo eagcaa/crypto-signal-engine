@@ -195,6 +195,11 @@ class ResearchFeatureSnapshotRow(Base):
     futures_cvd_15m: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
     spot_trade_sources: Mapped[int] = mapped_column(Integer, nullable=False)
     futures_trade_sources: Mapped[int] = mapped_column(Integer, nullable=False)
+    history_seconds: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
 
     binance_oi_change_5m_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
     binance_oi_change_15m_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
