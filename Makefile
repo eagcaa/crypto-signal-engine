@@ -1,4 +1,4 @@
-.PHONY: help setup install test live live-log replay db-up db-down db-logs db-shell clean
+.PHONY: help setup install test live live-log paper-live replay db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
 PYTHONPATH_SRC := PYTHONPATH=src
@@ -12,6 +12,7 @@ help:
 	@echo "  make test      Run test suite"
 	@echo "  make live      Run live market snapshot collector"
 	@echo "  make live-log  Run live collector and persist timestamped runtime log"
+	@echo "  make paper-live Run live collector with local paper trading enabled"
 	@echo "  make replay    Replay persisted history (SYMBOL=BTCUSDT HOURS=6)"
 	@echo "  make db-up     Start TimescaleDB"
 	@echo "  make db-down   Stop TimescaleDB"
