@@ -24,6 +24,7 @@ venv/
 
 # Local data
 runtime-logs/
+runtime-data/
 data/
 logs/
 *.sqlite3
