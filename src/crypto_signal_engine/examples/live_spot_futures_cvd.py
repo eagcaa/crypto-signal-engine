@@ -9,7 +9,7 @@ from crypto_signal_engine.collectors.bybit import (
     BybitFuturesTradeCollector,
     BybitSpotTradeCollector,
 )
-from crypto_signal_engine.domain.models import Exchange, MarketType, TradeTick
+from crypto_signal_engine.domain.models import Exchange, MarketType
 from crypto_signal_engine.features.cvd import CvdAccumulator
 
 
