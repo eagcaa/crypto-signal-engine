@@ -395,6 +395,7 @@ async def run(
                 f"losses={stats.losses} "
                 f"win_rate={format_rate(stats.win_rate)} "
                 f"net_pnl={stats.net_pnl:+.2f} "
+                f"execution_costs={stats.execution_costs:.2f} "
                 f"profit_factor={group_profit_factor} "
                 f"expectancy={group_expectancy} "
                 f"avg_return={format_rate(stats.average_return_pct)}"
