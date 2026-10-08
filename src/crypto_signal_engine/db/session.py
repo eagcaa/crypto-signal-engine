@@ -106,6 +106,23 @@ async def initialize_database(engine: AsyncEngine) -> None:
                 """
             )
         )
+        for column_name in (
+            "spot_cvd_ratio_1m",
+            "spot_cvd_ratio_5m",
+            "spot_cvd_ratio_15m",
+            "futures_cvd_ratio_1m",
+            "futures_cvd_ratio_5m",
+            "futures_cvd_ratio_15m",
+        ):
+            await connection.execute(
+                text(
+                    f"""
+                    ALTER TABLE research_feature_snapshots
+                    ADD COLUMN IF NOT EXISTS {column_name} NUMERIC(20, 16)
+                    NOT NULL DEFAULT 0
+                    """
+                )
+            )
 
         await connection.execute(
             text(
