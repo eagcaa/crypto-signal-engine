@@ -1,7 +1,10 @@
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from crypto_signal_engine.calibration import load_calibration
+from crypto_signal_engine.calibration import (
+    load_calibration,
+    load_calibration_artifact,
+)
 from crypto_signal_engine.config.settings import get_settings
 from crypto_signal_engine.db import (
     MarketSnapshotRepository,
@@ -64,6 +67,9 @@ async def run() -> int:
         )
 
         calibration = load_calibration(settings.calibration_file)
+        calibration_artifact = load_calibration_artifact(
+            settings.calibration_file
+        )
         result = evaluate_readiness(
             calibration,
             paper_validation,
@@ -79,6 +85,10 @@ async def run() -> int:
             ),
             now=datetime.now(UTC),
             minimum_market_quality=settings.data_quality_alert_threshold,
+            calibration_artifact=calibration_artifact,
+            maximum_calibration_age=timedelta(
+                hours=settings.calibration_max_age_hours
+            ),
         )
 
         ready_buckets = sum(
@@ -92,6 +102,8 @@ async def run() -> int:
             f"ready={result.ready} "
             f"calibration_buckets={len(calibration)} "
             f"calibration_ready={ready_buckets} "
+            f"calibration_source={calibration_artifact.price_source if calibration_artifact else 'missing'} "
+            f"calibration_generated_at={calibration_artifact.generated_at if calibration_artifact else 'missing'} "
             f"paper_trades={paper_report.overall.trades} "
             f"paper_positions_current_model={len(current_positions)} "
             f"paper_positions_total={len(positions)} "
