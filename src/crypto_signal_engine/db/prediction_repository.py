@@ -4,6 +4,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from crypto_signal_engine.db.models import (
@@ -61,6 +62,37 @@ class PredictionRepository:
                 )
             )
             await session.commit()
+
+    async def add_evaluation(
+        self,
+        evaluation: PredictionEvaluation,
+    ) -> bool:
+        """Persist an evaluation once.
+
+        Live tick evaluation and snapshot fallback may race. PostgreSQL
+        ON CONFLICT keeps the first result and prevents duplicate rows.
+        """
+        async with self._session_factory() as session:
+            statement = (
+                pg_insert(PredictionEvaluationRow)
+                .values(
+                    prediction_id=evaluation.prediction_id,
+                    status=evaluation.status.value,
+                    outcome=evaluation.outcome.value,
+                    label=evaluation.label,
+                    evaluated_at=evaluation.evaluated_at,
+                    exit_price=evaluation.exit_price,
+                    return_pct=evaluation.return_pct,
+                    success=evaluation.success,
+                )
+                .on_conflict_do_nothing(
+                    index_elements=[PredictionEvaluationRow.prediction_id]
+                )
+                .returning(PredictionEvaluationRow.prediction_id)
+            )
+            inserted_id = await session.scalar(statement)
+            await session.commit()
+            return inserted_id is not None
 
     async def evaluate_due(
         self,
@@ -160,8 +192,9 @@ class PredictionRepository:
                 if evaluation is None:
                     continue
 
-                session.add(
-                    PredictionEvaluationRow(
+                statement = (
+                    pg_insert(PredictionEvaluationRow)
+                    .values(
                         prediction_id=evaluation.prediction_id,
                         status=evaluation.status.value,
                         outcome=evaluation.outcome.value,
@@ -171,8 +204,14 @@ class PredictionRepository:
                         return_pct=evaluation.return_pct,
                         success=evaluation.success,
                     )
+                    .on_conflict_do_nothing(
+                        index_elements=[PredictionEvaluationRow.prediction_id]
+                    )
+                    .returning(PredictionEvaluationRow.prediction_id)
                 )
-                evaluations.append(evaluation)
+                inserted_id = await session.scalar(statement)
+                if inserted_id is not None:
+                    evaluations.append(evaluation)
 
             await session.commit()
             return evaluations
