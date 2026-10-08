@@ -17,6 +17,7 @@ from crypto_signal_engine.paper import (
     PaperRiskConfig,
     build_paper_performance_report,
     simulate_replay_broker,
+    validate_paper_performance,
 )
 from crypto_signal_engine.replay import ReplayRunner
 from crypto_signal_engine.replay.report import build_replay_report
@@ -218,6 +219,10 @@ async def run(
         paper_report = build_paper_performance_report(
             list(paper_broker.positions)
         )
+        paper_validation = validate_paper_performance(
+            paper,
+            paper_report,
+        )
 
         print()
         print("PAPER ACCOUNT")
@@ -287,6 +292,13 @@ async def run(
                 f"expectancy={group_expectancy} "
                 f"avg_return={format_rate(stats.average_return_pct)}"
             )
+
+        print()
+        print(
+            "PAPER VALIDATION "
+            f"passed={paper_validation.passed} "
+            f"reasons={','.join(paper_validation.reasons) or 'none'}"
+        )
 
         print()
         print(
