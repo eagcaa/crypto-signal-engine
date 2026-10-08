@@ -197,6 +197,8 @@ class ReplayRunner:
                 exit_price=None,
                 return_pct=None,
                 success=None,
+                evaluation_source="replay_price_point",
+                evaluation_version="first_touch_v1",
             )
 
         return PredictionEvaluation(
@@ -211,6 +213,8 @@ class ReplayRunner:
                 state.last_price,
             ),
             success=None,
+            evaluation_source="replay_price_point",
+            evaluation_version="first_touch_v1",
         )
 
     @classmethod
@@ -261,6 +265,8 @@ class ReplayRunner:
             exit_price=price,
             return_pct=cls._directional_return_pct(prediction, price),
             success=is_take_profit,
+            evaluation_source="replay_price_point",
+            evaluation_version="first_touch_v1",
         )
 
     @staticmethod
