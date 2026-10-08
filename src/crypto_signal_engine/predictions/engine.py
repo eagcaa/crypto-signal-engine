@@ -236,7 +236,7 @@ class CompositePredictionEngine:
             raw_score += contribution
 
         raw_score = self._clamp(raw_score)
-        reason = self._reason(profile, signals, raw_score)
+        reason = self._reason(profile, contributions, raw_score)
 
         if abs(raw_score) < self._minimum_abs_score:
             return PredictionDecision(
@@ -368,6 +368,12 @@ class CompositePredictionEngine:
         if average_change is None:
             return None
 
+        # OI expansion can confirm the direction of futures flow.
+        # OI contraction is treated as deleveraging/position closing and
+        # therefore does not reverse-confirm the opposite direction.
+        if average_change <= 0:
+            return Decimal("0")
+
         futures_direction = self._sign(futures_flow)
         if futures_direction == 0:
             return Decimal("0")
@@ -461,16 +467,11 @@ class CompositePredictionEngine:
     def _reason(
         self,
         profile: _HorizonProfile,
-        signals: dict[str, Decimal | None],
+        contributions: dict[str, Decimal],
         raw_score: Decimal,
     ) -> str:
-        available = [
-            (name, value)
-            for name, value in signals.items()
-            if value is not None
-        ]
         strongest = sorted(
-            available,
+            contributions.items(),
             key=lambda item: abs(item[1]),
             reverse=True,
         )[:3]
