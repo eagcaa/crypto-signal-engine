@@ -88,13 +88,18 @@ class PredictionEvaluationRow(Base):
         ForeignKey("predictions.id", ondelete="CASCADE"),
         primary_key=True,
     )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="evaluated",
+    )
     evaluated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
     )
-    exit_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
-    return_pct: Mapped[Decimal] = mapped_column(Numeric(20, 12), nullable=False)
-    success: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    exit_price: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
+    return_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
+    success: Mapped[bool | None] = mapped_column(Boolean)
 
 
 class CoinGlassSnapshotRow(Base):
