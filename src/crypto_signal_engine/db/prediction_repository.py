@@ -31,6 +31,7 @@ class EvaluationProvenanceStats:
     stop_loss: int
     expired_no_touch: int
     expired_without_data: int
+    unresolved: int
 
 
 class PredictionRepository:
@@ -479,6 +480,11 @@ class PredictionRepository:
                             == PredictionEvaluationOutcome.EXPIRED_WITHOUT_DATA.value
                         ).cast(Integer)
                     ),
+                    func.sum(
+                        (
+                            PredictionEvaluationRow.outcome.is_(None)
+                        ).cast(Integer)
+                    ),
                 )
                 .join(
                     PredictionRow,
@@ -510,6 +516,7 @@ class PredictionRepository:
                     stop_loss=int(row[4] or 0),
                     expired_no_touch=int(row[5] or 0),
                     expired_without_data=int(row[6] or 0),
+                    unresolved=int(row[7] or 0),
                 )
                 for row in rows
             ]
