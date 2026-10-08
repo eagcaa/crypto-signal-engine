@@ -1,6 +1,6 @@
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -249,3 +249,28 @@ def _bucket_from_payload(item: object) -> CalibrationBucket:
             else None
         ),
     )
+
+
+
+def calibration_artifact_rejection_reason(
+    artifact: CalibrationArtifact | None,
+    *,
+    now: datetime,
+    maximum_age: timedelta,
+    symbol: str,
+    required_price_source: str = "binance_spot_aggTrades",
+) -> str | None:
+    if artifact is None:
+        return "missing"
+
+    if artifact.price_source != required_price_source:
+        return f"price_source:{artifact.price_source}"
+
+    if artifact.symbol.upper() != symbol.upper():
+        return f"symbol:{artifact.symbol}"
+
+    age = now - artifact.generated_at
+    if age > maximum_age:
+        return f"stale:{int(age.total_seconds())}s"
+
+    return None
