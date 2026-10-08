@@ -78,6 +78,8 @@ class PredictionRow(Base):
     raw_score: Mapped[Decimal] = mapped_column(Numeric(20, 16), nullable=False)
     data_quality: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
     model_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    feature_contributions_json: Mapped[str | None] = mapped_column(String(4096))
+    reason: Mapped[str | None] = mapped_column(String(2048))
 
 
 class PredictionEvaluationRow(Base):
