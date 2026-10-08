@@ -1,0 +1,179 @@
+from datetime import UTC, datetime
+from decimal import Decimal
+
+from crypto_signal_engine.features.research import ResearchFeatureSnapshot
+from crypto_signal_engine.predictions import (
+    CompositePredictionEngine,
+    PredictionDecisionDirection,
+)
+
+
+def make_features(
+    *,
+    binance_book: str,
+    bybit_book: str,
+    spot_cvd_1m: str,
+    spot_cvd_5m: str,
+    futures_cvd_1m: str,
+    futures_cvd_5m: str,
+    binance_oi_5m: str,
+    bybit_oi_5m: str,
+    funding_binance: str,
+    funding_bybit: str,
+    binance_long_short: str,
+    bybit_long_short: str,
+    top_trader: str,
+    taker_ratio: str,
+    liq_imbalance: str,
+    spot_sources: int = 2,
+    futures_sources: int = 2,
+    data_quality: str = "0.83",
+) -> ResearchFeatureSnapshot:
+    return ResearchFeatureSnapshot(
+        symbol="BTCUSDT",
+        timestamp=datetime(2026, 10, 8, 11, 0, tzinfo=UTC),
+        price=Decimal("82500"),
+        spot_cvd_1m=Decimal(spot_cvd_1m),
+        spot_cvd_5m=Decimal(spot_cvd_5m),
+        spot_cvd_15m=Decimal(spot_cvd_5m),
+        futures_cvd_1m=Decimal(futures_cvd_1m),
+        futures_cvd_5m=Decimal(futures_cvd_5m),
+        futures_cvd_15m=Decimal(futures_cvd_5m),
+        spot_trade_sources=spot_sources,
+        futures_trade_sources=futures_sources,
+        binance_oi_change_5m_pct=Decimal(binance_oi_5m),
+        binance_oi_change_15m_pct=Decimal(binance_oi_5m),
+        bybit_oi_change_5m_pct=Decimal(bybit_oi_5m),
+        bybit_oi_change_15m_pct=Decimal(bybit_oi_5m),
+        binance_funding_rate=Decimal(funding_binance),
+        bybit_funding_rate=Decimal(funding_bybit),
+        binance_long_short_ratio=Decimal(binance_long_short),
+        bybit_long_short_ratio=Decimal(bybit_long_short),
+        binance_top_trader_long_short_ratio=Decimal(top_trader),
+        binance_taker_buy_sell_ratio=Decimal(taker_ratio),
+        long_liquidations_5m_usd=Decimal("10000"),
+        short_liquidations_5m_usd=Decimal("30000"),
+        liquidation_imbalance_5m=Decimal(liq_imbalance),
+        long_liquidations_15m_usd=Decimal("10000"),
+        short_liquidations_15m_usd=Decimal("30000"),
+        liquidation_imbalance_15m=Decimal(liq_imbalance),
+        binance_book_imbalance=Decimal(binance_book),
+        bybit_book_imbalance=Decimal(bybit_book),
+        market_data_quality=Decimal(data_quality),
+    )
+
+
+def test_v2_generates_long_when_multiple_features_align() -> None:
+    features = make_features(
+        binance_book="0.8",
+        bybit_book="0.6",
+        spot_cvd_1m="3",
+        spot_cvd_5m="5",
+        futures_cvd_1m="4",
+        futures_cvd_5m="7",
+        binance_oi_5m="0.4",
+        bybit_oi_5m="0.3",
+        funding_binance="-0.0001",
+        funding_bybit="-0.0001",
+        binance_long_short="0.9",
+        bybit_long_short="0.9",
+        top_trader="0.9",
+        taker_ratio="1.5",
+        liq_imbalance="0.5",
+    )
+
+    decision = CompositePredictionEngine().decide(
+        features,
+        horizon_seconds=300,
+    )
+
+    assert decision.direction == PredictionDecisionDirection.LONG
+    assert decision.prediction is not None
+    assert decision.prediction.model_name == "composite_rules_v2"
+    assert decision.raw_score > Decimal("0.20")
+    assert "order_book" in decision.feature_contributions
+    assert "open_interest" in decision.feature_contributions
+
+
+def test_v2_returns_no_trade_when_signals_conflict() -> None:
+    features = make_features(
+        binance_book="0.8",
+        bybit_book="0.6",
+        spot_cvd_1m="2",
+        spot_cvd_5m="3",
+        futures_cvd_1m="-2",
+        futures_cvd_5m="-4",
+        binance_oi_5m="0.4",
+        bybit_oi_5m="0.4",
+        funding_binance="0.0002",
+        funding_bybit="0.0002",
+        binance_long_short="2.0",
+        bybit_long_short="2.0",
+        top_trader="2.0",
+        taker_ratio="0.5",
+        liq_imbalance="0",
+    )
+
+    decision = CompositePredictionEngine().decide(
+        features,
+        horizon_seconds=300,
+    )
+
+    assert decision.direction == PredictionDecisionDirection.NO_TRADE
+    assert decision.prediction is None
+    assert abs(decision.raw_score) < Decimal("0.20")
+
+
+def test_v2_discounts_single_exchange_futures_flow() -> None:
+    engine = CompositePredictionEngine()
+    features = make_features(
+        binance_book="0",
+        bybit_book="0",
+        spot_cvd_1m="0",
+        spot_cvd_5m="0",
+        futures_cvd_1m="5",
+        futures_cvd_5m="5",
+        binance_oi_5m="0",
+        bybit_oi_5m="0",
+        funding_binance="0",
+        funding_bybit="0",
+        binance_long_short="1",
+        bybit_long_short="1",
+        top_trader="1",
+        taker_ratio="1",
+        liq_imbalance="0",
+        futures_sources=1,
+    )
+
+    decision = engine.decide(features, horizon_seconds=300)
+
+    assert decision.feature_contributions["futures_cvd"] < Decimal("0.15")
+
+
+def test_v2_rejects_low_quality_data() -> None:
+    features = make_features(
+        binance_book="0.9",
+        bybit_book="0.9",
+        spot_cvd_1m="5",
+        spot_cvd_5m="5",
+        futures_cvd_1m="5",
+        futures_cvd_5m="5",
+        binance_oi_5m="0.5",
+        bybit_oi_5m="0.5",
+        funding_binance="-0.0002",
+        funding_bybit="-0.0002",
+        binance_long_short="0.8",
+        bybit_long_short="0.8",
+        top_trader="0.8",
+        taker_ratio="1.5",
+        liq_imbalance="0.5",
+        data_quality="0.50",
+    )
+
+    decision = CompositePredictionEngine().decide(
+        features,
+        horizon_seconds=300,
+    )
+
+    assert decision.direction == PredictionDecisionDirection.NO_TRADE
+    assert decision.prediction is None
