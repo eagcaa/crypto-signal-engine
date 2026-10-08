@@ -1,6 +1,7 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+from crypto_signal_engine.calibration import ReplayCalibrator, load_calibration
 from crypto_signal_engine.collectors.binance import (
     BinanceDerivativesClient,
     BinanceFuturesTradeCollector,
@@ -308,6 +309,7 @@ async def persist_snapshots(
     paper_broker: PaperBroker | None = None,
     paper_repository: PaperPositionRepository | None = None,
     telegram_notifier: TelegramNotifier | None = None,
+    calibration_buckets=(),
     *,
     interval_seconds: float = 5.0,
     prediction_interval_seconds: int = 60,
@@ -436,9 +438,27 @@ async def persist_snapshots(
                                 f"reason={reason}"
                             )
 
+                    calibrated_confidence = (
+                        ReplayCalibrator().confidence_for_prediction(
+                            prediction,
+                            calibration_buckets,
+                        )
+                        if calibration_buckets
+                        else None
+                    )
+
                     await send_telegram(
                         telegram_notifier,
-                        TelegramNotifier.prediction_text(prediction),
+                        TelegramNotifier.prediction_text(
+                            prediction,
+                            calibrated_confidence=calibrated_confidence,
+                        ),
+                    )
+
+                    confidence_text = (
+                        "not_ready"
+                        if calibrated_confidence is None
+                        else f"{calibrated_confidence:.2f}%"
                     )
 
                     print(
@@ -447,6 +467,7 @@ async def persist_snapshots(
                         f"horizon={prediction.horizon_seconds}s "
                         f"direction={prediction.direction.value} "
                         f"raw_score={prediction.raw_score:+.4f} "
+                        f"confidence={confidence_text} "
                         f"entry={prediction.entry_price} "
                         f"{contribution_text} "
                         f"reason={prediction.reason}"
@@ -547,6 +568,24 @@ async def main() -> None:
     live_evaluator = LiveFirstTouchEvaluator()
     paper_broker = None
     telegram_notifier = None
+    calibration_buckets = load_calibration(settings.calibration_file)
+    if calibration_buckets:
+        ready_buckets = sum(
+            1
+            for bucket in calibration_buckets
+            if bucket.calibrated_confidence is not None
+        )
+        print(
+            "CALIBRATION loaded "
+            f"path={settings.calibration_file} "
+            f"buckets={len(calibration_buckets)} "
+            f"ready={ready_buckets}"
+        )
+    else:
+        print(
+            "CALIBRATION unavailable "
+            f"path={settings.calibration_file}"
+        )
 
     if settings.telegram_enabled:
         if settings.telegram_bot_token and settings.telegram_chat_id:
@@ -675,6 +714,7 @@ async def main() -> None:
                     paper_broker,
                     paper_repository,
                     telegram_notifier,
+                    calibration_buckets,
                     interval_seconds=5.0,
                     prediction_interval_seconds=60,
                 )
