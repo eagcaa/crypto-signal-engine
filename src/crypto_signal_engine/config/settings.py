@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
 
     calibration_file: str = "runtime-data/calibration.json"
+    calibration_max_age_hours: int = 168
 
     data_quality_alert_threshold: Decimal = Decimal("0.67")
     data_quality_bad_intervals: int = 3
