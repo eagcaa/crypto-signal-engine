@@ -117,16 +117,23 @@ class PaperBroker:
             position.close_reason = evaluation.outcome.value
             return position
 
+        trading_cost_pct = Decimal("2") * (
+            self._risk.config.fee_pct_per_side
+            + self._risk.config.slippage_pct_per_side
+        )
+        net_return_pct = evaluation.return_pct - trading_cost_pct
         pnl = (
             position.notional
-            * evaluation.return_pct
+            * net_return_pct
             / Decimal("100")
         )
 
         position.status = PaperPositionStatus.CLOSED
         position.closed_at = evaluation.evaluated_at
         position.exit_price = evaluation.exit_price
-        position.return_pct = evaluation.return_pct
+        position.gross_return_pct = evaluation.return_pct
+        position.trading_cost_pct = trading_cost_pct
+        position.return_pct = net_return_pct
         position.pnl = pnl
         position.close_reason = evaluation.outcome.value
 
