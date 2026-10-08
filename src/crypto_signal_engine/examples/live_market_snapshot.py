@@ -178,6 +178,7 @@ async def persist_snapshots(
             f"futures_cvd_15m={research_snapshot.futures_cvd_15m} "
             f"trade_sources={research_snapshot.spot_trade_sources}/"
             f"{research_snapshot.futures_trade_sources} "
+            f"history={research_snapshot.history_seconds}s "
             f"liq_5m={research_snapshot.liquidation_imbalance_5m} "
             f"liq_15m={research_snapshot.liquidation_imbalance_15m} "
             f"binance_oi_5m={research_snapshot.binance_oi_change_5m_pct} "
