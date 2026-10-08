@@ -133,6 +133,17 @@ async def initialize_database(engine: AsyncEngine) -> None:
                 """
             )
         )
+        await connection.execute(
+            text(
+                """
+                UPDATE paper_positions AS pp
+                SET model_name = p.model_name
+                FROM predictions AS p
+                WHERE pp.prediction_id = p.id
+                  AND pp.model_name = 'unknown'
+                """
+            )
+        )
         for column_name in (
             "spot_cvd_ratio_1m",
             "spot_cvd_ratio_5m",
