@@ -87,6 +87,29 @@ async def run(symbol: str, hours: float) -> None:
             )
 
         print()
+        print("SCORE BINS (observed TP rate, not calibrated confidence)")
+        for item in report.by_score_bin:
+            upper = (
+                f"{item.upper_bound:.2f}"
+                if item.upper_bound is not None
+                else "+"
+            )
+            label = (
+                f"{item.lower_bound:.2f}-{upper}"
+                if item.upper_bound is not None
+                else f"{item.lower_bound:.2f}+"
+            )
+            print(
+                f"{item.horizon_seconds // 60}m "
+                f"score={label} "
+                f"n={item.stats.predictions} "
+                f"TP={item.stats.take_profit} "
+                f"SL={item.stats.stop_loss} "
+                f"no_touch={item.stats.expired_no_touch} "
+                f"TP_rate={format_rate(item.stats.tp_rate)}"
+            )
+
+        print()
         print("REGIMES")
         for item in report.by_regime:
             if item.stats.predictions == 0:
