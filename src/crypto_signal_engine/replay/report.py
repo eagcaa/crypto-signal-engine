@@ -43,6 +43,7 @@ class RegimeStats:
 class ScoreBinStats:
     horizon_seconds: int
     direction: str
+    model_name: str
     lower_bound: Decimal
     upper_bound: Decimal | None
     stats: ReplayStats
@@ -71,7 +72,7 @@ def build_replay_report(
     horizon_groups: dict[int, list] = defaultdict(list)
     regime_groups: dict[tuple[int, str, str, str], list] = defaultdict(list)
     score_groups: dict[
-        tuple[int, str, Decimal, Decimal | None],
+        tuple[int, str, str, Decimal, Decimal | None],
         list,
     ] = defaultdict(list)
 
@@ -84,6 +85,7 @@ def build_replay_report(
             (
                 prediction.horizon_seconds,
                 prediction.direction.value,
+                prediction.model_name,
                 lower_bound,
                 upper_bound,
             )
@@ -131,8 +133,9 @@ def build_replay_report(
         ScoreBinStats(
             horizon_seconds=key[0],
             direction=key[1],
-            lower_bound=key[2],
-            upper_bound=key[3],
+            model_name=key[2],
+            lower_bound=key[3],
+            upper_bound=key[4],
             stats=_stats(evaluations),
         )
         for key, evaluations in sorted(
@@ -141,6 +144,7 @@ def build_replay_report(
                 item[0][0],
                 item[0][1],
                 item[0][2],
+                item[0][3],
             ),
         )
     )
