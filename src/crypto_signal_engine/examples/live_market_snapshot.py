@@ -183,12 +183,20 @@ async def persist_snapshots(
 
         evaluations = await prediction_repository.evaluate_due(snapshot.timestamp)
         for evaluation in evaluations:
-            print(
-                "EVALUATED "
-                f"id={evaluation.prediction_id} "
-                f"return={evaluation.return_pct:.4f}% "
-                f"success={evaluation.success}"
-            )
+            if evaluation.return_pct is None:
+                print(
+                    "EVALUATED "
+                    f"id={evaluation.prediction_id} "
+                    f"status={evaluation.status.value}"
+                )
+            else:
+                print(
+                    "EVALUATED "
+                    f"id={evaluation.prediction_id} "
+                    f"status={evaluation.status.value} "
+                    f"return={evaluation.return_pct:.4f}% "
+                    f"success={evaluation.success}"
+                )
 
         should_generate = (
             last_prediction_at is None
