@@ -1,8 +1,10 @@
 import asyncio
+from datetime import UTC, datetime
 
 from crypto_signal_engine.calibration import load_calibration
 from crypto_signal_engine.config.settings import get_settings
 from crypto_signal_engine.db import (
+    MarketSnapshotRepository,
     PaperPositionRepository,
     create_database_engine,
     create_session_factory,
@@ -23,10 +25,11 @@ async def run() -> int:
     await initialize_database(engine)
 
     try:
-        repository = PaperPositionRepository(
-            create_session_factory(engine)
-        )
+        session_factory = create_session_factory(engine)
+        repository = PaperPositionRepository(session_factory)
+        market_repository = MarketSnapshotRepository(session_factory)
         positions = await repository.load_all()
+        latest_market = await market_repository.latest_health("BTCUSDT")
 
         broker = PaperBroker(
             PaperRiskConfig(
@@ -52,6 +55,18 @@ async def run() -> int:
         result = evaluate_readiness(
             calibration,
             paper_validation,
+            latest_market_timestamp=(
+                latest_market.timestamp
+                if latest_market is not None
+                else None
+            ),
+            latest_market_quality=(
+                latest_market.data_quality
+                if latest_market is not None
+                else None
+            ),
+            now=datetime.now(UTC),
+            minimum_market_quality=settings.data_quality_alert_threshold,
         )
 
         ready_buckets = sum(
@@ -66,7 +81,9 @@ async def run() -> int:
             f"calibration_buckets={len(calibration)} "
             f"calibration_ready={ready_buckets} "
             f"paper_trades={paper_report.overall.trades} "
-            f"paper_validation={paper_validation.passed}"
+            f"paper_validation={paper_validation.passed} "
+            f"market_quality={latest_market.data_quality if latest_market else 'missing'} "
+            f"market_timestamp={latest_market.timestamp if latest_market else 'missing'}"
         )
 
         if result.reasons:
