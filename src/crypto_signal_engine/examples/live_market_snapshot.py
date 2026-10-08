@@ -172,13 +172,18 @@ async def persist_snapshots(
             "FEATURES "
             f"spot_cvd_1m={research_snapshot.spot_cvd_1m} "
             f"spot_cvd_5m={research_snapshot.spot_cvd_5m} "
+            f"spot_cvd_15m={research_snapshot.spot_cvd_15m} "
             f"futures_cvd_1m={research_snapshot.futures_cvd_1m} "
             f"futures_cvd_5m={research_snapshot.futures_cvd_5m} "
+            f"futures_cvd_15m={research_snapshot.futures_cvd_15m} "
             f"trade_sources={research_snapshot.spot_trade_sources}/"
             f"{research_snapshot.futures_trade_sources} "
             f"liq_5m={research_snapshot.liquidation_imbalance_5m} "
+            f"liq_15m={research_snapshot.liquidation_imbalance_15m} "
             f"binance_oi_5m={research_snapshot.binance_oi_change_5m_pct} "
-            f"bybit_oi_5m={research_snapshot.bybit_oi_change_5m_pct}"
+            f"binance_oi_15m={research_snapshot.binance_oi_change_15m_pct} "
+            f"bybit_oi_5m={research_snapshot.bybit_oi_change_5m_pct} "
+            f"bybit_oi_15m={research_snapshot.bybit_oi_change_15m_pct}"
         )
 
         evaluations = await prediction_repository.evaluate_due(snapshot.timestamp)
