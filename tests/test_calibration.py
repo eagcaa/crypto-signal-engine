@@ -26,6 +26,7 @@ def make_report(*, evaluated: int, take_profit: int) -> ReplayReport:
             ScoreBinStats(
                 horizon_seconds=300,
                 direction="long",
+                model_name="composite_rules_v3_5m",
                 lower_bound=Decimal("0.20"),
                 upper_bound=Decimal("0.25"),
                 stats=stats,
@@ -133,3 +134,31 @@ def test_calibration_round_trip(tmp_path) -> None:
 
 def test_load_calibration_returns_empty_when_missing(tmp_path) -> None:
     assert load_calibration(tmp_path / "missing.json") == ()
+
+
+
+def test_calibration_does_not_cross_model_version() -> None:
+    calibrator = ReplayCalibrator(minimum_samples=1)
+    buckets = calibrator.build(
+        make_report(evaluated=10, take_profit=6)
+    )
+    prediction = make_prediction()
+    stale_model_prediction = Prediction(
+        id=prediction.id,
+        symbol=prediction.symbol,
+        created_at=prediction.created_at,
+        expires_at=prediction.expires_at,
+        horizon_seconds=prediction.horizon_seconds,
+        direction=prediction.direction,
+        entry_price=prediction.entry_price,
+        raw_score=prediction.raw_score,
+        data_quality=prediction.data_quality,
+        model_name="composite_rules_v4_5m",
+        feature_contributions=prediction.feature_contributions,
+        reason=prediction.reason,
+    )
+
+    assert calibrator.confidence_for_prediction(
+        stale_model_prediction,
+        buckets,
+    ) is None
