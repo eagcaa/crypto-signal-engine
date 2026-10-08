@@ -66,3 +66,5 @@ class PredictionEvaluation:
     exit_price: Decimal | None
     return_pct: Decimal | None
     success: bool | None
+    evaluation_source: str = "unknown"
+    evaluation_version: str = "first_touch_v1"
