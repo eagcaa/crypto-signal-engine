@@ -95,6 +95,8 @@ async def run() -> None:
             f"max_drawdown={account.max_drawdown_pct:.2f}%"
         )
         print(
+            f"pre_cost_pnl={overall.gross_pnl_before_costs:+.2f} "
+            f"execution_costs={overall.execution_costs:.2f} "
             f"profit_factor={profit_factor} "
             f"expectancy={expectancy} "
             f"avg_return={format_rate(overall.average_return_pct)}"
