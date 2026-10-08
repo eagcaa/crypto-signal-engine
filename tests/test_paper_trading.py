@@ -121,29 +121,34 @@ def test_paper_broker_invalidates_position_when_evaluation_has_no_data() -> None
 
 
 
+
 def test_paper_broker_restores_equity_and_open_positions() -> None:
-    broker = PaperBroker(
-        PaperRiskConfig(starting_equity=Decimal("10000"))
-    )
-
-    closed_prediction = make_prediction(symbol="BTCUSDT")
-    closed = broker.open_from_prediction(closed_prediction)
-    assert closed is not None
-    closed.status = PaperPositionStatus.CLOSED
-    closed.pnl = Decimal("12.50")
-    closed.closed_at = closed_prediction.created_at + timedelta(minutes=1)
-
-    open_prediction = make_prediction(symbol="ETHUSDT")
-    open_position = broker.open_from_prediction(open_prediction)
-    assert open_position is None
-
-    second_broker = PaperBroker(
+    source = PaperBroker(
         PaperRiskConfig(
             starting_equity=Decimal("10000"),
             max_open_positions=2,
         )
     )
-    open_position = second_broker.open_from_prediction(open_prediction)
+
+    closed_prediction = make_prediction(symbol="BTCUSDT")
+    closed_position = source.open_from_prediction(closed_prediction)
+    assert closed_position is not None
+
+    source.apply_evaluation(
+        PredictionEvaluation(
+            prediction_id=closed_prediction.id,
+            status=PredictionEvaluationStatus.EVALUATED,
+            outcome=PredictionEvaluationOutcome.TAKE_PROFIT,
+            label=1,
+            evaluated_at=closed_prediction.created_at + timedelta(minutes=1),
+            exit_price=Decimal("100.60"),
+            return_pct=Decimal("0.60"),
+            success=True,
+        )
+    )
+
+    open_prediction = make_prediction(symbol="ETHUSDT")
+    open_position = source.open_from_prediction(open_prediction)
     assert open_position is not None
 
     restored = PaperBroker(
@@ -152,10 +157,10 @@ def test_paper_broker_restores_equity_and_open_positions() -> None:
             max_open_positions=2,
         )
     )
-    restored.restore([closed, open_position])
+    restored.restore(list(source.positions))
 
     snapshot = restored.snapshot()
-    assert snapshot.equity == Decimal("10012.50")
-    assert snapshot.realized_pnl == Decimal("12.50")
+    assert snapshot.equity == Decimal("10006.00")
+    assert snapshot.realized_pnl == Decimal("6.00")
     assert snapshot.closed_positions == 1
     assert snapshot.open_positions == 1
