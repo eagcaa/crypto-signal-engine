@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     paper_max_drawdown_pct: Decimal = Decimal("5.00")
     paper_max_consecutive_losses: int = 5
 
+    telegram_enabled: bool = False
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
     binance_api_key: str = ""
     binance_api_secret: str = ""
     bybit_api_key: str = ""
