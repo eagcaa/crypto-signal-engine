@@ -5,6 +5,7 @@ from crypto_signal_engine.collectors.binance import (
     BinanceDerivativesClient,
     BinanceFuturesTradeCollector,
     BinanceLiquidationCollector,
+    BinanceSpotCandleClient,
     BinanceSpotOrderBookCollector,
     BinanceSpotTradeCollector,
 )
@@ -29,6 +30,7 @@ from crypto_signal_engine.db import (
 from crypto_signal_engine.domain.models import Exchange
 from crypto_signal_engine.features.orderbook import calculate_order_book_metrics
 from crypto_signal_engine.features.research import ResearchFeatureAggregator
+from crypto_signal_engine.features.technical import build_technical_features
 from crypto_signal_engine.integrations import CoinGlassClient
 from crypto_signal_engine.integrations.coinglass import CoinGlassApiError
 from crypto_signal_engine.market import MarketSnapshotAggregator
@@ -94,6 +96,42 @@ async def consume_order_book(
 
 
 
+
+
+async def poll_technicals(
+    client: BinanceSpotCandleClient,
+    *,
+    symbol: str,
+    interval_seconds: float = 30.0,
+) -> None:
+    while True:
+        try:
+            candles_5m, candles_15m = await asyncio.gather(
+                client.fetch_closed(symbol, interval="5m", limit=100),
+                client.fetch_closed(symbol, interval="15m", limit=100),
+            )
+            features_5m = build_technical_features(candles_5m)
+            features_15m = build_technical_features(candles_15m)
+
+            for features in (features_5m, features_15m):
+                print(
+                    "TECHNICALS "
+                    f"interval={features.interval} "
+                    f"close={features.close} "
+                    f"ema9={features.ema_fast:.4f} "
+                    f"ema21={features.ema_slow:.4f} "
+                    f"trend_score={features.trend_score:+.4f} "
+                    f"trend={features.trend_regime} "
+                    f"atr={features.atr:.4f} "
+                    f"atr_pct={features.atr_pct:.4f}% "
+                    f"volatility={features.volatility_regime}"
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"TECHNICALS unavailable: {type(exc).__name__}: {exc}")
+
+        await asyncio.sleep(interval_seconds)
 
 
 async def poll_derivatives(
@@ -403,6 +441,14 @@ async def main() -> None:
                     live_evaluator,
                     interval_seconds=5.0,
                     prediction_interval_seconds=60,
+                )
+            )
+
+            task_group.create_task(
+                poll_technicals(
+                    BinanceSpotCandleClient(),
+                    symbol="BTCUSDT",
+                    interval_seconds=30.0,
                 )
             )
 
