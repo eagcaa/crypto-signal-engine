@@ -117,3 +117,24 @@ class TelegramNotifier:
             f"Halted: {snapshot.trading_halted}"
             f"{position_text}"
         )
+
+
+    @staticmethod
+    def data_quality_text(
+        *,
+        symbol: str,
+        kind: str,
+        data_quality: Decimal,
+        bad_intervals: int,
+    ) -> str:
+        title = (
+            "Market data degraded"
+            if kind == "degraded"
+            else "Market data recovered"
+        )
+        return (
+            f"{title}\n"
+            f"{symbol}\n"
+            f"Quality: {data_quality:.2f}\n"
+            f"Consecutive bad intervals: {bad_intervals}"
+        )
