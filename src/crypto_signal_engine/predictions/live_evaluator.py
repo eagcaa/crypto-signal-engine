@@ -33,6 +33,19 @@ class LiveFirstTouchEvaluator:
         async with self._lock:
             self._predictions[prediction.id] = prediction
 
+    async def register_many(
+        self,
+        predictions: list[Prediction],
+    ) -> int:
+        async with self._lock:
+            for prediction in predictions:
+                self._predictions[prediction.id] = prediction
+            return len(predictions)
+
+    async def open_count(self) -> int:
+        async with self._lock:
+            return len(self._predictions)
+
     async def process_trade(
         self,
         trade: TradeTick,
