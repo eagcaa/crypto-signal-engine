@@ -94,7 +94,7 @@ def test_market_snapshot_aggregates_cvd_and_order_book_state() -> None:
 
         snapshot = await aggregator.snapshot()
 
-        assert snapshot.price == Decimal("100")
+        assert snapshot.price == Decimal("101")
         assert snapshot.binance_spot_cvd == Decimal("5")
         assert snapshot.bybit_spot_cvd == Decimal("-1")
         assert snapshot.binance_futures_cvd == Decimal("-2")
@@ -107,5 +107,44 @@ def test_market_snapshot_aggregates_cvd_and_order_book_state() -> None:
         assert snapshot.cross_exchange_book_divergence == Decimal("0.6")
         assert snapshot.buy_pressure == Decimal("0.1")
         assert snapshot.sell_pressure == Decimal("0")
+
+    asyncio.run(run())
+
+
+def test_market_snapshot_keeps_binance_spot_as_canonical_price() -> None:
+    async def run() -> None:
+        aggregator = MarketSnapshotAggregator("BTCUSDT")
+
+        await aggregator.update_trade(
+            make_trade(
+                exchange=Exchange.BINANCE,
+                market_type=MarketType.SPOT,
+                side=TradeSide.BUY,
+                quantity="1",
+                price="101",
+            )
+        )
+        await aggregator.update_trade(
+            make_trade(
+                exchange=Exchange.BYBIT,
+                market_type=MarketType.SPOT,
+                side=TradeSide.BUY,
+                quantity="1",
+                price="102",
+            )
+        )
+        await aggregator.update_trade(
+            make_trade(
+                exchange=Exchange.BYBIT,
+                market_type=MarketType.FUTURES,
+                side=TradeSide.BUY,
+                quantity="1",
+                price="103",
+            )
+        )
+
+        snapshot = await aggregator.snapshot()
+
+        assert snapshot.price == Decimal("101")
 
     asyncio.run(run())
