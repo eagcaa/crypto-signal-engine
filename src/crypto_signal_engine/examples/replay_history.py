@@ -9,6 +9,7 @@ from crypto_signal_engine.db import (
     initialize_database,
 )
 from crypto_signal_engine.db.replay_repository import ReplayDataRepository
+from crypto_signal_engine.paper import PaperRiskConfig, simulate_replay
 from crypto_signal_engine.replay import ReplayRunner
 from crypto_signal_engine.replay.report import build_replay_report
 from crypto_signal_engine.settings import get_settings
@@ -69,6 +70,10 @@ async def run(symbol: str, hours: float) -> None:
 
         result = ReplayRunner().run(features, prices)
         report = build_replay_report(result, features)
+        paper = simulate_replay(
+            result,
+            risk_config=PaperRiskConfig(),
+        )
 
         print()
         print("NOTE: persisted market snapshots are sampled, so first-touch")
@@ -124,6 +129,16 @@ async def run(symbol: str, hours: float) -> None:
                 f"no_touch={item.stats.expired_no_touch} "
                 f"TP_rate={format_rate(item.stats.tp_rate)}"
             )
+
+        print()
+        print("PAPER ACCOUNT")
+        print(
+            f"equity={paper.equity:.2f} "
+            f"realized_pnl={paper.realized_pnl:+.2f} "
+            f"closed={paper.closed_positions} "
+            f"invalidated={paper.invalidated_positions} "
+            f"open={paper.open_positions}"
+        )
 
         print()
         print(
