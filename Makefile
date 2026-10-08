@@ -1,4 +1,4 @@
-.PHONY: help setup install test live live-log paper-live paper-report readiness replay replay-exact replay-compare calibrate db-up db-down db-logs db-shell clean
+.PHONY: help setup install test live live-log paper-live paper-report readiness evaluation-report replay replay-exact replay-compare calibrate db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
 PYTHONPATH_SRC := PYTHONPATH=src
@@ -15,6 +15,7 @@ help:
 	@echo "  make paper-live   Run live collector with local paper trading enabled"
 	@echo "  make paper-report Show persisted paper performance and validation"
 	@echo "  make readiness    Check calibration and paper validation gates"
+	@echo "  make evaluation-report Show evaluation source/version breakdown"
 	@echo "  make replay       Replay persisted history (SYMBOL=BTCUSDT HOURS=6)"
 	@echo "  make replay-exact Replay using historical Binance spot aggTrades"
 	@echo "  make replay-compare Compare sampled versus exact first-touch outcomes"
@@ -59,6 +60,10 @@ paper-report:
 readiness:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
 	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.readiness
+
+evaluation-report:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.evaluation_report
 
 replay:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
