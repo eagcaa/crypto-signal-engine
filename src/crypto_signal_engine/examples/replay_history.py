@@ -19,7 +19,7 @@ from crypto_signal_engine.paper import (
     simulate_replay_broker,
     validate_paper_performance,
 )
-from crypto_signal_engine.replay import ReplayRunner
+from crypto_signal_engine.replay import ReplayRunner, compare_replay_reports
 from crypto_signal_engine.replay.report import build_replay_report
 from crypto_signal_engine.config.settings import get_settings
 
@@ -35,6 +35,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=30,
         help="Minimum evaluated samples required before exposing confidence.",
+    )
+    parser.add_argument(
+        "--compare-price-sources",
+        action="store_true",
+        help="Run both sampled and Binance aggTrade replay and print deltas.",
     )
     parser.add_argument(
         "--exact-binance-trades",
@@ -56,6 +61,7 @@ async def run(
     hours: float,
     *,
     exact_binance_trades: bool = False,
+    compare_price_sources: bool = False,
     minimum_calibration_samples: int = 30,
 ) -> None:
     settings = get_settings()
@@ -75,19 +81,25 @@ async def run(
             end=end,
         )
 
-        if exact_binance_trades:
-            prices = await BinanceSpotHistoricalTradeClient().fetch_price_points(
+        sampled_prices = await repository.load_price_points(
+            symbol=symbol,
+            start=start,
+            end=end,
+        )
+
+        exact_prices = None
+        if exact_binance_trades or compare_price_sources:
+            exact_prices = await BinanceSpotHistoricalTradeClient().fetch_price_points(
                 symbol,
                 start=start,
                 end=end,
             )
+
+        if exact_binance_trades:
+            prices = exact_prices or []
             price_source = "binance_spot_aggTrades"
         else:
-            prices = await repository.load_price_points(
-                symbol=symbol,
-                start=start,
-                end=end,
-            )
+            prices = sampled_prices
             price_source = "persisted_market_snapshots"
 
         print(
@@ -107,8 +119,28 @@ async def run(
             print("No market price snapshots found for the selected period.")
             return
 
-        result = ReplayRunner().run(features, prices)
+        runner = ReplayRunner()
+        result = runner.run(features, prices)
         report = build_replay_report(result, features)
+
+        comparison_rows = ()
+        if compare_price_sources:
+            exact_result = runner.run(features, exact_prices or [])
+            exact_report = build_replay_report(exact_result, features)
+            sampled_result = (
+                result
+                if not exact_binance_trades
+                else runner.run(features, sampled_prices)
+            )
+            sampled_report = (
+                report
+                if not exact_binance_trades
+                else build_replay_report(sampled_result, features)
+            )
+            comparison_rows = compare_replay_reports(
+                sampled_report,
+                exact_report,
+            )
         calibration = ReplayCalibrator(
             minimum_samples=minimum_calibration_samples
         ).build(report)
@@ -148,6 +180,23 @@ async def run(
                 f"no_data={stats.expired_without_data} "
                 f"TP_rate={format_rate(stats.tp_rate)}"
             )
+
+        if comparison_rows:
+            print()
+            print("SAMPLED VS EXACT FIRST-TOUCH")
+            for row in comparison_rows:
+                print(
+                    f"{row.horizon_seconds // 60}m "
+                    f"sampled=TP:{row.sampled_take_profit}/"
+                    f"SL:{row.sampled_stop_loss}/"
+                    f"NT:{row.sampled_no_touch} "
+                    f"exact=TP:{row.exact_take_profit}/"
+                    f"SL:{row.exact_stop_loss}/"
+                    f"NT:{row.exact_no_touch} "
+                    f"delta=TP:{row.take_profit_delta:+d}/"
+                    f"SL:{row.stop_loss_delta:+d}/"
+                    f"NT:{row.no_touch_delta:+d}"
+                )
 
         print()
         print("SCORE BINS (observed TP rate, not calibrated confidence)")
@@ -316,6 +365,7 @@ def main() -> None:
             args.symbol,
             args.hours,
             exact_binance_trades=args.exact_binance_trades,
+            compare_price_sources=args.compare_price_sources,
             minimum_calibration_samples=args.min_calibration_samples,
         )
     )
