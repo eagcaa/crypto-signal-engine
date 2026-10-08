@@ -429,8 +429,6 @@ async def main() -> None:
                     BinanceLiquidationCollector(symbols),
                     derivatives_repository,
                     research_aggregator,
-                    live_evaluator,
-                    prediction_repository,
                 )
             )
             task_group.create_task(
@@ -438,8 +436,6 @@ async def main() -> None:
                     BybitLiquidationCollector(symbols),
                     derivatives_repository,
                     research_aggregator,
-                    live_evaluator,
-                    prediction_repository,
                 )
             )
 
