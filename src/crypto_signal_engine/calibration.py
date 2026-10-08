@@ -1,5 +1,7 @@
-from dataclasses import dataclass
+import json
+from dataclasses import asdict, dataclass
 from decimal import Decimal
+from pathlib import Path
 
 from crypto_signal_engine.predictions.models import Prediction
 from crypto_signal_engine.replay.report import ReplayReport, ScoreBinStats
@@ -88,3 +90,87 @@ class ReplayCalibrator:
             observed_tp_rate=observed_tp_rate,
             calibrated_confidence=calibrated_confidence,
         )
+
+
+
+def save_calibration(
+    path: str | Path,
+    buckets: tuple[CalibrationBucket, ...],
+) -> None:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = [
+        {
+            **asdict(bucket),
+            "lower_bound": str(bucket.lower_bound),
+            "upper_bound": (
+                str(bucket.upper_bound)
+                if bucket.upper_bound is not None
+                else None
+            ),
+            "observed_tp_rate": (
+                str(bucket.observed_tp_rate)
+                if bucket.observed_tp_rate is not None
+                else None
+            ),
+            "calibrated_confidence": (
+                str(bucket.calibrated_confidence)
+                if bucket.calibrated_confidence is not None
+                else None
+            ),
+        }
+        for bucket in buckets
+    ]
+
+    target.write_text(
+        json.dumps(payload, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def load_calibration(
+    path: str | Path,
+) -> tuple[CalibrationBucket, ...]:
+    source = Path(path)
+    if not source.exists():
+        return ()
+
+    raw = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(raw, list):
+        raise ValueError("Calibration file must contain a list")
+
+    buckets: list[CalibrationBucket] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("Calibration bucket must be an object")
+
+        upper_raw = item.get("upper_bound")
+        observed_raw = item.get("observed_tp_rate")
+        confidence_raw = item.get("calibrated_confidence")
+
+        buckets.append(
+            CalibrationBucket(
+                horizon_seconds=int(item["horizon_seconds"]),
+                direction=str(item["direction"]),
+                lower_bound=Decimal(str(item["lower_bound"])),
+                upper_bound=(
+                    Decimal(str(upper_raw))
+                    if upper_raw is not None
+                    else None
+                ),
+                samples=int(item["samples"]),
+                observed_tp_rate=(
+                    Decimal(str(observed_raw))
+                    if observed_raw is not None
+                    else None
+                ),
+                calibrated_confidence=(
+                    Decimal(str(confidence_raw))
+                    if confidence_raw is not None
+                    else None
+                ),
+            )
+        )
+
+    return tuple(buckets)
