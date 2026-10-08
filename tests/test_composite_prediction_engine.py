@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -198,14 +199,12 @@ def test_v2_uses_different_windows_for_5m_and_15m() -> None:
         liq_imbalance="0",
     )
 
-    features = ResearchFeatureSnapshot(
-        **{
-            **features.__dict__,
-            "spot_cvd_15m": Decimal("-10"),
-            "futures_cvd_15m": Decimal("-10"),
-            "binance_oi_change_15m_pct": Decimal("-0.3"),
-            "bybit_oi_change_15m_pct": Decimal("-0.3"),
-        }
+    features = replace(
+        features,
+        spot_cvd_15m=Decimal("-10"),
+        futures_cvd_15m=Decimal("-10"),
+        binance_oi_change_15m_pct=Decimal("-0.3"),
+        bybit_oi_change_15m_pct=Decimal("-0.3"),
     )
 
     engine = CompositePredictionEngine()
