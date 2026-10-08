@@ -21,7 +21,10 @@ def evaluate_readiness(
     now: datetime | None = None,
     maximum_market_age: timedelta = timedelta(minutes=2),
     minimum_market_quality: Decimal = Decimal("0.67"),
-    required_horizons: tuple[int, ...] = (300, 900),
+    required_models: tuple[tuple[int, str], ...] = (
+        (300, "composite_rules_v3_5m"),
+        (900, "composite_rules_v3_15m"),
+    ),
     required_directions: tuple[str, ...] = ("long", "short"),
 ) -> ReadinessResult:
     """Evaluate explicit gates before a live-money pilot is even considered."""
@@ -29,17 +32,21 @@ def evaluate_readiness(
     reasons: list[str] = []
 
     ready_keys = {
-        (bucket.horizon_seconds, bucket.direction)
+        (
+            bucket.horizon_seconds,
+            bucket.direction,
+            bucket.model_name,
+        )
         for bucket in calibration_buckets
         if bucket.calibrated_confidence is not None
     }
 
-    for horizon in required_horizons:
+    for horizon, model_name in required_models:
         for direction in required_directions:
-            if (horizon, direction) not in ready_keys:
+            if (horizon, direction, model_name) not in ready_keys:
                 reasons.append(
                     "calibration_not_ready:"
-                    f"{horizon}s:{direction}"
+                    f"{horizon}s:{direction}:{model_name}"
                 )
 
     if not paper_validation.passed:
