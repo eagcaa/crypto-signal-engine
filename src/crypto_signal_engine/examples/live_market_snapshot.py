@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 from crypto_signal_engine.calibration import (
     ReplayCalibrator,
+    calibration_artifact_rejection_reason,
     load_calibration_artifact,
 )
 from crypto_signal_engine.collectors.binance import (
@@ -610,47 +611,35 @@ async def main() -> None:
     )
     calibration_buckets = ()
 
-    if calibration_artifact is not None:
-        calibration_age = (
-            datetime.now(UTC) - calibration_artifact.generated_at
-        )
-        calibration_max_age = timedelta(
+    calibration_rejection = calibration_artifact_rejection_reason(
+        calibration_artifact,
+        now=datetime.now(UTC),
+        maximum_age=timedelta(
             hours=settings.calibration_max_age_hours
-        )
-        is_exact = (
-            calibration_artifact.price_source
-            == "binance_spot_aggTrades"
-        )
-        is_fresh = calibration_age <= calibration_max_age
+        ),
+        symbol="BTCUSDT",
+    )
 
-        if is_exact and is_fresh:
-            calibration_buckets = calibration_artifact.buckets
-            ready_buckets = sum(
-                1
-                for bucket in calibration_buckets
-                if bucket.calibrated_confidence is not None
-            )
-            print(
-                "CALIBRATION loaded "
-                f"path={settings.calibration_file} "
-                f"source={calibration_artifact.price_source} "
-                f"generated_at={calibration_artifact.generated_at.isoformat()} "
-                f"buckets={len(calibration_buckets)} "
-                f"ready={ready_buckets}"
-            )
-        else:
-            print(
-                "CALIBRATION rejected "
-                f"path={settings.calibration_file} "
-                f"source={calibration_artifact.price_source} "
-                f"age_seconds={int(calibration_age.total_seconds())} "
-                f"exact={is_exact} "
-                f"fresh={is_fresh}"
-            )
+    if calibration_rejection is None and calibration_artifact is not None:
+        calibration_buckets = calibration_artifact.buckets
+        ready_buckets = sum(
+            1
+            for bucket in calibration_buckets
+            if bucket.calibrated_confidence is not None
+        )
+        print(
+            "CALIBRATION loaded "
+            f"path={settings.calibration_file} "
+            f"source={calibration_artifact.price_source} "
+            f"generated_at={calibration_artifact.generated_at.isoformat()} "
+            f"buckets={len(calibration_buckets)} "
+            f"ready={ready_buckets}"
+        )
     else:
         print(
-            "CALIBRATION unavailable_or_legacy "
-            f"path={settings.calibration_file}"
+            "CALIBRATION rejected "
+            f"path={settings.calibration_file} "
+            f"reason={calibration_rejection}"
         )
 
     if settings.telegram_enabled:
