@@ -95,6 +95,8 @@ class PredictionEvaluationRow(Base):
         nullable=False,
         default="evaluated",
     )
+    outcome: Mapped[str | None] = mapped_column(String(32))
+    label: Mapped[int | None] = mapped_column(Integer)
     evaluated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
