@@ -35,6 +35,27 @@ class PaperBroker:
     def positions(self) -> tuple[PaperPosition, ...]:
         return tuple(self._positions.values())
 
+    def restore(
+        self,
+        positions: list[PaperPosition],
+    ) -> None:
+        self._positions = {
+            position.prediction_id: position
+            for position in positions
+        }
+        self._realized_pnl = sum(
+            (
+                position.pnl or Decimal("0")
+                for position in positions
+                if position.status == PaperPositionStatus.CLOSED
+            ),
+            Decimal("0"),
+        )
+        self._equity = (
+            self._risk.config.starting_equity
+            + self._realized_pnl
+        )
+
     def open_from_prediction(
         self,
         prediction: Prediction,
