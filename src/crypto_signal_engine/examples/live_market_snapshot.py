@@ -34,10 +34,41 @@ from crypto_signal_engine.features.technical import build_technical_features
 from crypto_signal_engine.integrations import CoinGlassClient
 from crypto_signal_engine.integrations.coinglass import CoinGlassApiError
 from crypto_signal_engine.market import MarketSnapshotAggregator
+from crypto_signal_engine.paper import PaperBroker, PaperRiskConfig
 from crypto_signal_engine.predictions import (
     CompositePredictionEngine,
     LiveFirstTouchEvaluator,
 )
+
+
+def print_paper_position(position, *, event: str) -> None:
+    if position is None:
+        return
+
+    if event == "open":
+        print(
+            "PAPER_OPEN "
+            f"id={position.id} "
+            f"prediction_id={position.prediction_id} "
+            f"symbol={position.symbol} "
+            f"horizon={position.horizon_seconds}s "
+            f"direction={position.direction} "
+            f"entry={position.entry_price} "
+            f"notional={position.notional:.2f} "
+            f"quantity={position.quantity:.8f}"
+        )
+        return
+
+    print(
+        "PAPER_CLOSE "
+        f"id={position.id} "
+        f"prediction_id={position.prediction_id} "
+        f"status={position.status.value} "
+        f"exit={position.exit_price} "
+        f"return={position.return_pct} "
+        f"pnl={position.pnl} "
+        f"reason={position.close_reason}"
+    )
 
 
 def print_evaluation(evaluation, *, source: str) -> None:
@@ -69,6 +100,7 @@ async def consume_trades(
     research_aggregator: ResearchFeatureAggregator,
     live_evaluator: LiveFirstTouchEvaluator,
     prediction_repository: PredictionRepository,
+    paper_broker: PaperBroker | None = None,
 ) -> None:
     async for trade in collector.trades():
         await aggregator.update_trade(trade)
@@ -78,6 +110,11 @@ async def consume_trades(
         for evaluation in evaluations:
             if await prediction_repository.add_evaluation(evaluation):
                 print_evaluation(evaluation, source="tick")
+                if paper_broker is not None:
+                    print_paper_position(
+                        paper_broker.apply_evaluation(evaluation),
+                        event="close",
+                    )
 
 
 async def consume_order_book(
@@ -228,6 +265,7 @@ async def persist_snapshots(
     research_aggregator: ResearchFeatureAggregator,
     prediction_engine: CompositePredictionEngine,
     live_evaluator: LiveFirstTouchEvaluator,
+    paper_broker: PaperBroker | None = None,
     *,
     interval_seconds: float = 5.0,
     prediction_interval_seconds: int = 60,
@@ -276,6 +314,11 @@ async def persist_snapshots(
         evaluations = await prediction_repository.evaluate_due(snapshot.timestamp)
         for evaluation in evaluations:
             print_evaluation(evaluation, source="snapshot")
+            if paper_broker is not None:
+                print_paper_position(
+                    paper_broker.apply_evaluation(evaluation),
+                    event="close",
+                )
 
         should_generate = (
             last_prediction_at is None
@@ -308,6 +351,23 @@ async def persist_snapshots(
                     prediction = decision.prediction
                     await prediction_repository.add(prediction)
                     await live_evaluator.register(prediction)
+
+                    if paper_broker is not None:
+                        paper_position = paper_broker.open_from_prediction(
+                            prediction
+                        )
+                        if paper_position is not None:
+                            print_paper_position(
+                                paper_position,
+                                event="open",
+                            )
+                        else:
+                            print(
+                                "PAPER_SKIP "
+                                f"prediction_id={prediction.id} "
+                                "reason=risk_or_position_limit"
+                            )
+
                     print(
                         "PREDICTION "
                         f"id={prediction.id} "
@@ -374,6 +434,25 @@ async def main() -> None:
     research_repository = ResearchFeatureRepository(session_factory)
     prediction_engine = CompositePredictionEngine()
     live_evaluator = LiveFirstTouchEvaluator()
+    paper_broker = None
+
+    if settings.paper_trading_enabled:
+        paper_broker = PaperBroker(
+            PaperRiskConfig(
+                starting_equity=settings.paper_starting_equity,
+                risk_per_trade_pct=settings.paper_risk_per_trade_pct,
+                max_notional_pct=settings.paper_max_notional_pct,
+                max_open_positions=settings.paper_max_open_positions,
+            )
+        )
+        paper_snapshot = paper_broker.snapshot()
+        print(
+            "PAPER_ENABLED "
+            f"equity={paper_snapshot.equity:.2f} "
+            f"risk_per_trade={settings.paper_risk_per_trade_pct}% "
+            f"max_notional={settings.paper_max_notional_pct}% "
+            f"max_open_positions={settings.paper_max_open_positions}"
+        )
 
     symbols = ["BTCUSDT"]
     restored_predictions = await prediction_repository.load_open_predictions(
@@ -399,6 +478,7 @@ async def main() -> None:
                     research_aggregator,
                     live_evaluator,
                     prediction_repository,
+                    paper_broker,
                 )
             )
             task_group.create_task(
@@ -458,6 +538,7 @@ async def main() -> None:
                     research_aggregator,
                     prediction_engine,
                     live_evaluator,
+                    paper_broker,
                     interval_seconds=5.0,
                     prediction_interval_seconds=60,
                 )
