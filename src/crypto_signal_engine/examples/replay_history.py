@@ -213,6 +213,7 @@ async def run(
             )
             print(
                 f"{item.horizon_seconds // 60}m "
+                f"{item.direction.upper()} "
                 f"score={label} "
                 f"n={item.stats.predictions} "
                 f"TP={item.stats.take_profit} "
@@ -242,6 +243,7 @@ async def run(
             )
             print(
                 f"{bucket.horizon_seconds // 60}m "
+                f"{bucket.direction.upper()} "
                 f"score={label} "
                 f"n={bucket.samples} "
                 f"observed={observed} "
