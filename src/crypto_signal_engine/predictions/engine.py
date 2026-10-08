@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 from uuid import uuid4
@@ -67,23 +68,58 @@ class BaselinePredictionEngine:
         )
 
 
-class CompositePredictionEngine:
-    """Transparent rule-based v2 research engine.
+@dataclass(frozen=True, slots=True)
+class _HorizonProfile:
+    name: str
+    weights: dict[str, Decimal]
+    short_flow_window: str
+    long_flow_window: str
+    oi_window: str
+    liquidation_window: str
 
-    The score is a research score in [-1, 1], not a calibrated probability.
-    Missing feature groups are excluded and the remaining weights are
-    renormalized. NO_TRADE is returned when the absolute score is too small.
+
+class CompositePredictionEngine:
+    """Transparent horizon-specific rule-based research engine.
+
+    The raw score is a research score in [-1, 1], not a calibrated
+    probability/confidence value.
     """
 
-    WEIGHTS = {
-        "order_book": Decimal("0.25"),
-        "spot_cvd": Decimal("0.15"),
-        "futures_cvd": Decimal("0.15"),
-        "open_interest": Decimal("0.15"),
-        "funding": Decimal("0.05"),
-        "crowding": Decimal("0.10"),
-        "taker_flow": Decimal("0.10"),
-        "liquidations": Decimal("0.05"),
+    PROFILES = {
+        300: _HorizonProfile(
+            name="5m",
+            weights={
+                "order_book": Decimal("0.25"),
+                "spot_cvd": Decimal("0.15"),
+                "futures_cvd": Decimal("0.15"),
+                "open_interest": Decimal("0.15"),
+                "funding": Decimal("0.05"),
+                "crowding": Decimal("0.10"),
+                "taker_flow": Decimal("0.10"),
+                "liquidations": Decimal("0.05"),
+            },
+            short_flow_window="1m",
+            long_flow_window="5m",
+            oi_window="5m",
+            liquidation_window="5m",
+        ),
+        900: _HorizonProfile(
+            name="15m",
+            weights={
+                "order_book": Decimal("0.15"),
+                "spot_cvd": Decimal("0.20"),
+                "futures_cvd": Decimal("0.20"),
+                "open_interest": Decimal("0.20"),
+                "funding": Decimal("0.05"),
+                "crowding": Decimal("0.10"),
+                "taker_flow": Decimal("0.05"),
+                "liquidations": Decimal("0.05"),
+            },
+            short_flow_window="5m",
+            long_flow_window="15m",
+            oi_window="15m",
+            liquidation_window="15m",
+        ),
     }
 
     def __init__(
@@ -101,6 +137,15 @@ class CompositePredictionEngine:
         *,
         horizon_seconds: int,
     ) -> PredictionDecision:
+        profile = self.PROFILES.get(horizon_seconds)
+
+        if profile is None:
+            return self._no_trade(
+                features,
+                horizon_seconds,
+                reason=f"Unsupported horizon: {horizon_seconds}s.",
+            )
+
         if features.price is None:
             return self._no_trade(
                 features,
@@ -115,30 +160,41 @@ class CompositePredictionEngine:
                 reason="Market data quality is below the minimum threshold.",
             )
 
+        spot_short, spot_long = self._flow_values(
+            features,
+            market="spot",
+            profile=profile,
+        )
+        futures_short, futures_long = self._flow_values(
+            features,
+            market="futures",
+            profile=profile,
+        )
+
         signals: dict[str, Decimal | None] = {
             "order_book": self._order_book_score(features),
             "spot_cvd": self._flow_score(
-                features.spot_cvd_1m,
-                features.spot_cvd_5m,
+                spot_short,
+                spot_long,
                 source_count=features.spot_trade_sources,
             ),
             "futures_cvd": self._flow_score(
-                features.futures_cvd_1m,
-                features.futures_cvd_5m,
+                futures_short,
+                futures_long,
                 source_count=features.futures_trade_sources,
             ),
-            "open_interest": self._open_interest_score(features),
+            "open_interest": self._open_interest_score(features, profile),
             "funding": self._funding_score(features),
             "crowding": self._crowding_score(features),
             "taker_flow": self._ratio_direction_score(
                 features.binance_taker_buy_sell_ratio
             ),
-            "liquidations": features.liquidation_imbalance_5m,
+            "liquidations": self._liquidation_score(features, profile),
         }
 
         active_weight = sum(
             (
-                self.WEIGHTS[name]
+                profile.weights[name]
                 for name, value in signals.items()
                 if value is not None
             ),
@@ -158,14 +214,14 @@ class CompositePredictionEngine:
         for name, value in signals.items():
             if value is None:
                 continue
-            normalized_weight = self.WEIGHTS[name] / active_weight
+
+            normalized_weight = profile.weights[name] / active_weight
             contribution = value * normalized_weight
             contributions[name] = contribution
             raw_score += contribution
 
         raw_score = self._clamp(raw_score)
-
-        reason = self._reason(signals, raw_score)
+        reason = self._reason(profile, signals, raw_score)
 
         if abs(raw_score) < self._minimum_abs_score:
             return PredictionDecision(
@@ -200,7 +256,7 @@ class CompositePredictionEngine:
             entry_price=features.price,
             raw_score=raw_score,
             data_quality=features.market_data_quality,
-            model_name="composite_rules_v2",
+            model_name=f"composite_rules_v2_{profile.name}",
             feature_contributions=contributions,
             reason=reason,
         )
@@ -215,6 +271,24 @@ class CompositePredictionEngine:
             reason=reason,
             prediction=prediction,
         )
+
+    def _flow_values(
+        self,
+        features: ResearchFeatureSnapshot,
+        *,
+        market: str,
+        profile: _HorizonProfile,
+    ) -> tuple[Decimal, Decimal]:
+        prefix = "spot_cvd" if market == "spot" else "futures_cvd"
+        short_value = getattr(
+            features,
+            f"{prefix}_{profile.short_flow_window}",
+        )
+        long_value = getattr(
+            features,
+            f"{prefix}_{profile.long_flow_window}",
+        )
+        return short_value, long_value
 
     def _order_book_score(
         self,
@@ -232,8 +306,8 @@ class CompositePredictionEngine:
 
     def _flow_score(
         self,
-        one_minute: Decimal,
-        five_minutes: Decimal,
+        short_window: Decimal,
+        long_window: Decimal,
         *,
         source_count: int,
     ) -> Decimal | None:
@@ -241,39 +315,57 @@ class CompositePredictionEngine:
             return None
 
         direction_score = (
-            self._sign(one_minute) * Decimal("0.60")
-            + self._sign(five_minutes) * Decimal("0.40")
+            self._sign(short_window) * Decimal("0.60")
+            + self._sign(long_window) * Decimal("0.40")
         )
 
-        # Two venues is the current full-coverage target. If only one
-        # exchange is feeding the window, reduce the feature's strength.
-        coverage = min(Decimal(source_count) / Decimal("2"), Decimal("1"))
+        coverage = min(
+            Decimal(source_count) / Decimal("2"),
+            Decimal("1"),
+        )
         return direction_score * coverage
 
     def _open_interest_score(
         self,
         features: ResearchFeatureSnapshot,
+        profile: _HorizonProfile,
     ) -> Decimal | None:
-        values = [
-            value
-            for value in (
+        if profile.oi_window == "5m":
+            values = (
                 features.binance_oi_change_5m_pct,
                 features.bybit_oi_change_5m_pct,
             )
-            if value is not None
-        ]
-        average_change = self._average(values)
+            futures_flow = features.futures_cvd_5m
+        else:
+            values = (
+                features.binance_oi_change_15m_pct,
+                features.bybit_oi_change_15m_pct,
+            )
+            futures_flow = features.futures_cvd_15m
+
+        available_values = [value for value in values if value is not None]
+        average_change = self._average(available_values)
+
         if average_change is None:
             return None
 
-        futures_direction = self._sign(features.futures_cvd_5m)
+        futures_direction = self._sign(futures_flow)
         if futures_direction == 0:
             return Decimal("0")
 
-        # OI growth confirms the active futures-flow direction.
-        # OI contraction weakens/opposes that direction.
-        normalized_change = self._clamp(average_change / Decimal("0.50"))
+        normalized_change = self._clamp(
+            average_change / Decimal("0.50")
+        )
         return normalized_change * futures_direction
+
+    def _liquidation_score(
+        self,
+        features: ResearchFeatureSnapshot,
+        profile: _HorizonProfile,
+    ) -> Decimal:
+        if profile.liquidation_window == "15m":
+            return features.liquidation_imbalance_15m
+        return features.liquidation_imbalance_5m
 
     def _funding_score(
         self,
@@ -288,12 +380,13 @@ class CompositePredictionEngine:
             if value is not None
         ]
         average_funding = self._average(values)
+
         if average_funding is None:
             return None
 
-        # Funding is used contrarian: crowded positive funding is bearish,
-        # crowded negative funding is bullish.
-        return -self._clamp(average_funding / Decimal("0.0005"))
+        return -self._clamp(
+            average_funding / Decimal("0.0005")
+        )
 
     def _crowding_score(
         self,
@@ -308,11 +401,15 @@ class CompositePredictionEngine:
             )
             if value is not None and value > 0
         ]
+
         if not ratios:
             return None
 
         scores = [
-            self._clamp((Decimal("1") - ratio) / (Decimal("1") + ratio))
+            self._clamp(
+                (Decimal("1") - ratio)
+                / (Decimal("1") + ratio)
+            )
             for ratio in ratios
         ]
         return self._average(scores)
@@ -323,12 +420,16 @@ class CompositePredictionEngine:
     ) -> Decimal | None:
         if ratio is None or ratio <= 0:
             return None
+
         return self._clamp(
-            (ratio - Decimal("1")) / (ratio + Decimal("1")) * Decimal("2")
+            (ratio - Decimal("1"))
+            / (ratio + Decimal("1"))
+            * Decimal("2")
         )
 
     def _reason(
         self,
+        profile: _HorizonProfile,
         signals: dict[str, Decimal | None],
         raw_score: Decimal,
     ) -> str:
@@ -355,7 +456,10 @@ class CompositePredictionEngine:
         else:
             prefix = "Mixed/weak composite"
 
-        return f"{prefix}; strongest signals: " + ", ".join(parts)
+        return (
+            f"{prefix} [{profile.name} profile]; strongest signals: "
+            + ", ".join(parts)
+        )
 
     def _no_trade(
         self,
@@ -384,11 +488,16 @@ class CompositePredictionEngine:
         return Decimal("0")
 
     @staticmethod
-    def _average(values: list[Decimal]) -> Decimal | None:
+    def _average(
+        values: list[Decimal],
+    ) -> Decimal | None:
         if not values:
             return None
         return sum(values, Decimal("0")) / Decimal(len(values))
 
     @staticmethod
     def _clamp(value: Decimal) -> Decimal:
-        return max(Decimal("-1"), min(Decimal("1"), value))
+        return max(
+            Decimal("-1"),
+            min(Decimal("1"), value),
+        )
