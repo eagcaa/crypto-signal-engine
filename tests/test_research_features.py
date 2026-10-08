@@ -97,6 +97,7 @@ def test_rolling_cvd_and_liquidation_imbalance() -> None:
         assert snapshot.spot_cvd_1m == Decimal("2")
         assert snapshot.spot_cvd_5m == Decimal("1")
         assert snapshot.spot_cvd_15m == Decimal("1")
+        assert snapshot.history_seconds == 180
         assert snapshot.long_liquidations_5m_usd == Decimal("85000")
         assert snapshot.short_liquidations_5m_usd == Decimal("255000")
         assert snapshot.liquidation_imbalance_5m == Decimal("0.5")
