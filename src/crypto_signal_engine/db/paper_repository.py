@@ -56,9 +56,20 @@ class PaperPositionRepository:
             await session.execute(statement)
             await session.commit()
 
-    async def load_all(self) -> list[PaperPosition]:
+    async def load_all(
+        self,
+        *,
+        model_names: tuple[str, ...] | None = None,
+    ) -> list[PaperPosition]:
         async with self._session_factory() as session:
-            query = select(PaperPositionRow).order_by(
+            query = select(PaperPositionRow)
+
+            if model_names:
+                query = query.where(
+                    PaperPositionRow.model_name.in_(model_names)
+                )
+
+            query = query.order_by(
                 PaperPositionRow.opened_at.asc()
             )
             rows = list((await session.scalars(query)).all())
