@@ -3,7 +3,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from crypto_signal_engine.calibration import ReplayCalibrator
+from crypto_signal_engine.calibration import ReplayCalibrator, save_calibration
 from crypto_signal_engine.collectors.binance import (
     BinanceSpotHistoricalTradeClient,
 )
@@ -37,6 +37,11 @@ def parse_args() -> argparse.Namespace:
         help="Minimum evaluated samples required before exposing confidence.",
     )
     parser.add_argument(
+        "--write-calibration",
+        default="",
+        help="Write calibration buckets to this JSON path.",
+    )
+    parser.add_argument(
         "--compare-price-sources",
         action="store_true",
         help="Run both sampled and Binance aggTrade replay and print deltas.",
@@ -63,6 +68,7 @@ async def run(
     exact_binance_trades: bool = False,
     compare_price_sources: bool = False,
     minimum_calibration_samples: int = 30,
+    write_calibration_path: str = "",
 ) -> None:
     settings = get_settings()
     engine = create_database_engine(settings.database_url)
@@ -144,6 +150,14 @@ async def run(
         calibration = ReplayCalibrator(
             minimum_samples=minimum_calibration_samples
         ).build(report)
+
+        if write_calibration_path:
+            save_calibration(write_calibration_path, calibration)
+            print(
+                "CALIBRATION_ARTIFACT "
+                f"path={write_calibration_path} "
+                f"buckets={len(calibration)}"
+            )
         paper_broker = simulate_replay_broker(
             result,
             risk_config=PaperRiskConfig(
@@ -369,6 +383,7 @@ def main() -> None:
             exact_binance_trades=args.exact_binance_trades,
             compare_price_sources=args.compare_price_sources,
             minimum_calibration_samples=args.min_calibration_samples,
+            write_calibration_path=args.write_calibration,
         )
     )
 
