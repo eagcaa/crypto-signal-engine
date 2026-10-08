@@ -203,6 +203,8 @@ async def run(
                 max_open_positions=settings.paper_max_open_positions,
                 max_drawdown_pct=settings.paper_max_drawdown_pct,
                 max_consecutive_losses=settings.paper_max_consecutive_losses,
+                fee_pct_per_side=settings.paper_fee_pct_per_side,
+                slippage_pct_per_side=settings.paper_slippage_pct_per_side,
             ),
         )
 
