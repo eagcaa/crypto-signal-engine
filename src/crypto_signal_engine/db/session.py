@@ -84,6 +84,24 @@ async def initialize_database(engine: AsyncEngine) -> None:
         await connection.execute(
             text(
                 """
+                ALTER TABLE prediction_evaluations
+                ADD COLUMN IF NOT EXISTS evaluation_source VARCHAR(32)
+                NOT NULL DEFAULT 'unknown'
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE prediction_evaluations
+                ADD COLUMN IF NOT EXISTS evaluation_version VARCHAR(32)
+                NOT NULL DEFAULT 'first_touch_v1'
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
                 ALTER TABLE predictions
                 ADD COLUMN IF NOT EXISTS feature_contributions_json VARCHAR(4096)
                 """
