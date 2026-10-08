@@ -56,3 +56,7 @@ class PaperRiskManager:
             raise ValueError("max_open_positions must be positive")
         if not Decimal("0") < config.stop_loss_pct <= Decimal("100"):
             raise ValueError("stop_loss_pct must be in (0, 100]")
+        if not Decimal("0") < config.max_drawdown_pct <= Decimal("100"):
+            raise ValueError("max_drawdown_pct must be in (0, 100]")
+        if config.max_consecutive_losses <= 0:
+            raise ValueError("max_consecutive_losses must be positive")
