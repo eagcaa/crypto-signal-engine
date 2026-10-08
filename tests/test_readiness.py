@@ -198,9 +198,9 @@ def test_readiness_rejects_missing_or_stale_calibration_artifact() -> None:
         ),
     )
 
-    assert "calibration_artifact_missing" in missing.reasons
+    assert "calibration_artifact_invalid:missing" in missing.reasons
     assert any(
-        reason.startswith("calibration_artifact_stale:")
+        reason.startswith("calibration_artifact_invalid:stale:")
         for reason in stale.reasons
     )
 
@@ -229,6 +229,6 @@ def test_readiness_rejects_non_exact_calibration_source() -> None:
 
     assert result.ready is False
     assert (
-        "calibration_price_source_invalid:persisted_market_snapshots"
+        "calibration_artifact_invalid:price_source:persisted_market_snapshots"
         in result.reasons
     )
