@@ -35,7 +35,11 @@ from crypto_signal_engine.features.technical import build_technical_features
 from crypto_signal_engine.integrations import CoinGlassClient
 from crypto_signal_engine.integrations.coinglass import CoinGlassApiError
 from crypto_signal_engine.market import MarketSnapshotAggregator
-from crypto_signal_engine.paper import PaperBroker, PaperRiskConfig
+from crypto_signal_engine.paper import (
+    PaperBroker,
+    PaperRiskConfig,
+    build_paper_performance_report,
+)
 from crypto_signal_engine.predictions import (
     CompositePredictionEngine,
     LiveFirstTouchEvaluator,
@@ -415,6 +419,19 @@ async def persist_snapshots(
                     if paper_snapshot.win_rate is not None
                     else "n/a"
                 )
+                performance = build_paper_performance_report(
+                    list(paper_broker.positions)
+                ).overall
+                profit_factor = (
+                    "n/a"
+                    if performance.profit_factor is None
+                    else f"{performance.profit_factor:.3f}"
+                )
+                expectancy = (
+                    "n/a"
+                    if performance.expectancy is None
+                    else f"{performance.expectancy:+.4f}"
+                )
                 print(
                     "PAPER_ACCOUNT "
                     f"equity={paper_snapshot.equity:.2f} "
@@ -422,6 +439,8 @@ async def persist_snapshots(
                     f"wins={paper_snapshot.wins} "
                     f"losses={paper_snapshot.losses} "
                     f"win_rate={win_rate} "
+                    f"profit_factor={profit_factor} "
+                    f"expectancy={expectancy} "
                     f"drawdown={paper_snapshot.drawdown_pct:.4f}% "
                     f"max_drawdown={paper_snapshot.max_drawdown_pct:.4f}% "
                     f"consecutive_losses={paper_snapshot.consecutive_losses} "
