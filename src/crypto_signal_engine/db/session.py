@@ -81,6 +81,15 @@ async def initialize_database(engine: AsyncEngine) -> None:
                 """
             )
         )
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE research_feature_snapshots
+                ADD COLUMN IF NOT EXISTS history_seconds INTEGER
+                NOT NULL DEFAULT 0
+                """
+            )
+        )
 
         await connection.execute(
             text(
