@@ -21,6 +21,13 @@ class PredictionEvaluationStatus(StrEnum):
     EXPIRED_WITHOUT_DATA = "expired_without_data"
 
 
+class PredictionEvaluationOutcome(StrEnum):
+    TAKE_PROFIT = "take_profit"
+    STOP_LOSS = "stop_loss"
+    EXPIRED_NO_TOUCH = "expired_no_touch"
+    EXPIRED_WITHOUT_DATA = "expired_without_data"
+
+
 @dataclass(frozen=True, slots=True)
 class Prediction:
     id: UUID
@@ -53,6 +60,8 @@ class PredictionDecision:
 class PredictionEvaluation:
     prediction_id: UUID
     status: PredictionEvaluationStatus
+    outcome: PredictionEvaluationOutcome
+    label: int | None
     evaluated_at: datetime
     exit_price: Decimal | None
     return_pct: Decimal | None
