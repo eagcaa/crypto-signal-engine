@@ -11,6 +11,7 @@ from crypto_signal_engine.replay.report import ReplayReport, ScoreBinStats
 class CalibrationBucket:
     horizon_seconds: int
     direction: str
+    model_name: str
     lower_bound: Decimal
     upper_bound: Decimal | None
     samples: int
@@ -56,6 +57,8 @@ class ReplayCalibrator:
                 continue
             if bucket.direction != prediction.direction.value:
                 continue
+            if bucket.model_name != prediction.model_name:
+                continue
             if absolute_score < bucket.lower_bound:
                 continue
             if (
@@ -84,6 +87,7 @@ class ReplayCalibrator:
         return CalibrationBucket(
             horizon_seconds=item.horizon_seconds,
             direction=item.direction,
+            model_name=item.model_name,
             lower_bound=item.lower_bound,
             upper_bound=item.upper_bound,
             samples=evaluated,
@@ -153,6 +157,7 @@ def load_calibration(
             CalibrationBucket(
                 horizon_seconds=int(item["horizon_seconds"]),
                 direction=str(item["direction"]),
+                model_name=str(item["model_name"]),
                 lower_bound=Decimal(str(item["lower_bound"])),
                 upper_bound=(
                     Decimal(str(upper_raw))
