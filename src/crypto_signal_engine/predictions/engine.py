@@ -292,7 +292,11 @@ class CompositePredictionEngine:
         market: str,
         profile: _HorizonProfile,
     ) -> tuple[Decimal, Decimal]:
-        prefix = "spot_cvd" if market == "spot" else "futures_cvd"
+        prefix = (
+            "spot_cvd_ratio"
+            if market == "spot"
+            else "futures_cvd_ratio"
+        )
         short_value = getattr(
             features,
             f"{prefix}_{profile.short_flow_window}",
@@ -328,8 +332,8 @@ class CompositePredictionEngine:
             return None
 
         direction_score = (
-            self._sign(short_window) * Decimal("0.60")
-            + self._sign(long_window) * Decimal("0.40")
+            self._clamp(short_window) * Decimal("0.60")
+            + self._clamp(long_window) * Decimal("0.40")
         )
 
         coverage = min(
@@ -348,13 +352,13 @@ class CompositePredictionEngine:
                 features.binance_oi_change_5m_pct,
                 features.bybit_oi_change_5m_pct,
             )
-            futures_flow = features.futures_cvd_5m
+            futures_flow = features.futures_cvd_ratio_5m
         else:
             values = (
                 features.binance_oi_change_15m_pct,
                 features.bybit_oi_change_15m_pct,
             )
-            futures_flow = features.futures_cvd_15m
+            futures_flow = features.futures_cvd_ratio_15m
 
         available_values = [value for value in values if value is not None]
         average_change = self._average(available_values)
