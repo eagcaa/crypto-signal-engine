@@ -42,6 +42,7 @@ class BinanceFuturesTradeCollector:
         *,
         base_url: str = BINANCE_FUTURES_STREAM_URL,
         reconnect_delay_seconds: float = 2.0,
+        receive_timeout_seconds: float = 45.0,
     ) -> None:
         if not symbols:
             raise ValueError("At least one symbol is required")
@@ -49,6 +50,7 @@ class BinanceFuturesTradeCollector:
         self._symbols = tuple(symbol.upper() for symbol in symbols)
         self._base_url = base_url.rstrip("/")
         self._reconnect_delay_seconds = reconnect_delay_seconds
+        self._receive_timeout_seconds = receive_timeout_seconds
 
     @property
     def stream_names(self) -> tuple[str, ...]:
@@ -74,14 +76,37 @@ class BinanceFuturesTradeCollector:
 
         async with websockets.connect(
             url,
-            ping_interval=20,
-            ping_timeout=20,
+            ping_interval=None,
             close_timeout=10,
             max_queue=4096,
         ) as websocket:
-            async for message in websocket:
+            logger.info("Binance futures trade stream connected: %s", url)
+            first_trade = True
+
+            while True:
+                try:
+                    message = await asyncio.wait_for(
+                        websocket.recv(),
+                        timeout=self._receive_timeout_seconds,
+                    )
+                except TimeoutError as exc:
+                    raise TimeoutError(
+                        "Binance futures trade stream received no messages for "
+                        f"{self._receive_timeout_seconds:.0f}s"
+                    ) from exc
+
                 payload = self._decode_message(message)
-                yield parse_futures_agg_trade(payload)
+                trade = parse_futures_agg_trade(payload)
+
+                if first_trade:
+                    logger.info(
+                        "Binance futures first trade received: %s price=%s",
+                        trade.symbol,
+                        trade.price,
+                    )
+                    first_trade = False
+
+                yield trade
 
     def _build_url(self) -> str:
         if len(self.stream_names) == 1:
