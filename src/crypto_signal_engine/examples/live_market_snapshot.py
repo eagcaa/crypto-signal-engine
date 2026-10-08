@@ -21,21 +21,28 @@ from crypto_signal_engine.db import (
     DerivativesRepository,
     MarketSnapshotRepository,
     PredictionRepository,
+    ResearchFeatureRepository,
     create_database_engine,
     create_session_factory,
     initialize_database,
 )
 from crypto_signal_engine.domain.models import Exchange
 from crypto_signal_engine.features.orderbook import calculate_order_book_metrics
+from crypto_signal_engine.features.research import ResearchFeatureAggregator
 from crypto_signal_engine.integrations import CoinGlassClient
 from crypto_signal_engine.integrations.coinglass import CoinGlassApiError
 from crypto_signal_engine.market import MarketSnapshotAggregator
 from crypto_signal_engine.predictions import BaselinePredictionEngine
 
 
-async def consume_trades(collector, aggregator: MarketSnapshotAggregator) -> None:
+async def consume_trades(
+    collector,
+    aggregator: MarketSnapshotAggregator,
+    research_aggregator: ResearchFeatureAggregator,
+) -> None:
     async for trade in collector.trades():
         await aggregator.update_trade(trade)
+        await research_aggregator.update_trade(trade)
 
 
 async def consume_order_book(
@@ -59,6 +66,7 @@ async def consume_order_book(
 async def poll_derivatives(
     client,
     repository: DerivativesRepository,
+    research_aggregator: ResearchFeatureAggregator,
     *,
     symbol: str,
     interval_seconds: float = 30.0,
@@ -67,6 +75,7 @@ async def poll_derivatives(
         try:
             snapshot = await client.fetch_snapshot(symbol)
             await repository.add_snapshot(snapshot)
+            await research_aggregator.update_derivatives(snapshot)
 
             print(
                 "DERIVATIVES "
@@ -91,9 +100,11 @@ async def poll_derivatives(
 async def consume_liquidations(
     collector,
     repository: DerivativesRepository,
+    research_aggregator: ResearchFeatureAggregator,
 ) -> None:
     async for event in collector.events():
         await repository.add_liquidation(event)
+        await research_aggregator.update_liquidation(event)
         print(
             "LIQUIDATION "
             f"exchange={event.exchange.value} "
@@ -138,6 +149,8 @@ async def persist_snapshots(
     aggregator: MarketSnapshotAggregator,
     snapshot_repository: MarketSnapshotRepository,
     prediction_repository: PredictionRepository,
+    research_repository: ResearchFeatureRepository,
+    research_aggregator: ResearchFeatureAggregator,
     prediction_engine: BaselinePredictionEngine,
     *,
     interval_seconds: float = 5.0,
@@ -151,6 +164,22 @@ async def persist_snapshots(
         snapshot = await aggregator.snapshot()
 
         await snapshot_repository.add(snapshot)
+
+        research_snapshot = await research_aggregator.snapshot(snapshot)
+        await research_repository.add(research_snapshot)
+
+        print(
+            "FEATURES "
+            f"spot_cvd_1m={research_snapshot.spot_cvd_1m} "
+            f"spot_cvd_5m={research_snapshot.spot_cvd_5m} "
+            f"futures_cvd_1m={research_snapshot.futures_cvd_1m} "
+            f"futures_cvd_5m={research_snapshot.futures_cvd_5m} "
+            f"trade_sources={research_snapshot.spot_trade_sources}/"
+            f"{research_snapshot.futures_trade_sources} "
+            f"liq_5m={research_snapshot.liquidation_imbalance_5m} "
+            f"binance_oi_5m={research_snapshot.binance_oi_change_5m_pct} "
+            f"bybit_oi_5m={research_snapshot.bybit_oi_change_5m_pct}"
+        )
 
         evaluations = await prediction_repository.evaluate_due(snapshot.timestamp)
         for evaluation in evaluations:
@@ -236,24 +265,42 @@ async def main() -> None:
     prediction_repository = PredictionRepository(session_factory)
     coinglass_repository = CoinGlassSnapshotRepository(session_factory)
     derivatives_repository = DerivativesRepository(session_factory)
+    research_repository = ResearchFeatureRepository(session_factory)
     prediction_engine = BaselinePredictionEngine()
 
     symbols = ["BTCUSDT"]
     aggregator = MarketSnapshotAggregator("BTCUSDT")
+    research_aggregator = ResearchFeatureAggregator("BTCUSDT")
 
     try:
         async with asyncio.TaskGroup() as task_group:
             task_group.create_task(
-                consume_trades(BinanceSpotTradeCollector(symbols), aggregator)
+                consume_trades(
+                    BinanceSpotTradeCollector(symbols),
+                    aggregator,
+                    research_aggregator,
+                )
             )
             task_group.create_task(
-                consume_trades(BinanceFuturesTradeCollector(symbols), aggregator)
+                consume_trades(
+                    BinanceFuturesTradeCollector(symbols),
+                    aggregator,
+                    research_aggregator,
+                )
             )
             task_group.create_task(
-                consume_trades(BybitSpotTradeCollector(symbols), aggregator)
+                consume_trades(
+                    BybitSpotTradeCollector(symbols),
+                    aggregator,
+                    research_aggregator,
+                )
             )
             task_group.create_task(
-                consume_trades(BybitFuturesTradeCollector(symbols), aggregator)
+                consume_trades(
+                    BybitFuturesTradeCollector(symbols),
+                    aggregator,
+                    research_aggregator,
+                )
             )
             task_group.create_task(
                 consume_order_book(
@@ -281,6 +328,8 @@ async def main() -> None:
                     aggregator,
                     snapshot_repository,
                     prediction_repository,
+                    research_repository,
+                    research_aggregator,
                     prediction_engine,
                     interval_seconds=5.0,
                     prediction_interval_seconds=60,
@@ -291,6 +340,7 @@ async def main() -> None:
                 poll_derivatives(
                     BinanceDerivativesClient(),
                     derivatives_repository,
+                    research_aggregator,
                     symbol="BTCUSDT",
                     interval_seconds=30.0,
                 )
@@ -299,6 +349,7 @@ async def main() -> None:
                 poll_derivatives(
                     BybitDerivativesClient(),
                     derivatives_repository,
+                    research_aggregator,
                     symbol="BTCUSDT",
                     interval_seconds=30.0,
                 )
@@ -307,12 +358,14 @@ async def main() -> None:
                 consume_liquidations(
                     BinanceLiquidationCollector(symbols),
                     derivatives_repository,
+                    research_aggregator,
                 )
             )
             task_group.create_task(
                 consume_liquidations(
                     BybitLiquidationCollector(symbols),
                     derivatives_repository,
+                    research_aggregator,
                 )
             )
 
