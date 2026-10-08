@@ -422,3 +422,57 @@ def test_v3_uses_matching_horizon_trend() -> None:
 
     assert five.feature_contributions["trend"] > 0
     assert fifteen.feature_contributions["trend"] < 0
+
+
+def test_v3_treats_open_interest_contraction_as_neutral() -> None:
+    features = make_features(
+        binance_book="0",
+        bybit_book="0",
+        spot_cvd_1m="0",
+        spot_cvd_5m="0",
+        futures_cvd_1m="-5",
+        futures_cvd_5m="-5",
+        binance_oi_5m="-0.6",
+        bybit_oi_5m="-0.4",
+        funding_binance="0",
+        funding_bybit="0",
+        binance_long_short="1",
+        bybit_long_short="1",
+        top_trader="1",
+        taker_ratio="1",
+        liq_imbalance="0",
+    )
+
+    decision = CompositePredictionEngine().decide(
+        features,
+        horizon_seconds=300,
+    )
+
+    assert decision.feature_contributions["open_interest"] == Decimal("0")
+
+
+def test_v3_open_interest_expansion_confirms_futures_direction() -> None:
+    features = make_features(
+        binance_book="0",
+        bybit_book="0",
+        spot_cvd_1m="0",
+        spot_cvd_5m="0",
+        futures_cvd_1m="-5",
+        futures_cvd_5m="-5",
+        binance_oi_5m="0.6",
+        bybit_oi_5m="0.4",
+        funding_binance="0",
+        funding_bybit="0",
+        binance_long_short="1",
+        bybit_long_short="1",
+        top_trader="1",
+        taker_ratio="1",
+        liq_imbalance="0",
+    )
+
+    decision = CompositePredictionEngine().decide(
+        features,
+        horizon_seconds=300,
+    )
+
+    assert decision.feature_contributions["open_interest"] < Decimal("0")
