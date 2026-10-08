@@ -9,7 +9,11 @@ from crypto_signal_engine.db import (
     initialize_database,
 )
 from crypto_signal_engine.db.replay_repository import ReplayDataRepository
-from crypto_signal_engine.paper import PaperRiskConfig, simulate_replay
+from crypto_signal_engine.paper import (
+    PaperRiskConfig,
+    build_paper_performance_report,
+    simulate_replay_broker,
+)
 from crypto_signal_engine.replay import ReplayRunner
 from crypto_signal_engine.replay.report import build_replay_report
 from crypto_signal_engine.config.settings import get_settings
@@ -70,7 +74,7 @@ async def run(symbol: str, hours: float) -> None:
 
         result = ReplayRunner().run(features, prices)
         report = build_replay_report(result, features)
-        paper = simulate_replay(
+        paper_broker = simulate_replay_broker(
             result,
             risk_config=PaperRiskConfig(
                 starting_equity=settings.paper_starting_equity,
@@ -137,6 +141,11 @@ async def run(symbol: str, hours: float) -> None:
                 f"TP_rate={format_rate(item.stats.tp_rate)}"
             )
 
+        paper = paper_broker.snapshot()
+        paper_report = build_paper_performance_report(
+            list(paper_broker.positions)
+        )
+
         print()
         print("PAPER ACCOUNT")
         print(
@@ -154,6 +163,57 @@ async def run(symbol: str, hours: float) -> None:
             f"halt_reason={paper.halt_reason} "
             f"open={paper.open_positions}"
         )
+
+        performance = paper_report.overall
+        profit_factor = (
+            "n/a"
+            if performance.profit_factor is None
+            else f"{performance.profit_factor:.3f}"
+        )
+        expectancy = (
+            "n/a"
+            if performance.expectancy is None
+            else f"{performance.expectancy:+.4f}"
+        )
+        avg_return = format_rate(performance.average_return_pct)
+
+        print(
+            "PAPER PERFORMANCE "
+            f"trades={performance.trades} "
+            f"net_pnl={performance.net_pnl:+.2f} "
+            f"gross_profit={performance.gross_profit:+.2f} "
+            f"gross_loss={performance.gross_loss:+.2f} "
+            f"profit_factor={profit_factor} "
+            f"expectancy={expectancy} "
+            f"avg_return={avg_return}"
+        )
+
+        print()
+        print("PAPER BY HORIZON/DIRECTION")
+        for group in paper_report.by_horizon_direction:
+            stats = group.stats
+            group_profit_factor = (
+                "n/a"
+                if stats.profit_factor is None
+                else f"{stats.profit_factor:.3f}"
+            )
+            group_expectancy = (
+                "n/a"
+                if stats.expectancy is None
+                else f"{stats.expectancy:+.4f}"
+            )
+            print(
+                f"{group.horizon_seconds // 60}m "
+                f"{group.direction.upper()} "
+                f"trades={stats.trades} "
+                f"wins={stats.wins} "
+                f"losses={stats.losses} "
+                f"win_rate={format_rate(stats.win_rate)} "
+                f"net_pnl={stats.net_pnl:+.2f} "
+                f"profit_factor={group_profit_factor} "
+                f"expectancy={group_expectancy} "
+                f"avg_return={format_rate(stats.average_return_pct)}"
+            )
 
         print()
         print(
