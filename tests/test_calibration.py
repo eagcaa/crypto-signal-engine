@@ -2,7 +2,11 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from crypto_signal_engine.calibration import ReplayCalibrator
+from crypto_signal_engine.calibration import (
+    ReplayCalibrator,
+    load_calibration,
+    save_calibration,
+)
 from crypto_signal_engine.predictions import Prediction, PredictionDirection
 from crypto_signal_engine.replay.report import ReplayReport, ReplayStats, ScoreBinStats
 
@@ -111,3 +115,21 @@ def test_calibration_does_not_cross_direction() -> None:
         short_prediction,
         buckets,
     ) is None
+
+
+
+def test_calibration_round_trip(tmp_path) -> None:
+    calibrator = ReplayCalibrator(minimum_samples=1)
+    buckets = calibrator.build(
+        make_report(evaluated=10, take_profit=7)
+    )
+    target = tmp_path / "calibration.json"
+
+    save_calibration(target, buckets)
+    restored = load_calibration(target)
+
+    assert restored == buckets
+
+
+def test_load_calibration_returns_empty_when_missing(tmp_path) -> None:
+    assert load_calibration(tmp_path / "missing.json") == ()
