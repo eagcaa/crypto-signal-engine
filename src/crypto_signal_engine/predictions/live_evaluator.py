@@ -186,4 +186,6 @@ class LiveFirstTouchEvaluator:
             exit_price=price,
             return_pct=directional_return,
             success=success,
+            evaluation_source="binance_spot_tick",
+            evaluation_version="first_touch_v1",
         )
