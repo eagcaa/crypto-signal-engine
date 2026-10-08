@@ -104,6 +104,16 @@ class PredictionEvaluationRow(Base):
     exit_price: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
     return_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
     success: Mapped[bool | None] = mapped_column(Boolean)
+    evaluation_source: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="unknown",
+    )
+    evaluation_version: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="first_touch_v1",
+    )
 
 
 class CoinGlassSnapshotRow(Base):
