@@ -1,0 +1,106 @@
+from datetime import UTC, datetime
+from decimal import Decimal
+
+import aiohttp
+
+from crypto_signal_engine.replay.models import ReplayPricePoint
+
+
+class BinanceSpotHistoricalTradeClient:
+    """Fetch Binance spot aggregate trades for exact first-touch replay."""
+
+    BASE_URL = "https://api.binance.com"
+
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float = 20.0,
+        request_limit: int = 1000,
+    ) -> None:
+        if request_limit <= 0 or request_limit > 1000:
+            raise ValueError("request_limit must be in [1, 1000]")
+        self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+        self._request_limit = request_limit
+
+    async def fetch_price_points(
+        self,
+        symbol: str,
+        *,
+        start: datetime,
+        end: datetime,
+    ) -> list[ReplayPricePoint]:
+        if start.tzinfo is None or end.tzinfo is None:
+            raise ValueError("start and end must be timezone-aware")
+        if end <= start:
+            raise ValueError("end must be after start")
+
+        symbol = symbol.upper()
+        start_ms = int(start.astimezone(UTC).timestamp() * 1000)
+        end_ms = int(end.astimezone(UTC).timestamp() * 1000)
+        points: list[ReplayPricePoint] = []
+        from_id: int | None = None
+
+        async with aiohttp.ClientSession(timeout=self._timeout) as session:
+            while True:
+                params = {
+                    "symbol": symbol,
+                    "limit": str(self._request_limit),
+                }
+                if from_id is None:
+                    params["startTime"] = str(start_ms)
+                    params["endTime"] = str(end_ms)
+                else:
+                    params["fromId"] = str(from_id)
+
+                async with session.get(
+                    f"{self.BASE_URL}/api/v3/aggTrades",
+                    params=params,
+                ) as response:
+                    payload = await response.json(content_type=None)
+                    if response.status >= 400:
+                        raise RuntimeError(
+                            "Binance spot aggTrades HTTP "
+                            f"{response.status}: {payload}"
+                        )
+
+                if not isinstance(payload, list):
+                    raise RuntimeError("Unexpected Binance aggTrades response")
+                if not payload:
+                    break
+
+                last_id: int | None = None
+                reached_end = False
+
+                for item in payload:
+                    if not isinstance(item, dict):
+                        continue
+
+                    event_ms = int(item["T"])
+                    aggregate_id = int(item["a"])
+                    last_id = aggregate_id
+
+                    if event_ms < start_ms:
+                        continue
+                    if event_ms > end_ms:
+                        reached_end = True
+                        break
+
+                    points.append(
+                        ReplayPricePoint(
+                            symbol=symbol,
+                            timestamp=datetime.fromtimestamp(
+                                event_ms / 1000,
+                                tz=UTC,
+                            ),
+                            price=Decimal(str(item["p"])),
+                        )
+                    )
+
+                if reached_end or last_id is None:
+                    break
+                if len(payload) < self._request_limit:
+                    break
+
+                from_id = last_id + 1
+
+        return points
