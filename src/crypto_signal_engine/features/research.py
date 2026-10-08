@@ -25,6 +25,12 @@ class ResearchFeatureSnapshot:
     futures_cvd_1m: Decimal
     futures_cvd_5m: Decimal
     futures_cvd_15m: Decimal
+    spot_cvd_ratio_1m: Decimal
+    spot_cvd_ratio_5m: Decimal
+    spot_cvd_ratio_15m: Decimal
+    futures_cvd_ratio_1m: Decimal
+    futures_cvd_ratio_5m: Decimal
+    futures_cvd_ratio_15m: Decimal
     spot_trade_sources: int
     futures_trade_sources: int
     history_seconds: int
@@ -131,6 +137,24 @@ class ResearchFeatureAggregator:
                 futures_cvd_1m=self._cvd_window(now, MarketType.FUTURES, timedelta(minutes=1)),
                 futures_cvd_5m=self._cvd_window(now, MarketType.FUTURES, timedelta(minutes=5)),
                 futures_cvd_15m=self._cvd_window(now, MarketType.FUTURES, timedelta(minutes=15)),
+                spot_cvd_ratio_1m=self._cvd_ratio_window(
+                    now, MarketType.SPOT, timedelta(minutes=1)
+                ),
+                spot_cvd_ratio_5m=self._cvd_ratio_window(
+                    now, MarketType.SPOT, timedelta(minutes=5)
+                ),
+                spot_cvd_ratio_15m=self._cvd_ratio_window(
+                    now, MarketType.SPOT, timedelta(minutes=15)
+                ),
+                futures_cvd_ratio_1m=self._cvd_ratio_window(
+                    now, MarketType.FUTURES, timedelta(minutes=1)
+                ),
+                futures_cvd_ratio_5m=self._cvd_ratio_window(
+                    now, MarketType.FUTURES, timedelta(minutes=5)
+                ),
+                futures_cvd_ratio_15m=self._cvd_ratio_window(
+                    now, MarketType.FUTURES, timedelta(minutes=15)
+                ),
                 spot_trade_sources=self._source_count(MarketType.SPOT),
                 futures_trade_sources=self._source_count(MarketType.FUTURES),
                 history_seconds=self._history_seconds(now),
@@ -183,6 +207,30 @@ class ResearchFeatureAggregator:
                 Decimal("0"),
             )
         return total
+
+    def _cvd_ratio_window(
+        self,
+        now: datetime,
+        market_type: MarketType,
+        window: timedelta,
+    ) -> Decimal:
+        cutoff = now - window
+        signed_total = Decimal("0")
+        absolute_total = Decimal("0")
+
+        for (_, current_market_type), queue in self._trades.items():
+            if current_market_type != market_type:
+                continue
+
+            for item in queue:
+                if cutoff <= item.event_time <= now:
+                    signed_total += item.value
+                    absolute_total += abs(item.value)
+
+        if absolute_total == 0:
+            return Decimal("0")
+
+        return signed_total / absolute_total
 
     def _source_count(self, market_type: MarketType) -> int:
         return sum(
