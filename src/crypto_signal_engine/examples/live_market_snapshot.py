@@ -1,5 +1,5 @@
 import asyncio
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from crypto_signal_engine.collectors.binance import (
     BinanceDerivativesClient,
@@ -376,6 +376,17 @@ async def main() -> None:
     live_evaluator = LiveFirstTouchEvaluator()
 
     symbols = ["BTCUSDT"]
+    restored_predictions = await prediction_repository.load_open_predictions(
+        now=datetime.now(UTC),
+        symbols=symbols,
+    )
+    restored_count = await live_evaluator.register_many(restored_predictions)
+    if restored_count:
+        print(
+            "RECOVERY "
+            f"restored_open_predictions={restored_count} "
+            f"symbols={','.join(symbols)}"
+        )
     aggregator = MarketSnapshotAggregator("BTCUSDT")
     research_aggregator = ResearchFeatureAggregator("BTCUSDT")
 
