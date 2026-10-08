@@ -154,7 +154,10 @@ async def run(
         if not features:
             print("No research feature snapshots found for the selected period.")
             return
-        if not prices and (exact_binance_trades or compare_price_sources):
+        if (
+            (exact_binance_trades or compare_price_sources)
+            and not exact_prices
+        ):
             print(
                 "No exact Binance trade points found for prediction windows."
             )
