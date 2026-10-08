@@ -3,6 +3,9 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from crypto_signal_engine.collectors.binance import (
+    BinanceSpotHistoricalTradeClient,
+)
 from crypto_signal_engine.db import (
     create_database_engine,
     create_session_factory,
@@ -25,6 +28,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--symbol", default="BTCUSDT")
     parser.add_argument("--hours", type=float, default=6.0)
+    parser.add_argument(
+        "--exact-binance-trades",
+        action="store_true",
+        help=(
+            "Use Binance spot aggTrades for first-touch evaluation instead "
+            "of sampled persisted market snapshots."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -32,7 +43,12 @@ def format_rate(value: Decimal | None) -> str:
     return "n/a" if value is None else f"{value:.2f}%"
 
 
-async def run(symbol: str, hours: float) -> None:
+async def run(
+    symbol: str,
+    hours: float,
+    *,
+    exact_binance_trades: bool = False,
+) -> None:
     settings = get_settings()
     engine = create_database_engine(settings.database_url)
     await initialize_database(engine)
@@ -44,25 +60,35 @@ async def run(symbol: str, hours: float) -> None:
         end = datetime.now(UTC)
         start = end - timedelta(hours=hours)
 
-        features, prices = await asyncio.gather(
-            repository.load_features(
-                symbol=symbol,
-                start=start,
-                end=end,
-            ),
-            repository.load_price_points(
-                symbol=symbol,
-                start=start,
-                end=end,
-            ),
+        features = await repository.load_features(
+            symbol=symbol,
+            start=start,
+            end=end,
         )
+
+        if exact_binance_trades:
+            prices = await BinanceSpotHistoricalTradeClient().fetch_price_points(
+                symbol,
+                start=start,
+                end=end,
+            )
+            price_source = "binance_spot_aggTrades"
+        else:
+            prices = await repository.load_price_points(
+                symbol=symbol,
+                start=start,
+                end=end,
+            )
+            price_source = "persisted_market_snapshots"
 
         print(
             f"REPLAY symbol={symbol.upper()} "
             f"start={start.isoformat()} end={end.isoformat()}"
         )
         print(
-            f"loaded features={len(features)} price_points={len(prices)}"
+            f"loaded features={len(features)} "
+            f"price_points={len(prices)} "
+            f"price_source={price_source}"
         )
 
         if not features:
@@ -87,8 +113,17 @@ async def run(symbol: str, hours: float) -> None:
         )
 
         print()
-        print("NOTE: persisted market snapshots are sampled, so first-touch")
-        print("results are approximate until trade-level historical replay is added.")
+        if exact_binance_trades:
+            print(
+                "NOTE: first-touch evaluation uses historical Binance spot "
+                "aggregate trades."
+            )
+        else:
+            print("NOTE: persisted market snapshots are sampled, so first-touch")
+            print(
+                "results are approximate. Use --exact-binance-trades "
+                "for trade-level evaluation."
+            )
         print()
 
         for horizon, stats in report.by_horizon.items():
@@ -226,7 +261,13 @@ async def run(symbol: str, hours: float) -> None:
 
 def main() -> None:
     args = parse_args()
-    asyncio.run(run(args.symbol, args.hours))
+    asyncio.run(
+        run(
+            args.symbol,
+            args.hours,
+            exact_binance_trades=args.exact_binance_trades,
+        )
+    )
 
 
 if __name__ == "__main__":
