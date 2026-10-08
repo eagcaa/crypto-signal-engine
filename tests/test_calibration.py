@@ -21,6 +21,7 @@ def make_report(*, evaluated: int, take_profit: int) -> ReplayReport:
         by_score_bin=(
             ScoreBinStats(
                 horizon_seconds=300,
+                direction="long",
                 lower_bound=Decimal("0.20"),
                 upper_bound=Decimal("0.25"),
                 stats=stats,
@@ -82,5 +83,31 @@ def test_calibration_does_not_cross_horizon_or_score_bucket() -> None:
 
     assert calibrator.confidence_for_prediction(
         make_prediction("0.31"),
+        buckets,
+    ) is None
+
+
+
+def test_calibration_does_not_cross_direction() -> None:
+    calibrator = ReplayCalibrator(minimum_samples=1)
+    buckets = calibrator.build(
+        make_report(evaluated=10, take_profit=6)
+    )
+    created_at = datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
+    short_prediction = Prediction(
+        id=uuid4(),
+        symbol="BTCUSDT",
+        created_at=created_at,
+        expires_at=created_at + timedelta(minutes=5),
+        horizon_seconds=300,
+        direction=PredictionDirection.SHORT,
+        entry_price=Decimal("100"),
+        raw_score=Decimal("-0.22"),
+        data_quality=Decimal("0.83"),
+        model_name="composite_rules_v3_5m",
+    )
+
+    assert calibrator.confidence_for_prediction(
+        short_prediction,
         buckets,
     ) is None
