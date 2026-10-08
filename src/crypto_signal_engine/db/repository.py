@@ -1,7 +1,19 @@
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from crypto_signal_engine.db.models import MarketSnapshotRow
 from crypto_signal_engine.market import MarketSnapshot
+
+
+@dataclass(frozen=True, slots=True)
+class LatestMarketHealth:
+    timestamp: datetime
+    data_quality: Decimal
+    price: Decimal | None
 
 
 class MarketSnapshotRepository:
@@ -17,6 +29,28 @@ class MarketSnapshotRepository:
         async with self._session_factory() as session:
             session.add(row)
             await session.commit()
+
+    async def latest_health(
+        self,
+        symbol: str,
+    ) -> LatestMarketHealth | None:
+        async with self._session_factory() as session:
+            query = (
+                select(MarketSnapshotRow)
+                .where(MarketSnapshotRow.symbol == symbol.upper())
+                .order_by(MarketSnapshotRow.timestamp.desc())
+                .limit(1)
+            )
+            row = (await session.scalars(query)).first()
+
+            if row is None:
+                return None
+
+            return LatestMarketHealth(
+                timestamp=row.timestamp,
+                data_quality=row.data_quality,
+                price=row.price,
+            )
 
     @staticmethod
     def to_row(snapshot: MarketSnapshot) -> MarketSnapshotRow:
