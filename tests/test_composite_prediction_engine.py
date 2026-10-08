@@ -115,7 +115,7 @@ def test_v2_generates_long_when_multiple_features_align() -> None:
 
     assert decision.direction == PredictionDecisionDirection.LONG
     assert decision.prediction is not None
-    assert decision.prediction.model_name == "composite_rules_v2_5m"
+    assert decision.prediction.model_name == "composite_rules_v3_5m"
     assert decision.raw_score > Decimal("0.20")
     assert "order_book" in decision.feature_contributions
     assert "open_interest" in decision.feature_contributions
@@ -259,7 +259,7 @@ def test_v2_uses_different_windows_for_5m_and_15m() -> None:
     # 15m profile must react to its 15m CVD/OI inputs.
     assert fifteen_minute_before.raw_score != fifteen_minute_after.raw_score
     assert fifteen_minute_before.prediction is not None
-    assert fifteen_minute_before.prediction.model_name == "composite_rules_v2_15m"
+    assert fifteen_minute_before.prediction.model_name == "composite_rules_v3_15m"
 
 
 def test_v2_rejects_unsupported_horizon() -> None:
@@ -387,3 +387,38 @@ def test_v2_distinguishes_weak_and_strong_flow_ratios() -> None:
         strong_decision.feature_contributions["spot_cvd"]
         > weak_decision.feature_contributions["spot_cvd"]
     )
+
+
+def test_v3_uses_matching_horizon_trend() -> None:
+    base = make_features(
+        binance_book="0",
+        bybit_book="0",
+        spot_cvd_1m="0",
+        spot_cvd_5m="0",
+        futures_cvd_1m="0",
+        futures_cvd_5m="0",
+        binance_oi_5m="0",
+        bybit_oi_5m="0",
+        funding_binance="0",
+        funding_bybit="0",
+        binance_long_short="1",
+        bybit_long_short="1",
+        top_trader="1",
+        taker_ratio="1",
+        liq_imbalance="0",
+    )
+
+    changed = replace(
+        base,
+        trend_score_5m=Decimal("0.8"),
+        trend_score_15m=Decimal("-0.8"),
+        trend_regime_5m="uptrend",
+        trend_regime_15m="downtrend",
+    )
+
+    engine = CompositePredictionEngine()
+    five = engine.decide(changed, horizon_seconds=300)
+    fifteen = engine.decide(changed, horizon_seconds=900)
+
+    assert five.feature_contributions["trend"] > 0
+    assert fifteen.feature_contributions["trend"] < 0
