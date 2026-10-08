@@ -12,6 +12,11 @@ from crypto_signal_engine.paper.report import (
     build_paper_performance_report,
 )
 from crypto_signal_engine.paper.risk import PaperRiskManager
+from crypto_signal_engine.paper.validation import (
+    PaperValidationConfig,
+    PaperValidationResult,
+    validate_paper_performance,
+)
 from crypto_signal_engine.paper.simulation import simulate_replay, simulate_replay_broker
 
 __all__ = [
@@ -24,7 +29,10 @@ __all__ = [
     "PaperPositionStatus",
     "PaperRiskConfig",
     "PaperRiskManager",
+    "PaperValidationConfig",
+    "PaperValidationResult",
     "build_paper_performance_report",
+    "validate_paper_performance",
     "simulate_replay",
     "simulate_replay_broker",
 ]
