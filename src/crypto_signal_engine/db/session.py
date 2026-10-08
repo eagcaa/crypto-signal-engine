@@ -124,6 +124,15 @@ async def initialize_database(engine: AsyncEngine) -> None:
                 """
             )
         )
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE paper_positions
+                ADD COLUMN IF NOT EXISTS model_name VARCHAR(64)
+                NOT NULL DEFAULT 'unknown'
+                """
+            )
+        )
         for column_name in (
             "spot_cvd_ratio_1m",
             "spot_cvd_ratio_5m",
