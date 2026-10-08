@@ -33,6 +33,7 @@ class PaperPosition:
     entry_price: Decimal
     notional: Decimal
     quantity: Decimal
+    model_name: str = "unknown"
     status: PaperPositionStatus = PaperPositionStatus.OPEN
     closed_at: datetime | None = None
     exit_price: Decimal | None = None
