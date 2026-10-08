@@ -116,10 +116,22 @@ async def run(
 
         exact_prices = None
         if exact_binance_trades or compare_price_sources:
-            exact_prices = await BinanceSpotHistoricalTradeClient().fetch_price_points(
-                symbol,
-                start=start,
-                end=end,
+            discovery_result = ReplayRunner().run(features, [])
+            prediction_windows = [
+                (prediction.created_at, prediction.expires_at)
+                for prediction in discovery_result.predictions
+            ]
+            print(
+                "EXACT FETCH "
+                f"prediction_windows={len(prediction_windows)} "
+                "mode=prediction-only"
+            )
+            exact_prices = (
+                await BinanceSpotHistoricalTradeClient()
+                .fetch_price_points_for_windows(
+                    symbol,
+                    windows=prediction_windows,
+                )
             )
 
         if exact_binance_trades:
@@ -141,6 +153,11 @@ async def run(
 
         if not features:
             print("No research feature snapshots found for the selected period.")
+            return
+        if not prices and (exact_binance_trades or compare_price_sources):
+            print(
+                "No exact Binance trade points found for prediction windows."
+            )
             return
         if not prices:
             print("No market price snapshots found for the selected period.")
