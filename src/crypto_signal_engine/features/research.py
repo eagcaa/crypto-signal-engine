@@ -10,6 +10,7 @@ from crypto_signal_engine.domain.derivatives import (
     LiquidationEvent,
 )
 from crypto_signal_engine.domain.models import Exchange, MarketType, TradeSide, TradeTick
+from crypto_signal_engine.features.technical import TechnicalFeatureSnapshot
 from crypto_signal_engine.market import MarketSnapshot
 
 
@@ -34,6 +35,15 @@ class ResearchFeatureSnapshot:
     spot_trade_sources: int
     futures_trade_sources: int
     history_seconds: int
+
+    trend_score_5m: Decimal | None
+    trend_score_15m: Decimal | None
+    atr_pct_5m: Decimal | None
+    atr_pct_15m: Decimal | None
+    trend_regime_5m: str | None
+    trend_regime_15m: str | None
+    volatility_regime_5m: str | None
+    volatility_regime_15m: str | None
 
     binance_oi_change_5m_pct: Decimal | None
     binance_oi_change_15m_pct: Decimal | None
@@ -71,6 +81,7 @@ class ResearchFeatureAggregator:
         self.symbol = symbol.upper()
         self._trades: dict[tuple[Exchange, MarketType], deque[_SignedTrade]] = {}
         self._derivatives: dict[Exchange, ExchangeDerivativesSnapshot] = {}
+        self._technicals: dict[str, TechnicalFeatureSnapshot] = {}
         self._liquidations: deque[LiquidationEvent] = deque()
         self._first_trade_time: datetime | None = None
         self._lock = asyncio.Lock()
@@ -106,6 +117,15 @@ class ResearchFeatureAggregator:
         async with self._lock:
             self._derivatives[snapshot.exchange] = snapshot
 
+    async def update_technical(
+        self,
+        snapshot: TechnicalFeatureSnapshot,
+    ) -> None:
+        if snapshot.interval not in {"5m", "15m"}:
+            return
+        async with self._lock:
+            self._technicals[snapshot.interval] = snapshot
+
     async def update_liquidation(self, event: LiquidationEvent) -> None:
         if event.symbol.upper() != self.symbol:
             return
@@ -124,6 +144,8 @@ class ResearchFeatureAggregator:
 
             binance = self._derivatives.get(Exchange.BINANCE)
             bybit = self._derivatives.get(Exchange.BYBIT)
+            technical_5m = self._technicals.get("5m")
+            technical_15m = self._technicals.get("15m")
             long_5m, short_5m = self._liquidation_totals(now, timedelta(minutes=5))
             long_15m, short_15m = self._liquidation_totals(now, timedelta(minutes=15))
 
@@ -158,6 +180,26 @@ class ResearchFeatureAggregator:
                 spot_trade_sources=self._source_count(MarketType.SPOT),
                 futures_trade_sources=self._source_count(MarketType.FUTURES),
                 history_seconds=self._history_seconds(now),
+                trend_score_5m=(
+                    technical_5m.trend_score if technical_5m else None
+                ),
+                trend_score_15m=(
+                    technical_15m.trend_score if technical_15m else None
+                ),
+                atr_pct_5m=technical_5m.atr_pct if technical_5m else None,
+                atr_pct_15m=technical_15m.atr_pct if technical_15m else None,
+                trend_regime_5m=(
+                    technical_5m.trend_regime if technical_5m else None
+                ),
+                trend_regime_15m=(
+                    technical_15m.trend_regime if technical_15m else None
+                ),
+                volatility_regime_5m=(
+                    technical_5m.volatility_regime if technical_5m else None
+                ),
+                volatility_regime_15m=(
+                    technical_15m.volatility_regime if technical_15m else None
+                ),
                 binance_oi_change_5m_pct=binance.oi_change_5m_pct if binance else None,
                 binance_oi_change_15m_pct=binance.oi_change_15m_pct if binance else None,
                 bybit_oi_change_5m_pct=bybit.oi_change_5m_pct if bybit else None,
