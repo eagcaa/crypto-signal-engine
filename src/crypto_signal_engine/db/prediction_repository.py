@@ -1,9 +1,10 @@
 import json
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Integer, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -19,6 +20,17 @@ from crypto_signal_engine.predictions import (
     PredictionEvaluationOutcome,
     PredictionEvaluationStatus,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationProvenanceStats:
+    evaluation_source: str
+    evaluation_version: str
+    total: int
+    take_profit: int
+    stop_loss: int
+    expired_no_touch: int
+    expired_without_data: int
 
 
 class PredictionRepository:
@@ -431,6 +443,76 @@ class PredictionRepository:
             if direction == PredictionDirection.LONG
             else -raw_return
         )
+
+    async def evaluation_provenance_stats(
+        self,
+        *,
+        symbol: str | None = None,
+    ) -> list[EvaluationProvenanceStats]:
+        async with self._session_factory() as session:
+            query = (
+                select(
+                    PredictionEvaluationRow.evaluation_source,
+                    PredictionEvaluationRow.evaluation_version,
+                    func.count(PredictionEvaluationRow.prediction_id),
+                    func.sum(
+                        (
+                            PredictionEvaluationRow.outcome
+                            == PredictionEvaluationOutcome.TAKE_PROFIT.value
+                        ).cast(Integer)
+                    ),
+                    func.sum(
+                        (
+                            PredictionEvaluationRow.outcome
+                            == PredictionEvaluationOutcome.STOP_LOSS.value
+                        ).cast(Integer)
+                    ),
+                    func.sum(
+                        (
+                            PredictionEvaluationRow.outcome
+                            == PredictionEvaluationOutcome.EXPIRED_NO_TOUCH.value
+                        ).cast(Integer)
+                    ),
+                    func.sum(
+                        (
+                            PredictionEvaluationRow.outcome
+                            == PredictionEvaluationOutcome.EXPIRED_WITHOUT_DATA.value
+                        ).cast(Integer)
+                    ),
+                )
+                .join(
+                    PredictionRow,
+                    PredictionRow.id == PredictionEvaluationRow.prediction_id,
+                )
+                .group_by(
+                    PredictionEvaluationRow.evaluation_source,
+                    PredictionEvaluationRow.evaluation_version,
+                )
+                .order_by(
+                    PredictionEvaluationRow.evaluation_source,
+                    PredictionEvaluationRow.evaluation_version,
+                )
+            )
+
+            if symbol:
+                query = query.where(
+                    PredictionRow.symbol == symbol.upper()
+                )
+
+            rows = (await session.execute(query)).all()
+
+            return [
+                EvaluationProvenanceStats(
+                    evaluation_source=row[0],
+                    evaluation_version=row[1],
+                    total=int(row[2] or 0),
+                    take_profit=int(row[3] or 0),
+                    stop_loss=int(row[4] or 0),
+                    expired_no_touch=int(row[5] or 0),
+                    expired_without_data=int(row[6] or 0),
+                )
+                for row in rows
+            ]
 
     async def latest_open_for_horizon(
         self,
