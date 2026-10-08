@@ -13,6 +13,7 @@ from crypto_signal_engine.domain.models import (
     TradeTick,
 )
 from crypto_signal_engine.features.research import ResearchFeatureAggregator
+from crypto_signal_engine.features.technical import TechnicalFeatureSnapshot
 from crypto_signal_engine.market import MarketSnapshot
 
 
@@ -92,6 +93,21 @@ def test_rolling_cvd_and_liquidation_imbalance() -> None:
             )
         )
 
+        await aggregator.update_technical(
+            TechnicalFeatureSnapshot(
+                interval="5m",
+                close=Decimal("85000"),
+                ema_fast=Decimal("85100"),
+                ema_slow=Decimal("84900"),
+                ema_spread_atr=Decimal("0.4"),
+                atr=Decimal("500"),
+                atr_pct=Decimal("0.588"),
+                trend_score=Decimal("0.4"),
+                trend_regime="uptrend",
+                volatility_regime="normal",
+            )
+        )
+
         snapshot = await aggregator.snapshot(_market_snapshot(now))
 
         assert snapshot.spot_cvd_1m == Decimal("2")
@@ -101,6 +117,10 @@ def test_rolling_cvd_and_liquidation_imbalance() -> None:
         assert snapshot.spot_cvd_ratio_5m == Decimal("1") / Decimal("3")
         assert snapshot.spot_cvd_ratio_15m == Decimal("1") / Decimal("3")
         assert snapshot.history_seconds == 180
+        assert snapshot.trend_score_5m == Decimal("0.4")
+        assert snapshot.trend_regime_5m == "uptrend"
+        assert snapshot.atr_pct_5m == Decimal("0.588")
+        assert snapshot.trend_score_15m is None
         assert snapshot.long_liquidations_5m_usd == Decimal("85000")
         assert snapshot.short_liquidations_5m_usd == Decimal("255000")
         assert snapshot.liquidation_imbalance_5m == Decimal("0.5")
