@@ -102,6 +102,8 @@ class PredictionEvaluationRow(Base):
         nullable=False,
     )
     exit_price: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
+    gross_return_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
+    trading_cost_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
     return_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
     success: Mapped[bool | None] = mapped_column(Boolean)
     evaluation_source: Mapped[str] = mapped_column(
