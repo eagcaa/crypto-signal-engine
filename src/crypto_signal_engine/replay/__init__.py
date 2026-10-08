@@ -3,6 +3,7 @@ from crypto_signal_engine.replay.report import (
     RegimeStats,
     ReplayReport,
     ReplayStats,
+    ScoreBinStats,
     build_replay_report,
 )
 from crypto_signal_engine.replay.runner import ReplayRunner
@@ -14,5 +15,6 @@ __all__ = [
     "ReplayResult",
     "ReplayRunner",
     "ReplayStats",
+    "ScoreBinStats",
     "build_replay_report",
 ]
