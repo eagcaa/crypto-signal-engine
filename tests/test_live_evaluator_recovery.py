@@ -48,6 +48,8 @@ def test_register_many_restores_open_prediction_for_tick_evaluation() -> None:
         assert len(evaluations) == 1
         assert evaluations[0].outcome.value == "take_profit"
         assert evaluations[0].prediction_id == prediction.id
+        assert evaluations[0].evaluation_source == "binance_spot_tick"
+        assert evaluations[0].evaluation_version == "first_touch_v1"
         assert await evaluator.open_count() == 0
 
     asyncio.run(run())
