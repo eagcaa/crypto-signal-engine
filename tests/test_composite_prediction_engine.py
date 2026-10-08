@@ -177,3 +177,69 @@ def test_v2_rejects_low_quality_data() -> None:
 
     assert decision.direction == PredictionDecisionDirection.NO_TRADE
     assert decision.prediction is None
+
+
+def test_v2_uses_different_windows_for_5m_and_15m() -> None:
+    features = make_features(
+        binance_book="0",
+        bybit_book="0",
+        spot_cvd_1m="5",
+        spot_cvd_5m="5",
+        futures_cvd_1m="5",
+        futures_cvd_5m="5",
+        binance_oi_5m="0.3",
+        bybit_oi_5m="0.3",
+        funding_binance="0",
+        funding_bybit="0",
+        binance_long_short="1",
+        bybit_long_short="1",
+        top_trader="1",
+        taker_ratio="1",
+        liq_imbalance="0",
+    )
+
+    features = ResearchFeatureSnapshot(
+        **{
+            **features.__dict__,
+            "spot_cvd_15m": Decimal("-10"),
+            "futures_cvd_15m": Decimal("-10"),
+            "binance_oi_change_15m_pct": Decimal("-0.3"),
+            "bybit_oi_change_15m_pct": Decimal("-0.3"),
+        }
+    )
+
+    engine = CompositePredictionEngine()
+    five_minute = engine.decide(features, horizon_seconds=300)
+    fifteen_minute = engine.decide(features, horizon_seconds=900)
+
+    assert five_minute.raw_score != fifteen_minute.raw_score
+    assert five_minute.direction != fifteen_minute.direction
+
+
+def test_v2_rejects_unsupported_horizon() -> None:
+    features = make_features(
+        binance_book="0.8",
+        bybit_book="0.8",
+        spot_cvd_1m="5",
+        spot_cvd_5m="5",
+        futures_cvd_1m="5",
+        futures_cvd_5m="5",
+        binance_oi_5m="0.5",
+        bybit_oi_5m="0.5",
+        funding_binance="0",
+        funding_bybit="0",
+        binance_long_short="1",
+        bybit_long_short="1",
+        top_trader="1",
+        taker_ratio="1.5",
+        liq_imbalance="0.5",
+    )
+
+    decision = CompositePredictionEngine().decide(
+        features,
+        horizon_seconds=60,
+    )
+
+    assert decision.direction == PredictionDecisionDirection.NO_TRADE
+    assert decision.prediction is None
+    assert "Unsupported horizon" in decision.reason
