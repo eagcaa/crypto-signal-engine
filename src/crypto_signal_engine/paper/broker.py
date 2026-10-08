@@ -93,6 +93,7 @@ class PaperBroker:
             entry_price=prediction.entry_price,
             notional=notional,
             quantity=notional / prediction.entry_price,
+            model_name=prediction.model_name,
         )
         self._positions[prediction.id] = position
         return position
