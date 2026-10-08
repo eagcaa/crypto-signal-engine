@@ -32,7 +32,7 @@ from crypto_signal_engine.features.research import ResearchFeatureAggregator
 from crypto_signal_engine.integrations import CoinGlassClient
 from crypto_signal_engine.integrations.coinglass import CoinGlassApiError
 from crypto_signal_engine.market import MarketSnapshotAggregator
-from crypto_signal_engine.predictions import BaselinePredictionEngine
+from crypto_signal_engine.predictions import CompositePredictionEngine
 
 
 async def consume_trades(
@@ -151,7 +151,7 @@ async def persist_snapshots(
     prediction_repository: PredictionRepository,
     research_repository: ResearchFeatureRepository,
     research_aggregator: ResearchFeatureAggregator,
-    prediction_engine: BaselinePredictionEngine,
+    prediction_engine: CompositePredictionEngine,
     *,
     interval_seconds: float = 5.0,
     prediction_interval_seconds: int = 60,
@@ -206,19 +206,37 @@ async def persist_snapshots(
 
         if should_generate:
             for horizon_seconds in horizons:
-                prediction = prediction_engine.generate(
-                    snapshot,
+                decision = prediction_engine.decide(
+                    research_snapshot,
                     horizon_seconds=horizon_seconds,
                 )
-                if prediction is not None:
+
+                contribution_text = " ".join(
+                    f"{name}={value:+.3f}"
+                    for name, value in decision.feature_contributions.items()
+                )
+
+                if decision.prediction is None:
+                    print(
+                        "DECISION "
+                        f"horizon={decision.horizon_seconds}s "
+                        f"direction={decision.direction.value} "
+                        f"raw_score={decision.raw_score:+.4f} "
+                        f"{contribution_text} "
+                        f"reason={decision.reason}"
+                    )
+                else:
+                    prediction = decision.prediction
                     await prediction_repository.add(prediction)
                     print(
                         "PREDICTION "
                         f"id={prediction.id} "
                         f"horizon={prediction.horizon_seconds}s "
                         f"direction={prediction.direction.value} "
-                        f"raw_score={prediction.raw_score:.4f} "
-                        f"entry={prediction.entry_price}"
+                        f"raw_score={prediction.raw_score:+.4f} "
+                        f"entry={prediction.entry_price} "
+                        f"{contribution_text} "
+                        f"reason={prediction.reason}"
                     )
 
             last_prediction_at = snapshot.timestamp
@@ -274,7 +292,7 @@ async def main() -> None:
     coinglass_repository = CoinGlassSnapshotRepository(session_factory)
     derivatives_repository = DerivativesRepository(session_factory)
     research_repository = ResearchFeatureRepository(session_factory)
-    prediction_engine = BaselinePredictionEngine()
+    prediction_engine = CompositePredictionEngine()
 
     symbols = ["BTCUSDT"]
     aggregator = MarketSnapshotAggregator("BTCUSDT")
