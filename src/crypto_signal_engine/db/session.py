@@ -31,6 +31,41 @@ async def initialize_database(engine: AsyncEngine) -> None:
             text("CREATE EXTENSION IF NOT EXISTS timescaledb")
         )
         await connection.run_sync(Base.metadata.create_all)
+
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE prediction_evaluations
+                ADD COLUMN IF NOT EXISTS status VARCHAR(32)
+                NOT NULL DEFAULT 'evaluated'
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE prediction_evaluations
+                ALTER COLUMN exit_price DROP NOT NULL
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE prediction_evaluations
+                ALTER COLUMN return_pct DROP NOT NULL
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE prediction_evaluations
+                ALTER COLUMN success DROP NOT NULL
+                """
+            )
+        )
+
         await connection.execute(
             text(
                 """
