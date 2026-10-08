@@ -16,6 +16,7 @@ from crypto_signal_engine.paper import (
     build_paper_performance_report,
     validate_paper_performance,
 )
+from crypto_signal_engine.predictions import CompositePredictionEngine
 from crypto_signal_engine.readiness import evaluate_readiness
 
 
@@ -30,6 +31,16 @@ async def run() -> int:
         market_repository = MarketSnapshotRepository(session_factory)
         positions = await repository.load_all()
         latest_market = await market_repository.latest_health("BTCUSDT")
+        current_model_names = tuple(
+            model_name
+            for _, model_name
+            in CompositePredictionEngine.current_model_names()
+        )
+        current_positions = [
+            position
+            for position in positions
+            if position.model_name in current_model_names
+        ]
 
         broker = PaperBroker(
             PaperRiskConfig(
@@ -41,10 +52,11 @@ async def run() -> int:
                 max_consecutive_losses=settings.paper_max_consecutive_losses,
             )
         )
-        broker.restore(positions)
+        broker.restore(current_positions)
         account = broker.snapshot()
         paper_report = build_paper_performance_report(
-            list(broker.positions)
+            list(broker.positions),
+            model_names=current_model_names,
         )
         paper_validation = validate_paper_performance(
             account,
@@ -81,6 +93,8 @@ async def run() -> int:
             f"calibration_buckets={len(calibration)} "
             f"calibration_ready={ready_buckets} "
             f"paper_trades={paper_report.overall.trades} "
+            f"paper_positions_current_model={len(current_positions)} "
+            f"paper_positions_total={len(positions)} "
             f"paper_validation={paper_validation.passed} "
             f"market_quality={latest_market.data_quality if latest_market else 'missing'} "
             f"market_timestamp={latest_market.timestamp if latest_market else 'missing'}"
