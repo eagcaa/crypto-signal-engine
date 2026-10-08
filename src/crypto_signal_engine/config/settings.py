@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     paper_risk_per_trade_pct: Decimal = Decimal("0.50")
     paper_max_notional_pct: Decimal = Decimal("10")
     paper_max_open_positions: int = 1
+    paper_max_drawdown_pct: Decimal = Decimal("5.00")
+    paper_max_consecutive_losses: int = 5
 
     binance_api_key: str = ""
     binance_api_secret: str = ""
