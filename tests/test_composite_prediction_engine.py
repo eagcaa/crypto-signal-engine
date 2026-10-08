@@ -9,6 +9,15 @@ from crypto_signal_engine.predictions import (
 )
 
 
+def _ratio(value: str) -> Decimal:
+    number = Decimal(value)
+    if number > 0:
+        return Decimal("0.80")
+    if number < 0:
+        return Decimal("-0.80")
+    return Decimal("0")
+
+
 def make_features(
     *,
     binance_book: str,
@@ -41,6 +50,12 @@ def make_features(
         futures_cvd_1m=Decimal(futures_cvd_1m),
         futures_cvd_5m=Decimal(futures_cvd_5m),
         futures_cvd_15m=Decimal(futures_cvd_5m),
+        spot_cvd_ratio_1m=_ratio(spot_cvd_1m),
+        spot_cvd_ratio_5m=_ratio(spot_cvd_5m),
+        spot_cvd_ratio_15m=_ratio(spot_cvd_5m),
+        futures_cvd_ratio_1m=_ratio(futures_cvd_1m),
+        futures_cvd_ratio_5m=_ratio(futures_cvd_5m),
+        futures_cvd_ratio_15m=_ratio(futures_cvd_5m),
         spot_trade_sources=spot_sources,
         futures_trade_sources=futures_sources,
         history_seconds=history_seconds,
@@ -205,6 +220,8 @@ def test_v2_uses_different_windows_for_5m_and_15m() -> None:
         base_features,
         spot_cvd_15m=Decimal("-10"),
         futures_cvd_15m=Decimal("-10"),
+        spot_cvd_ratio_15m=Decimal("-0.80"),
+        futures_cvd_ratio_15m=Decimal("-0.80"),
         binance_oi_change_15m_pct=Decimal("0.3"),
         bybit_oi_change_15m_pct=Decimal("0.3"),
     )
@@ -324,3 +341,41 @@ def test_v2_waits_for_15m_warmup() -> None:
     assert decision.direction == PredictionDecisionDirection.NO_TRADE
     assert decision.prediction is None
     assert "Warmup: 899s/900s" in decision.reason
+
+
+def test_v2_distinguishes_weak_and_strong_flow_ratios() -> None:
+    weak = replace(
+        make_features(
+            binance_book="0",
+            bybit_book="0",
+            spot_cvd_1m="5",
+            spot_cvd_5m="5",
+            futures_cvd_1m="0",
+            futures_cvd_5m="0",
+            binance_oi_5m="0",
+            bybit_oi_5m="0",
+            funding_binance="0",
+            funding_bybit="0",
+            binance_long_short="1",
+            bybit_long_short="1",
+            top_trader="1",
+            taker_ratio="1",
+            liq_imbalance="0",
+        ),
+        spot_cvd_ratio_1m=Decimal("0.05"),
+        spot_cvd_ratio_5m=Decimal("0.05"),
+    )
+    strong = replace(
+        weak,
+        spot_cvd_ratio_1m=Decimal("0.80"),
+        spot_cvd_ratio_5m=Decimal("0.80"),
+    )
+
+    engine = CompositePredictionEngine()
+    weak_decision = engine.decide(weak, horizon_seconds=300)
+    strong_decision = engine.decide(strong, horizon_seconds=300)
+
+    assert (
+        strong_decision.feature_contributions["spot_cvd"]
+        > weak_decision.feature_contributions["spot_cvd"]
+    )
