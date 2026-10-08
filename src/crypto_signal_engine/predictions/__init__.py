@@ -1,6 +1,11 @@
-from crypto_signal_engine.predictions.engine import BaselinePredictionEngine
+from crypto_signal_engine.predictions.engine import (
+    BaselinePredictionEngine,
+    CompositePredictionEngine,
+)
 from crypto_signal_engine.predictions.models import (
     Prediction,
+    PredictionDecision,
+    PredictionDecisionDirection,
     PredictionDirection,
     PredictionEvaluation,
     PredictionEvaluationStatus,
@@ -8,7 +13,10 @@ from crypto_signal_engine.predictions.models import (
 
 __all__ = [
     "BaselinePredictionEngine",
+    "CompositePredictionEngine",
     "Prediction",
+    "PredictionDecision",
+    "PredictionDecisionDirection",
     "PredictionDirection",
     "PredictionEvaluation",
     "PredictionEvaluationStatus",
