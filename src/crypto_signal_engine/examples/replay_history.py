@@ -366,6 +366,8 @@ async def run(
             f"net_pnl={performance.net_pnl:+.2f} "
             f"gross_profit={performance.gross_profit:+.2f} "
             f"gross_loss={performance.gross_loss:+.2f} "
+            f"pre_cost_pnl={performance.gross_pnl_before_costs:+.2f} "
+            f"execution_costs={performance.execution_costs:.2f} "
             f"profit_factor={profit_factor} "
             f"expectancy={expectancy} "
             f"avg_return={avg_return}"
