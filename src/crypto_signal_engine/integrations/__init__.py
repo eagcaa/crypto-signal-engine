@@ -1,4 +1,5 @@
 from crypto_signal_engine.integrations.telegram import TelegramNotifier
+from crypto_signal_engine.integrations.telegram_dispatcher import TelegramDispatcher
 from crypto_signal_engine.integrations.coinglass import (
     CoinGlassClient,
     CoinGlassMarketSnapshot,
@@ -7,5 +8,6 @@ from crypto_signal_engine.integrations.coinglass import (
 __all__ = [
     "CoinGlassClient",
     "CoinGlassMarketSnapshot",
+    "TelegramDispatcher",
     "TelegramNotifier",
 ]
