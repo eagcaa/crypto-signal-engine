@@ -296,6 +296,11 @@ class PaperPositionRow(Base):
     entry_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
     notional: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    model_name: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="unknown",
+    )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     exit_price: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
