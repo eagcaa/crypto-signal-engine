@@ -81,8 +81,11 @@ def test_report_groups_results_by_horizon_and_regime() -> None:
     assert report.by_horizon[300].tp_rate == Decimal("100")
 
     five_minute_score = next(
-        item for item in report.by_score_bin if item.horizon_seconds == 300
+        item
+        for item in report.by_score_bin
+        if item.horizon_seconds == 300 and item.direction == "long"
     )
+    assert five_minute_score.direction == "long"
     assert five_minute_score.lower_bound >= Decimal("0.20")
     assert five_minute_score.stats.take_profit == 1
 
