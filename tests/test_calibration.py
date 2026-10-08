@@ -5,6 +5,7 @@ from uuid import uuid4
 from crypto_signal_engine.calibration import (
     CalibrationArtifact,
     ReplayCalibrator,
+    calibration_artifact_rejection_reason,
     load_calibration,
     load_calibration_artifact,
     save_calibration,
@@ -206,3 +207,39 @@ def test_legacy_calibration_file_has_no_artifact_metadata(tmp_path) -> None:
 
     assert load_calibration_artifact(target) is None
     assert load_calibration(target) == buckets
+
+
+
+def test_calibration_artifact_validation_checks_source_symbol_and_age() -> None:
+    now = datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
+    artifact = CalibrationArtifact(
+        schema_version=1,
+        generated_at=now - timedelta(hours=1),
+        symbol="BTCUSDT",
+        start=now - timedelta(hours=7),
+        end=now - timedelta(hours=1),
+        price_source="binance_spot_aggTrades",
+        minimum_samples=30,
+        buckets=(),
+    )
+
+    assert calibration_artifact_rejection_reason(
+        artifact,
+        now=now,
+        maximum_age=timedelta(days=7),
+        symbol="BTCUSDT",
+    ) is None
+
+    assert calibration_artifact_rejection_reason(
+        artifact,
+        now=now,
+        maximum_age=timedelta(minutes=30),
+        symbol="BTCUSDT",
+    ).startswith("stale:")
+
+    assert calibration_artifact_rejection_reason(
+        artifact,
+        now=now,
+        maximum_age=timedelta(days=7),
+        symbol="ETHUSDT",
+    ) == "symbol:BTCUSDT"
