@@ -35,11 +35,17 @@ class PaperPerformanceReport:
 
 def build_paper_performance_report(
     positions: tuple[PaperPosition, ...] | list[PaperPosition],
+    *,
+    model_names: tuple[str, ...] | None = None,
 ) -> PaperPerformanceReport:
     closed = [
         position
         for position in positions
         if position.status == PaperPositionStatus.CLOSED
+        and (
+            model_names is None
+            or position.model_name in model_names
+        )
     ]
 
     groups: dict[tuple[int, str], list[PaperPosition]] = defaultdict(list)
