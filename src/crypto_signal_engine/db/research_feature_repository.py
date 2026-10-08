@@ -26,6 +26,7 @@ class ResearchFeatureRepository:
                     futures_cvd_15m=snapshot.futures_cvd_15m,
                     spot_trade_sources=snapshot.spot_trade_sources,
                     futures_trade_sources=snapshot.futures_trade_sources,
+                    history_seconds=snapshot.history_seconds,
                     binance_oi_change_5m_pct=snapshot.binance_oi_change_5m_pct,
                     binance_oi_change_15m_pct=snapshot.binance_oi_change_15m_pct,
                     bybit_oi_change_5m_pct=snapshot.bybit_oi_change_5m_pct,
