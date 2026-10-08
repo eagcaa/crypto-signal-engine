@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
+    calibration_file: str = "runtime-data/calibration.json"
+
     binance_api_key: str = ""
     binance_api_secret: str = ""
     bybit_api_key: str = ""
