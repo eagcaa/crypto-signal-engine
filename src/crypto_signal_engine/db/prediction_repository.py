@@ -144,6 +144,8 @@ class PredictionRepository:
                     exit_price=evaluation.exit_price,
                     return_pct=evaluation.return_pct,
                     success=evaluation.success,
+                    evaluation_source=evaluation.evaluation_source,
+                    evaluation_version=evaluation.evaluation_version,
                 )
                 .on_conflict_do_nothing(
                     index_elements=[PredictionEvaluationRow.prediction_id]
@@ -247,6 +249,8 @@ class PredictionRepository:
                             exit_price=None,
                             return_pct=None,
                             success=None,
+                            evaluation_source="persisted_snapshot",
+                            evaluation_version="first_touch_v1",
                         )
 
                 if evaluation is None:
@@ -263,6 +267,8 @@ class PredictionRepository:
                         exit_price=evaluation.exit_price,
                         return_pct=evaluation.return_pct,
                         success=evaluation.success,
+                    evaluation_source=evaluation.evaluation_source,
+                    evaluation_version=evaluation.evaluation_version,
                     )
                     .on_conflict_do_nothing(
                         index_elements=[PredictionEvaluationRow.prediction_id]
@@ -380,6 +386,8 @@ class PredictionRepository:
                 exit_price=exit_price,
             ),
             success=success,
+            evaluation_source="persisted_snapshot",
+            evaluation_version="first_touch_v1",
         )
 
     @classmethod
@@ -402,6 +410,8 @@ class PredictionRepository:
                 exit_price=exit_price,
             ),
             success=None,
+            evaluation_source="persisted_snapshot",
+            evaluation_version="first_touch_v1",
         )
 
     @staticmethod
