@@ -21,6 +21,7 @@ from crypto_signal_engine.db import (
     CoinGlassSnapshotRepository,
     DerivativesRepository,
     MarketSnapshotRepository,
+    PaperPositionRepository,
     PredictionRepository,
     ResearchFeatureRepository,
     create_database_engine,
@@ -101,6 +102,7 @@ async def consume_trades(
     live_evaluator: LiveFirstTouchEvaluator,
     prediction_repository: PredictionRepository,
     paper_broker: PaperBroker | None = None,
+    paper_repository: PaperPositionRepository | None = None,
 ) -> None:
     async for trade in collector.trades():
         await aggregator.update_trade(trade)
@@ -111,8 +113,16 @@ async def consume_trades(
             if await prediction_repository.add_evaluation(evaluation):
                 print_evaluation(evaluation, source="tick")
                 if paper_broker is not None:
+                    paper_position = paper_broker.apply_evaluation(
+                        evaluation
+                    )
+                    if (
+                        paper_position is not None
+                        and paper_repository is not None
+                    ):
+                        await paper_repository.update(paper_position)
                     print_paper_position(
-                        paper_broker.apply_evaluation(evaluation),
+                        paper_position,
                         event="close",
                     )
 
@@ -266,6 +276,7 @@ async def persist_snapshots(
     prediction_engine: CompositePredictionEngine,
     live_evaluator: LiveFirstTouchEvaluator,
     paper_broker: PaperBroker | None = None,
+    paper_repository: PaperPositionRepository | None = None,
     *,
     interval_seconds: float = 5.0,
     prediction_interval_seconds: int = 60,
@@ -315,8 +326,16 @@ async def persist_snapshots(
         for evaluation in evaluations:
             print_evaluation(evaluation, source="snapshot")
             if paper_broker is not None:
+                paper_position = paper_broker.apply_evaluation(
+                    evaluation
+                )
+                if (
+                    paper_position is not None
+                    and paper_repository is not None
+                ):
+                    await paper_repository.update(paper_position)
                 print_paper_position(
-                    paper_broker.apply_evaluation(evaluation),
+                    paper_position,
                     event="close",
                 )
 
@@ -357,6 +376,10 @@ async def persist_snapshots(
                             prediction
                         )
                         if paper_position is not None:
+                            if paper_repository is not None:
+                                await paper_repository.add(
+                                    paper_position
+                                )
                             print_paper_position(
                                 paper_position,
                                 event="open",
@@ -429,6 +452,7 @@ async def main() -> None:
     session_factory = create_session_factory(engine)
     snapshot_repository = MarketSnapshotRepository(session_factory)
     prediction_repository = PredictionRepository(session_factory)
+    paper_repository = PaperPositionRepository(session_factory)
     coinglass_repository = CoinGlassSnapshotRepository(session_factory)
     derivatives_repository = DerivativesRepository(session_factory)
     research_repository = ResearchFeatureRepository(session_factory)
@@ -445,13 +469,16 @@ async def main() -> None:
                 max_open_positions=settings.paper_max_open_positions,
             )
         )
+        stored_paper_positions = await paper_repository.load_all()
+        paper_broker.restore(stored_paper_positions)
         paper_snapshot = paper_broker.snapshot()
         print(
             "PAPER_ENABLED "
             f"equity={paper_snapshot.equity:.2f} "
             f"risk_per_trade={settings.paper_risk_per_trade_pct}% "
             f"max_notional={settings.paper_max_notional_pct}% "
-            f"max_open_positions={settings.paper_max_open_positions}"
+            f"max_open_positions={settings.paper_max_open_positions} "
+            f"restored_positions={len(stored_paper_positions)}"
         )
 
     symbols = ["BTCUSDT"]
@@ -479,6 +506,7 @@ async def main() -> None:
                     live_evaluator,
                     prediction_repository,
                     paper_broker,
+                    paper_repository,
                 )
             )
             task_group.create_task(
@@ -539,6 +567,7 @@ async def main() -> None:
                     prediction_engine,
                     live_evaluator,
                     paper_broker,
+                    paper_repository,
                     interval_seconds=5.0,
                     prediction_interval_seconds=60,
                 )
