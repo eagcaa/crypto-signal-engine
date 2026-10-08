@@ -137,6 +137,14 @@ async def run(symbol: str, hours: float) -> None:
             f"realized_pnl={paper.realized_pnl:+.2f} "
             f"closed={paper.closed_positions} "
             f"invalidated={paper.invalidated_positions} "
+            f"wins={paper.wins} "
+            f"losses={paper.losses} "
+            f"win_rate={format_rate(paper.win_rate)} "
+            f"drawdown={paper.drawdown_pct:.2f}% "
+            f"max_drawdown={paper.max_drawdown_pct:.2f}% "
+            f"consecutive_losses={paper.consecutive_losses} "
+            f"halted={paper.trading_halted} "
+            f"halt_reason={paper.halt_reason} "
             f"open={paper.open_positions}"
         )
 
