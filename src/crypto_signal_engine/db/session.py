@@ -124,6 +124,25 @@ async def initialize_database(engine: AsyncEngine) -> None:
                 )
             )
 
+        for column_name, column_type in (
+            ("trend_score_5m", "NUMERIC(20, 16)"),
+            ("trend_score_15m", "NUMERIC(20, 16)"),
+            ("atr_pct_5m", "NUMERIC(20, 12)"),
+            ("atr_pct_15m", "NUMERIC(20, 12)"),
+            ("trend_regime_5m", "VARCHAR(16)"),
+            ("trend_regime_15m", "VARCHAR(16)"),
+            ("volatility_regime_5m", "VARCHAR(16)"),
+            ("volatility_regime_15m", "VARCHAR(16)"),
+        ):
+            await connection.execute(
+                text(
+                    f"""
+                    ALTER TABLE research_feature_snapshots
+                    ADD COLUMN IF NOT EXISTS {column_name} {column_type}
+                    """
+                )
+            )
+
         await connection.execute(
             text(
                 """
