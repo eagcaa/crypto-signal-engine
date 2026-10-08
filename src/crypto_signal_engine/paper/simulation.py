@@ -3,12 +3,12 @@ from crypto_signal_engine.paper.models import PaperAccountSnapshot, PaperRiskCon
 from crypto_signal_engine.replay.models import ReplayResult
 
 
-def simulate_replay(
+def simulate_replay_broker(
     result: ReplayResult,
     *,
     risk_config: PaperRiskConfig | None = None,
-) -> PaperAccountSnapshot:
-    """Replay predictions/evaluations through the isolated paper broker."""
+) -> PaperBroker:
+    """Replay predictions/evaluations and return the populated paper broker."""
 
     broker = PaperBroker(risk_config)
 
@@ -34,4 +34,17 @@ def simulate_replay(
         else:
             broker.apply_evaluation(evaluation_events[prediction_id])
 
-    return broker.snapshot()
+    return broker
+
+
+def simulate_replay(
+    result: ReplayResult,
+    *,
+    risk_config: PaperRiskConfig | None = None,
+) -> PaperAccountSnapshot:
+    """Replay predictions/evaluations and return the account snapshot."""
+
+    return simulate_replay_broker(
+        result,
+        risk_config=risk_config,
+    ).snapshot()
