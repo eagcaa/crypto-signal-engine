@@ -101,7 +101,9 @@ def print_evaluation(evaluation, *, source: str) -> None:
             f"id={evaluation.prediction_id} "
             f"status={evaluation.status.value} "
             f"outcome={evaluation.outcome.value} "
-            f"label={evaluation.label}"
+            f"label={evaluation.label} "
+            f"eval_source={evaluation.evaluation_source} "
+            f"eval_version={evaluation.evaluation_version}"
         )
     else:
         print(
@@ -112,7 +114,9 @@ def print_evaluation(evaluation, *, source: str) -> None:
             f"outcome={evaluation.outcome.value} "
             f"label={evaluation.label} "
             f"return={evaluation.return_pct:.4f}% "
-            f"success={evaluation.success}"
+            f"success={evaluation.success} "
+            f"eval_source={evaluation.evaluation_source} "
+            f"eval_version={evaluation.evaluation_version}"
         )
 
 
