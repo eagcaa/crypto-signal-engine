@@ -1,3 +1,7 @@
+from crypto_signal_engine.replay.compare import (
+    ReplayComparisonRow,
+    compare_replay_reports,
+)
 from crypto_signal_engine.replay.models import ReplayPricePoint, ReplayResult
 from crypto_signal_engine.replay.report import (
     RegimeStats,
@@ -10,6 +14,7 @@ from crypto_signal_engine.replay.runner import ReplayRunner
 
 __all__ = [
     "RegimeStats",
+    "ReplayComparisonRow",
     "ReplayPricePoint",
     "ReplayReport",
     "ReplayResult",
@@ -17,4 +22,5 @@ __all__ = [
     "ReplayStats",
     "ScoreBinStats",
     "build_replay_report",
+    "compare_replay_reports",
 ]
