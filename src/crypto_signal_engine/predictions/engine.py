@@ -16,20 +16,6 @@ from crypto_signal_engine.predictions.models import (
 class BaselinePredictionEngine:
     """Research-only order-book baseline kept for comparison."""
 
-    @classmethod
-    def model_name_for_horizon(cls, horizon_seconds: int) -> str | None:
-        profile = cls.PROFILES.get(horizon_seconds)
-        if profile is None:
-            return None
-        return f"composite_rules_v3_{profile.name}"
-
-    @classmethod
-    def current_model_names(cls) -> tuple[tuple[int, str], ...]:
-        return tuple(
-            (horizon, f"composite_rules_v3_{profile.name}")
-            for horizon, profile in sorted(cls.PROFILES.items())
-        )
-
     def __init__(
         self,
         *,
@@ -140,6 +126,26 @@ class CompositePredictionEngine:
             required_history_seconds=900,
         ),
     }
+
+    @classmethod
+    def model_name_for_horizon(
+        cls,
+        horizon_seconds: int,
+    ) -> str | None:
+        profile = cls.PROFILES.get(horizon_seconds)
+        if profile is None:
+            return None
+        return f"composite_rules_v3_{profile.name}"
+
+    @classmethod
+    def current_model_names(cls) -> tuple[tuple[int, str], ...]:
+        return tuple(
+            (
+                horizon,
+                f"composite_rules_v3_{profile.name}",
+            )
+            for horizon, profile in sorted(cls.PROFILES.items())
+        )
 
     def __init__(
         self,
