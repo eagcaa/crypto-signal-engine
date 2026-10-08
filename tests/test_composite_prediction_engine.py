@@ -29,6 +29,7 @@ def make_features(
     spot_sources: int = 2,
     futures_sources: int = 2,
     data_quality: str = "0.83",
+    history_seconds: int = 900,
 ) -> ResearchFeatureSnapshot:
     return ResearchFeatureSnapshot(
         symbol="BTCUSDT",
@@ -42,6 +43,7 @@ def make_features(
         futures_cvd_15m=Decimal(futures_cvd_5m),
         spot_trade_sources=spot_sources,
         futures_trade_sources=futures_sources,
+        history_seconds=history_seconds,
         binance_oi_change_5m_pct=Decimal(binance_oi_5m),
         binance_oi_change_15m_pct=Decimal(binance_oi_5m),
         bybit_oi_change_5m_pct=Decimal(bybit_oi_5m),
@@ -262,3 +264,63 @@ def test_v2_rejects_unsupported_horizon() -> None:
     assert decision.direction == PredictionDecisionDirection.NO_TRADE
     assert decision.prediction is None
     assert "Unsupported horizon" in decision.reason
+
+
+def test_v2_waits_for_5m_warmup() -> None:
+    features = make_features(
+        binance_book="0.9",
+        bybit_book="0.9",
+        spot_cvd_1m="5",
+        spot_cvd_5m="5",
+        futures_cvd_1m="5",
+        futures_cvd_5m="5",
+        binance_oi_5m="0.5",
+        bybit_oi_5m="0.5",
+        funding_binance="0",
+        funding_bybit="0",
+        binance_long_short="1",
+        bybit_long_short="1",
+        top_trader="1",
+        taker_ratio="1.5",
+        liq_imbalance="0.5",
+        history_seconds=299,
+    )
+
+    decision = CompositePredictionEngine().decide(
+        features,
+        horizon_seconds=300,
+    )
+
+    assert decision.direction == PredictionDecisionDirection.NO_TRADE
+    assert decision.prediction is None
+    assert "Warmup: 299s/300s" in decision.reason
+
+
+def test_v2_waits_for_15m_warmup() -> None:
+    features = make_features(
+        binance_book="0.9",
+        bybit_book="0.9",
+        spot_cvd_1m="5",
+        spot_cvd_5m="5",
+        futures_cvd_1m="5",
+        futures_cvd_5m="5",
+        binance_oi_5m="0.5",
+        bybit_oi_5m="0.5",
+        funding_binance="0",
+        funding_bybit="0",
+        binance_long_short="1",
+        bybit_long_short="1",
+        top_trader="1",
+        taker_ratio="1.5",
+        liq_imbalance="0.5",
+        history_seconds=899,
+    )
+
+    decision = CompositePredictionEngine().decide(
+        features,
+        horizon_seconds=900,
+    )
+
+    assert decision.direction == PredictionDecisionDirection.NO_TRADE
+    assert decision.prediction is None
+    assert "Warmup: 899s/900s" in decision.reason
