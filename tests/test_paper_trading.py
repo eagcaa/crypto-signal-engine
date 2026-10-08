@@ -118,3 +118,44 @@ def test_paper_broker_invalidates_position_when_evaluation_has_no_data() -> None
     assert position is not None
     assert position.status == PaperPositionStatus.INVALIDATED
     assert broker.snapshot().realized_pnl == Decimal("0")
+
+
+
+def test_paper_broker_restores_equity_and_open_positions() -> None:
+    broker = PaperBroker(
+        PaperRiskConfig(starting_equity=Decimal("10000"))
+    )
+
+    closed_prediction = make_prediction(symbol="BTCUSDT")
+    closed = broker.open_from_prediction(closed_prediction)
+    assert closed is not None
+    closed.status = PaperPositionStatus.CLOSED
+    closed.pnl = Decimal("12.50")
+    closed.closed_at = closed_prediction.created_at + timedelta(minutes=1)
+
+    open_prediction = make_prediction(symbol="ETHUSDT")
+    open_position = broker.open_from_prediction(open_prediction)
+    assert open_position is None
+
+    second_broker = PaperBroker(
+        PaperRiskConfig(
+            starting_equity=Decimal("10000"),
+            max_open_positions=2,
+        )
+    )
+    open_position = second_broker.open_from_prediction(open_prediction)
+    assert open_position is not None
+
+    restored = PaperBroker(
+        PaperRiskConfig(
+            starting_equity=Decimal("10000"),
+            max_open_positions=2,
+        )
+    )
+    restored.restore([closed, open_position])
+
+    snapshot = restored.snapshot()
+    assert snapshot.equity == Decimal("10012.50")
+    assert snapshot.realized_pnl == Decimal("12.50")
+    assert snapshot.closed_positions == 1
+    assert snapshot.open_positions == 1
