@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -14,6 +14,7 @@ from crypto_signal_engine.predictions import (
     Prediction,
     PredictionDirection,
     PredictionEvaluation,
+    PredictionEvaluationStatus,
 )
 
 
@@ -42,7 +43,12 @@ class PredictionRepository:
             )
             await session.commit()
 
-    async def evaluate_due(self, now: datetime) -> list[PredictionEvaluation]:
+    async def evaluate_due(
+        self,
+        now: datetime,
+        *,
+        max_snapshot_delay_seconds: int = 30,
+    ) -> list[PredictionEvaluation]:
         async with self._session_factory() as session:
             query = (
                 select(PredictionRow)
@@ -56,47 +62,48 @@ class PredictionRepository:
                 )
             )
             predictions = list((await session.scalars(query)).all())
-
             evaluations: list[PredictionEvaluation] = []
 
             for prediction in predictions:
+                latest_allowed = prediction.expires_at + timedelta(
+                    seconds=max_snapshot_delay_seconds
+                )
+
                 price_query = (
                     select(MarketSnapshotRow)
                     .where(
                         MarketSnapshotRow.symbol == prediction.symbol,
                         MarketSnapshotRow.timestamp >= prediction.expires_at,
+                        MarketSnapshotRow.timestamp <= latest_allowed,
                         MarketSnapshotRow.price.is_not(None),
                     )
                     .order_by(MarketSnapshotRow.timestamp.asc())
                     .limit(1)
                 )
                 snapshot = await session.scalar(price_query)
-                if snapshot is None or snapshot.price is None:
+
+                if snapshot is not None and snapshot.price is not None:
+                    evaluation = self._build_evaluation(
+                        prediction=prediction,
+                        evaluated_at=snapshot.timestamp,
+                        exit_price=snapshot.price,
+                    )
+                elif now > latest_allowed:
+                    evaluation = PredictionEvaluation(
+                        prediction_id=prediction.id,
+                        status=PredictionEvaluationStatus.EXPIRED_WITHOUT_DATA,
+                        evaluated_at=now,
+                        exit_price=None,
+                        return_pct=None,
+                        success=None,
+                    )
+                else:
                     continue
-
-                return_pct = (
-                    (snapshot.price - prediction.entry_price)
-                    / prediction.entry_price
-                ) * Decimal("100")
-
-                direction = PredictionDirection(prediction.direction)
-                success = (
-                    return_pct > 0
-                    if direction == PredictionDirection.LONG
-                    else return_pct < 0
-                )
-
-                evaluation = PredictionEvaluation(
-                    prediction_id=prediction.id,
-                    evaluated_at=snapshot.timestamp,
-                    exit_price=snapshot.price,
-                    return_pct=return_pct,
-                    success=success,
-                )
 
                 session.add(
                     PredictionEvaluationRow(
                         prediction_id=evaluation.prediction_id,
+                        status=evaluation.status.value,
                         evaluated_at=evaluation.evaluated_at,
                         exit_price=evaluation.exit_price,
                         return_pct=evaluation.return_pct,
@@ -107,6 +114,34 @@ class PredictionRepository:
 
             await session.commit()
             return evaluations
+
+    @staticmethod
+    def _build_evaluation(
+        *,
+        prediction: PredictionRow,
+        evaluated_at: datetime,
+        exit_price: Decimal,
+    ) -> PredictionEvaluation:
+        return_pct = (
+            (exit_price - prediction.entry_price)
+            / prediction.entry_price
+        ) * Decimal("100")
+
+        direction = PredictionDirection(prediction.direction)
+        success = (
+            return_pct > 0
+            if direction == PredictionDirection.LONG
+            else return_pct < 0
+        )
+
+        return PredictionEvaluation(
+            prediction_id=prediction.id,
+            status=PredictionEvaluationStatus.EVALUATED,
+            evaluated_at=evaluated_at,
+            exit_price=exit_price,
+            return_pct=return_pct,
+            success=success,
+        )
 
     async def latest_open_for_horizon(
         self,
