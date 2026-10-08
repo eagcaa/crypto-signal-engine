@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from crypto_signal_engine.db.derivatives_repository import DerivativesRepository
 from crypto_signal_engine.domain.derivatives import (
     ExchangeDerivativesSnapshot,
 )
