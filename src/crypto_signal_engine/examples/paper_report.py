@@ -14,6 +14,7 @@ from crypto_signal_engine.paper import (
     build_paper_performance_report,
     validate_paper_performance,
 )
+from crypto_signal_engine.predictions import CompositePredictionEngine
 
 
 def format_rate(value: Decimal | None) -> str:
@@ -30,6 +31,16 @@ async def run() -> None:
             create_session_factory(engine)
         )
         positions = await repository.load_all()
+        current_model_names = tuple(
+            model_name
+            for _, model_name
+            in CompositePredictionEngine.current_model_names()
+        )
+        current_positions = [
+            position
+            for position in positions
+            if position.model_name in current_model_names
+        ]
 
         broker = PaperBroker(
             PaperRiskConfig(
@@ -41,11 +52,12 @@ async def run() -> None:
                 max_consecutive_losses=settings.paper_max_consecutive_losses,
             )
         )
-        broker.restore(positions)
+        broker.restore(current_positions)
 
         account = broker.snapshot()
         report = build_paper_performance_report(
-            list(broker.positions)
+            list(broker.positions),
+            model_names=current_model_names,
         )
         validation = validate_paper_performance(
             account,
@@ -66,7 +78,8 @@ async def run() -> None:
 
         print("PAPER REPORT")
         print(
-            f"positions={len(positions)} "
+            f"positions_current_model={len(current_positions)} "
+            f"positions_total={len(positions)} "
             f"closed={account.closed_positions} "
             f"open={account.open_positions} "
             f"invalidated={account.invalidated_positions}"
