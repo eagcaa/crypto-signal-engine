@@ -408,6 +408,28 @@ async def persist_snapshots(
                         f"reason={prediction.reason}"
                     )
 
+            if paper_broker is not None:
+                paper_snapshot = paper_broker.snapshot()
+                win_rate = (
+                    f"{paper_snapshot.win_rate:.2f}%"
+                    if paper_snapshot.win_rate is not None
+                    else "n/a"
+                )
+                print(
+                    "PAPER_ACCOUNT "
+                    f"equity={paper_snapshot.equity:.2f} "
+                    f"realized_pnl={paper_snapshot.realized_pnl:+.2f} "
+                    f"wins={paper_snapshot.wins} "
+                    f"losses={paper_snapshot.losses} "
+                    f"win_rate={win_rate} "
+                    f"drawdown={paper_snapshot.drawdown_pct:.4f}% "
+                    f"max_drawdown={paper_snapshot.max_drawdown_pct:.4f}% "
+                    f"consecutive_losses={paper_snapshot.consecutive_losses} "
+                    f"open={paper_snapshot.open_positions} "
+                    f"halted={paper_snapshot.trading_halted} "
+                    f"halt_reason={paper_snapshot.halt_reason}"
+                )
+
             last_prediction_at = snapshot.timestamp
 
         print()
