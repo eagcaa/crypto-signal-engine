@@ -533,6 +533,7 @@ async def persist_snapshots(
                     f"wins={paper_snapshot.wins} "
                     f"losses={paper_snapshot.losses} "
                     f"win_rate={win_rate} "
+                    f"execution_costs={performance.execution_costs:.2f} "
                     f"profit_factor={profit_factor} "
                     f"expectancy={expectancy} "
                     f"drawdown={paper_snapshot.drawdown_pct:.4f}% "
