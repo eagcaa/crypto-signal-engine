@@ -193,13 +193,17 @@ async def persist_snapshots(
                 print(
                     "EVALUATED "
                     f"id={evaluation.prediction_id} "
-                    f"status={evaluation.status.value}"
+                    f"status={evaluation.status.value} "
+                    f"outcome={evaluation.outcome.value} "
+                    f"label={evaluation.label}"
                 )
             else:
                 print(
                     "EVALUATED "
                     f"id={evaluation.prediction_id} "
                     f"status={evaluation.status.value} "
+                    f"outcome={evaluation.outcome.value} "
+                    f"label={evaluation.label} "
                     f"return={evaluation.return_pct:.4f}% "
                     f"success={evaluation.success}"
                 )
