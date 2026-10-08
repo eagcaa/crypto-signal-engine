@@ -1,3 +1,4 @@
+from crypto_signal_engine.collectors.binance.candles import BinanceSpotCandleClient
 from crypto_signal_engine.collectors.binance.derivatives import (
     BinanceDerivativesClient,
     BinanceLiquidationCollector,
@@ -14,6 +15,7 @@ __all__ = [
     "BinanceDerivativesClient",
     "BinanceFuturesTradeCollector",
     "BinanceLiquidationCollector",
+    "BinanceSpotCandleClient",
     "BinanceSpotOrderBookCollector",
     "BinanceSpotTradeCollector",
 ]
