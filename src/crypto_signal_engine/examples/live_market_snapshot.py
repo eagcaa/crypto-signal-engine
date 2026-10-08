@@ -32,7 +32,7 @@ from crypto_signal_engine.domain.models import Exchange
 from crypto_signal_engine.features.orderbook import calculate_order_book_metrics
 from crypto_signal_engine.features.research import ResearchFeatureAggregator
 from crypto_signal_engine.features.technical import build_technical_features
-from crypto_signal_engine.integrations import CoinGlassClient
+from crypto_signal_engine.integrations import CoinGlassClient, TelegramNotifier
 from crypto_signal_engine.integrations.coinglass import CoinGlassApiError
 from crypto_signal_engine.market import MarketSnapshotAggregator
 from crypto_signal_engine.paper import (
@@ -44,6 +44,23 @@ from crypto_signal_engine.predictions import (
     CompositePredictionEngine,
     LiveFirstTouchEvaluator,
 )
+
+
+async def send_telegram(
+    notifier: TelegramNotifier | None,
+    text: str,
+) -> None:
+    if notifier is None:
+        return
+    try:
+        await notifier.send(text)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        print(
+            "TELEGRAM unavailable: "
+            f"{type(exc).__name__}: {exc}"
+        )
 
 
 def print_paper_position(position, *, event: str) -> None:
@@ -107,6 +124,7 @@ async def consume_trades(
     prediction_repository: PredictionRepository,
     paper_broker: PaperBroker | None = None,
     paper_repository: PaperPositionRepository | None = None,
+    telegram_notifier: TelegramNotifier | None = None,
 ) -> None:
     async for trade in collector.trades():
         await aggregator.update_trade(trade)
@@ -129,6 +147,14 @@ async def consume_trades(
                         paper_position,
                         event="close",
                     )
+                    if paper_position is not None:
+                        await send_telegram(
+                            telegram_notifier,
+                            TelegramNotifier.paper_account_text(
+                                paper_broker.snapshot(),
+                                position=paper_position,
+                            ),
+                        )
 
 
 async def consume_order_book(
@@ -281,6 +307,7 @@ async def persist_snapshots(
     live_evaluator: LiveFirstTouchEvaluator,
     paper_broker: PaperBroker | None = None,
     paper_repository: PaperPositionRepository | None = None,
+    telegram_notifier: TelegramNotifier | None = None,
     *,
     interval_seconds: float = 5.0,
     prediction_interval_seconds: int = 60,
@@ -342,6 +369,14 @@ async def persist_snapshots(
                     paper_position,
                     event="close",
                 )
+                if paper_position is not None:
+                    await send_telegram(
+                        telegram_notifier,
+                        TelegramNotifier.paper_account_text(
+                            paper_broker.snapshot(),
+                            position=paper_position,
+                        ),
+                    )
 
         should_generate = (
             last_prediction_at is None
@@ -400,6 +435,11 @@ async def persist_snapshots(
                                 f"prediction_id={prediction.id} "
                                 f"reason={reason}"
                             )
+
+                    await send_telegram(
+                        telegram_notifier,
+                        TelegramNotifier.prediction_text(prediction),
+                    )
 
                     print(
                         "PREDICTION "
@@ -506,6 +546,20 @@ async def main() -> None:
     prediction_engine = CompositePredictionEngine()
     live_evaluator = LiveFirstTouchEvaluator()
     paper_broker = None
+    telegram_notifier = None
+
+    if settings.telegram_enabled:
+        if settings.telegram_bot_token and settings.telegram_chat_id:
+            telegram_notifier = TelegramNotifier(
+                settings.telegram_bot_token,
+                settings.telegram_chat_id,
+            )
+            print("TELEGRAM enabled")
+        else:
+            print(
+                "TELEGRAM enabled but token/chat id is empty; "
+                "notifications disabled."
+            )
 
     if settings.paper_trading_enabled:
         paper_broker = PaperBroker(
@@ -558,6 +612,7 @@ async def main() -> None:
                     prediction_repository,
                     paper_broker,
                     paper_repository,
+                    telegram_notifier,
                 )
             )
             task_group.create_task(
@@ -619,6 +674,7 @@ async def main() -> None:
                     live_evaluator,
                     paper_broker,
                     paper_repository,
+                    telegram_notifier,
                     interval_seconds=5.0,
                     prediction_interval_seconds=60,
                 )
