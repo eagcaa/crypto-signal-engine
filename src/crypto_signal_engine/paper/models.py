@@ -18,6 +18,8 @@ class PaperRiskConfig:
     max_notional_pct: Decimal = Decimal("10")
     max_open_positions: int = 1
     stop_loss_pct: Decimal = Decimal("0.30")
+    max_drawdown_pct: Decimal = Decimal("5.00")
+    max_consecutive_losses: int = 5
 
 
 @dataclass(slots=True)
@@ -46,3 +48,12 @@ class PaperAccountSnapshot:
     open_positions: int
     closed_positions: int
     invalidated_positions: int
+    wins: int
+    losses: int
+    win_rate: Decimal | None
+    peak_equity: Decimal
+    drawdown_pct: Decimal
+    max_drawdown_pct: Decimal
+    consecutive_losses: int
+    trading_halted: bool
+    halt_reason: str | None
