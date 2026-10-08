@@ -90,7 +90,7 @@ def test_v2_generates_long_when_multiple_features_align() -> None:
 
     assert decision.direction == PredictionDecisionDirection.LONG
     assert decision.prediction is not None
-    assert decision.prediction.model_name == "composite_rules_v2"
+    assert decision.prediction.model_name == "composite_rules_v2_5m"
     assert decision.raw_score > Decimal("0.20")
     assert "order_book" in decision.feature_contributions
     assert "open_interest" in decision.feature_contributions
@@ -181,7 +181,7 @@ def test_v2_rejects_low_quality_data() -> None:
 
 
 def test_v2_uses_different_windows_for_5m_and_15m() -> None:
-    features = make_features(
+    base_features = make_features(
         binance_book="0",
         bybit_book="0",
         spot_cvd_1m="5",
@@ -199,20 +199,40 @@ def test_v2_uses_different_windows_for_5m_and_15m() -> None:
         liq_imbalance="0",
     )
 
-    features = replace(
-        features,
+    changed_15m = replace(
+        base_features,
         spot_cvd_15m=Decimal("-10"),
         futures_cvd_15m=Decimal("-10"),
-        binance_oi_change_15m_pct=Decimal("-0.3"),
-        bybit_oi_change_15m_pct=Decimal("-0.3"),
+        binance_oi_change_15m_pct=Decimal("0.3"),
+        bybit_oi_change_15m_pct=Decimal("0.3"),
     )
 
     engine = CompositePredictionEngine()
-    five_minute = engine.decide(features, horizon_seconds=300)
-    fifteen_minute = engine.decide(features, horizon_seconds=900)
 
-    assert five_minute.raw_score != fifteen_minute.raw_score
-    assert five_minute.direction != fifteen_minute.direction
+    five_minute_before = engine.decide(
+        base_features,
+        horizon_seconds=300,
+    )
+    five_minute_after = engine.decide(
+        changed_15m,
+        horizon_seconds=300,
+    )
+    fifteen_minute_before = engine.decide(
+        base_features,
+        horizon_seconds=900,
+    )
+    fifteen_minute_after = engine.decide(
+        changed_15m,
+        horizon_seconds=900,
+    )
+
+    # 5m profile must ignore changes that exist only in 15m fields.
+    assert five_minute_before.raw_score == five_minute_after.raw_score
+
+    # 15m profile must react to its 15m CVD/OI inputs.
+    assert fifteen_minute_before.raw_score != fifteen_minute_after.raw_score
+    assert fifteen_minute_before.prediction is not None
+    assert fifteen_minute_before.prediction.model_name == "composite_rules_v2_15m"
 
 
 def test_v2_rejects_unsupported_horizon() -> None:
