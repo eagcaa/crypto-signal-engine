@@ -77,11 +77,14 @@ def test_paper_broker_opens_and_closes_profitable_position() -> None:
 
     assert closed is not None
     assert closed.status == PaperPositionStatus.CLOSED
-    assert closed.pnl == Decimal("6.00")
+    assert closed.gross_return_pct == Decimal("0.60")
+    assert closed.trading_cost_pct == Decimal("0.12")
+    assert closed.return_pct == Decimal("0.48")
+    assert closed.pnl == Decimal("4.80")
 
     snapshot = broker.snapshot()
-    assert snapshot.equity == Decimal("10006.00")
-    assert snapshot.realized_pnl == Decimal("6.00")
+    assert snapshot.equity == Decimal("10004.80")
+    assert snapshot.realized_pnl == Decimal("4.80")
     assert snapshot.closed_positions == 1
 
 
@@ -160,8 +163,8 @@ def test_paper_broker_restores_equity_and_open_positions() -> None:
     restored.restore(list(source.positions))
 
     snapshot = restored.snapshot()
-    assert snapshot.equity == Decimal("10006.00")
-    assert snapshot.realized_pnl == Decimal("6.00")
+    assert snapshot.equity == Decimal("10004.80")
+    assert snapshot.realized_pnl == Decimal("4.80")
     assert snapshot.closed_positions == 1
     assert snapshot.open_positions == 1
 
@@ -214,7 +217,7 @@ def test_paper_broker_tracks_win_rate_and_drawdown() -> None:
     assert snapshot.wins == 1
     assert snapshot.losses == 1
     assert snapshot.win_rate == Decimal("50")
-    assert snapshot.peak_equity == Decimal("10006.00")
+    assert snapshot.peak_equity == Decimal("10004.80")
     assert snapshot.drawdown_pct > Decimal("0")
     assert snapshot.max_drawdown_pct == snapshot.drawdown_pct
     assert snapshot.trading_halted is False
@@ -266,3 +269,35 @@ def test_paper_broker_halts_when_drawdown_limit_is_hit() -> None:
     assert snapshot.trading_halted is True
     assert snapshot.halt_reason is not None
     assert snapshot.halt_reason.startswith("max_drawdown_reached:")
+
+
+
+def test_paper_broker_can_disable_execution_costs_explicitly() -> None:
+    broker = PaperBroker(
+        PaperRiskConfig(
+            starting_equity=Decimal("10000"),
+            max_notional_pct=Decimal("10"),
+            fee_pct_per_side=Decimal("0"),
+            slippage_pct_per_side=Decimal("0"),
+        )
+    )
+    prediction = make_prediction()
+    assert broker.open_from_prediction(prediction) is not None
+
+    closed = broker.apply_evaluation(
+        PredictionEvaluation(
+            prediction_id=prediction.id,
+            status=PredictionEvaluationStatus.EVALUATED,
+            outcome=PredictionEvaluationOutcome.TAKE_PROFIT,
+            label=1,
+            evaluated_at=prediction.created_at + timedelta(seconds=30),
+            exit_price=Decimal("100.60"),
+            return_pct=Decimal("0.60"),
+            success=True,
+        )
+    )
+
+    assert closed is not None
+    assert closed.trading_cost_pct == Decimal("0")
+    assert closed.return_pct == Decimal("0.60")
+    assert closed.pnl == Decimal("6.00")
