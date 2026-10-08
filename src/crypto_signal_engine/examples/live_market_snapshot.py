@@ -33,6 +33,7 @@ from crypto_signal_engine.domain.models import Exchange
 from crypto_signal_engine.features.orderbook import calculate_order_book_metrics
 from crypto_signal_engine.features.research import ResearchFeatureAggregator
 from crypto_signal_engine.features.technical import build_technical_features
+from crypto_signal_engine.health import DataQualityMonitor
 from crypto_signal_engine.integrations import CoinGlassClient, TelegramNotifier
 from crypto_signal_engine.integrations.coinglass import CoinGlassApiError
 from crypto_signal_engine.market import MarketSnapshotAggregator
@@ -310,6 +311,7 @@ async def persist_snapshots(
     paper_repository: PaperPositionRepository | None = None,
     telegram_notifier: TelegramNotifier | None = None,
     calibration_buckets=(),
+    data_quality_monitor: DataQualityMonitor | None = None,
     *,
     interval_seconds: float = 5.0,
     prediction_interval_seconds: int = 60,
@@ -322,6 +324,25 @@ async def persist_snapshots(
         snapshot = await aggregator.snapshot()
 
         await snapshot_repository.add(snapshot)
+
+        if data_quality_monitor is not None:
+            quality_event = data_quality_monitor.observe(snapshot)
+            if quality_event is not None:
+                print(
+                    "DATA_QUALITY "
+                    f"event={quality_event.kind} "
+                    f"quality={quality_event.data_quality:.2f} "
+                    f"bad_intervals={quality_event.bad_intervals}"
+                )
+                await send_telegram(
+                    telegram_notifier,
+                    TelegramNotifier.data_quality_text(
+                        symbol=snapshot.symbol,
+                        kind=quality_event.kind,
+                        data_quality=quality_event.data_quality,
+                        bad_intervals=quality_event.bad_intervals,
+                    ),
+                )
 
         research_snapshot = await research_aggregator.snapshot(snapshot)
         await research_repository.add(research_snapshot)
@@ -568,6 +589,10 @@ async def main() -> None:
     live_evaluator = LiveFirstTouchEvaluator()
     paper_broker = None
     telegram_notifier = None
+    data_quality_monitor = DataQualityMonitor(
+        minimum_quality=settings.data_quality_alert_threshold,
+        bad_intervals_before_alert=settings.data_quality_bad_intervals,
+    )
     calibration_buckets = load_calibration(settings.calibration_file)
     if calibration_buckets:
         ready_buckets = sum(
@@ -715,6 +740,7 @@ async def main() -> None:
                     paper_repository,
                     telegram_notifier,
                     calibration_buckets,
+                    data_quality_monitor,
                     interval_seconds=5.0,
                     prediction_interval_seconds=60,
                 )
