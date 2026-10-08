@@ -122,6 +122,7 @@ async def run() -> None:
                 f"trades={stats.trades} "
                 f"win_rate={format_rate(stats.win_rate)} "
                 f"net_pnl={stats.net_pnl:+.2f} "
+                f"execution_costs={stats.execution_costs:.2f} "
                 f"profit_factor={group_pf} "
                 f"expectancy={group_expectancy}"
             )
