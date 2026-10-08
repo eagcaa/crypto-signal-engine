@@ -261,3 +261,34 @@ class ResearchFeatureSnapshotRow(Base):
     binance_book_imbalance: Mapped[Decimal | None] = mapped_column(Numeric(20, 16))
     bybit_book_imbalance: Mapped[Decimal | None] = mapped_column(Numeric(20, 16))
     market_data_quality: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+
+
+
+class PaperPositionRow(Base):
+    __tablename__ = "paper_positions"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    prediction_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("predictions.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    horizon_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    opened_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )
+    entry_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    notional: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    exit_price: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
+    return_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
+    pnl: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
+    close_reason: Mapped[str | None] = mapped_column(String(64))
