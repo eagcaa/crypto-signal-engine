@@ -12,7 +12,7 @@ from crypto_signal_engine.db.replay_repository import ReplayDataRepository
 from crypto_signal_engine.paper import PaperRiskConfig, simulate_replay
 from crypto_signal_engine.replay import ReplayRunner
 from crypto_signal_engine.replay.report import build_replay_report
-from crypto_signal_engine.settings import get_settings
+from crypto_signal_engine.config.settings import get_settings
 
 
 def parse_args() -> argparse.Namespace:
