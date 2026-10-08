@@ -136,6 +136,22 @@ async def initialize_database(engine: AsyncEngine) -> None:
         await connection.execute(
             text(
                 """
+                ALTER TABLE paper_positions
+                ADD COLUMN IF NOT EXISTS gross_return_pct NUMERIC(20, 12)
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE paper_positions
+                ADD COLUMN IF NOT EXISTS trading_cost_pct NUMERIC(20, 12)
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
                 UPDATE paper_positions AS pp
                 SET model_name = p.model_name
                 FROM predictions AS p
