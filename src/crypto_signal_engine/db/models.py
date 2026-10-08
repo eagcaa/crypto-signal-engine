@@ -209,6 +209,15 @@ class ResearchFeatureSnapshotRow(Base):
         default=0,
     )
 
+    trend_score_5m: Mapped[Decimal | None] = mapped_column(Numeric(20, 16))
+    trend_score_15m: Mapped[Decimal | None] = mapped_column(Numeric(20, 16))
+    atr_pct_5m: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
+    atr_pct_15m: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
+    trend_regime_5m: Mapped[str | None] = mapped_column(String(16))
+    trend_regime_15m: Mapped[str | None] = mapped_column(String(16))
+    volatility_regime_5m: Mapped[str | None] = mapped_column(String(16))
+    volatility_regime_15m: Mapped[str | None] = mapped_column(String(16))
+
     binance_oi_change_5m_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
     binance_oi_change_15m_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
     bybit_oi_change_5m_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
