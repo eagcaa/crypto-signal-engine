@@ -8,6 +8,7 @@ from crypto_signal_engine.predictions.models import (
     PredictionDecisionDirection,
     PredictionDirection,
     PredictionEvaluation,
+    PredictionEvaluationOutcome,
     PredictionEvaluationStatus,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "PredictionDecisionDirection",
     "PredictionDirection",
     "PredictionEvaluation",
+    "PredictionEvaluationOutcome",
     "PredictionEvaluationStatus",
 ]
