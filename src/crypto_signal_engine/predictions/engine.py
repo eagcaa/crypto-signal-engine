@@ -90,14 +90,15 @@ class CompositePredictionEngine:
         300: _HorizonProfile(
             name="5m",
             weights={
-                "order_book": Decimal("0.25"),
+                "order_book": Decimal("0.20"),
                 "spot_cvd": Decimal("0.15"),
                 "futures_cvd": Decimal("0.15"),
-                "open_interest": Decimal("0.15"),
+                "open_interest": Decimal("0.10"),
                 "funding": Decimal("0.05"),
                 "crowding": Decimal("0.10"),
                 "taker_flow": Decimal("0.10"),
                 "liquidations": Decimal("0.05"),
+                "trend": Decimal("0.10"),
             },
             short_flow_window="1m",
             long_flow_window="5m",
@@ -108,14 +109,15 @@ class CompositePredictionEngine:
         900: _HorizonProfile(
             name="15m",
             weights={
-                "order_book": Decimal("0.15"),
-                "spot_cvd": Decimal("0.20"),
-                "futures_cvd": Decimal("0.20"),
-                "open_interest": Decimal("0.20"),
+                "order_book": Decimal("0.10"),
+                "spot_cvd": Decimal("0.18"),
+                "futures_cvd": Decimal("0.18"),
+                "open_interest": Decimal("0.15"),
                 "funding": Decimal("0.05"),
-                "crowding": Decimal("0.10"),
+                "crowding": Decimal("0.09"),
                 "taker_flow": Decimal("0.05"),
                 "liquidations": Decimal("0.05"),
+                "trend": Decimal("0.15"),
             },
             short_flow_window="5m",
             long_flow_window="15m",
@@ -203,6 +205,7 @@ class CompositePredictionEngine:
                 features.binance_taker_buy_sell_ratio
             ),
             "liquidations": self._liquidation_score(features, profile),
+            "trend": self._trend_score(features, profile),
         }
 
         active_weight = sum(
@@ -228,8 +231,7 @@ class CompositePredictionEngine:
             if value is None:
                 continue
 
-            normalized_weight = profile.weights[name] / active_weight
-            contribution = value * normalized_weight
+            contribution = value * profile.weights[name]
             contributions[name] = contribution
             raw_score += contribution
 
@@ -269,7 +271,7 @@ class CompositePredictionEngine:
             entry_price=features.price,
             raw_score=raw_score,
             data_quality=features.market_data_quality,
-            model_name=f"composite_rules_v2_{profile.name}",
+            model_name=f"composite_rules_v3_{profile.name}",
             feature_contributions=contributions,
             reason=reason,
         )
@@ -383,6 +385,18 @@ class CompositePredictionEngine:
         if profile.liquidation_window == "15m":
             return features.liquidation_imbalance_15m
         return features.liquidation_imbalance_5m
+
+    def _trend_score(
+        self,
+        features: ResearchFeatureSnapshot,
+        profile: _HorizonProfile,
+    ) -> Decimal | None:
+        value = (
+            features.trend_score_15m
+            if profile.name == "15m"
+            else features.trend_score_5m
+        )
+        return self._clamp(value) if value is not None else None
 
     def _funding_score(
         self,
