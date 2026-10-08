@@ -120,6 +120,7 @@ class BybitSpotOrderBookCollector:
         *,
         depth: int = 50,
         reconnect_delay_seconds: float = 2.0,
+        receive_timeout_seconds: float = 45.0,
     ) -> None:
         if not symbols:
             raise ValueError("At least one symbol is required")
@@ -127,6 +128,7 @@ class BybitSpotOrderBookCollector:
         self._symbols = tuple(symbol.upper() for symbol in symbols)
         self._depth = depth
         self._reconnect_delay_seconds = reconnect_delay_seconds
+        self._receive_timeout_seconds = receive_timeout_seconds
 
     @property
     def topics(self) -> tuple[str, ...]:
@@ -154,8 +156,7 @@ class BybitSpotOrderBookCollector:
 
         async with websockets.connect(
             BYBIT_SPOT_PUBLIC_URL,
-            ping_interval=20,
-            ping_timeout=20,
+            ping_interval=None,
             close_timeout=10,
             max_queue=4096,
         ) as websocket:
@@ -168,7 +169,23 @@ class BybitSpotOrderBookCollector:
                 )
             )
 
-            async for message in websocket:
+            logger.info(
+                "Bybit spot order-book stream connected: %s",
+                BYBIT_SPOT_PUBLIC_URL,
+            )
+
+            while True:
+                try:
+                    message = await asyncio.wait_for(
+                        websocket.recv(),
+                        timeout=self._receive_timeout_seconds,
+                    )
+                except TimeoutError as exc:
+                    raise TimeoutError(
+                        "Bybit spot order-book stream received no messages for "
+                        f"{self._receive_timeout_seconds:.0f}s"
+                    ) from exc
+
                 raw = message.decode("utf-8") if isinstance(message, bytes) else message
                 payload = json.loads(raw)
 
