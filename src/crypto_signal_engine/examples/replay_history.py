@@ -3,7 +3,11 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from crypto_signal_engine.calibration import ReplayCalibrator, save_calibration
+from crypto_signal_engine.calibration import (
+    CalibrationArtifact,
+    ReplayCalibrator,
+    save_calibration_artifact,
+)
 from crypto_signal_engine.collectors.binance import (
     BinanceSpotHistoricalTradeClient,
 )
@@ -169,11 +173,26 @@ async def run(
         ).build(report)
 
         if write_calibration_path:
-            save_calibration(write_calibration_path, calibration)
+            artifact = CalibrationArtifact(
+                schema_version=1,
+                generated_at=datetime.now(UTC),
+                symbol=symbol.upper(),
+                start=start,
+                end=end,
+                price_source=price_source,
+                minimum_samples=minimum_calibration_samples,
+                buckets=calibration,
+            )
+            save_calibration_artifact(
+                write_calibration_path,
+                artifact,
+            )
             print(
                 "CALIBRATION_ARTIFACT "
                 f"path={write_calibration_path} "
-                f"buckets={len(calibration)}"
+                f"buckets={len(calibration)} "
+                f"source={price_source} "
+                f"generated_at={artifact.generated_at.isoformat()}"
             )
         paper_broker = simulate_replay_broker(
             result,
