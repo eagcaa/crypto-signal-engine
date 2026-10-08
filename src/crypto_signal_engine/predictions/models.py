@@ -10,6 +10,11 @@ class PredictionDirection(StrEnum):
     SHORT = "short"
 
 
+class PredictionEvaluationStatus(StrEnum):
+    EVALUATED = "evaluated"
+    EXPIRED_WITHOUT_DATA = "expired_without_data"
+
+
 @dataclass(frozen=True, slots=True)
 class Prediction:
     id: UUID
@@ -27,7 +32,8 @@ class Prediction:
 @dataclass(frozen=True, slots=True)
 class PredictionEvaluation:
     prediction_id: UUID
+    status: PredictionEvaluationStatus
     evaluated_at: datetime
-    exit_price: Decimal
-    return_pct: Decimal
-    success: bool
+    exit_price: Decimal | None
+    return_pct: Decimal | None
+    success: bool | None
