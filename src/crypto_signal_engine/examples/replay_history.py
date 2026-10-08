@@ -61,6 +61,18 @@ def format_rate(value: Decimal | None) -> str:
     return "n/a" if value is None else f"{value:.2f}%"
 
 
+def validate_options(
+    *,
+    exact_binance_trades: bool,
+    write_calibration_path: str,
+) -> None:
+    if write_calibration_path and not exact_binance_trades:
+        raise ValueError(
+            "Calibration artifacts require --exact-binance-trades "
+            "to avoid sampled first-touch labels."
+        )
+
+
 async def run(
     symbol: str,
     hours: float,
@@ -70,6 +82,11 @@ async def run(
     minimum_calibration_samples: int = 30,
     write_calibration_path: str = "",
 ) -> None:
+    validate_options(
+        exact_binance_trades=exact_binance_trades,
+        write_calibration_path=write_calibration_path,
+    )
+
     settings = get_settings()
     engine = create_database_engine(settings.database_url)
     await initialize_database(engine)
