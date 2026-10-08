@@ -26,3 +26,11 @@ async def test_historical_trade_client_requires_valid_range() -> None:
             start=now,
             end=now - timedelta(minutes=1),
         )
+
+
+
+def test_historical_trade_client_uses_sub_hour_windows() -> None:
+    assert (
+        BinanceSpotHistoricalTradeClient.MAX_TIME_WINDOW
+        < timedelta(hours=1)
+    )
