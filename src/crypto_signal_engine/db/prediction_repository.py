@@ -15,11 +15,15 @@ from crypto_signal_engine.predictions import (
     Prediction,
     PredictionDirection,
     PredictionEvaluation,
+    PredictionEvaluationOutcome,
     PredictionEvaluationStatus,
 )
 
 
 class PredictionRepository:
+    TAKE_PROFIT_PCT = Decimal("0.60")
+    STOP_LOSS_PCT = Decimal("0.30")
+
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
@@ -64,6 +68,17 @@ class PredictionRepository:
         *,
         max_snapshot_delay_seconds: int = 30,
     ) -> list[PredictionEvaluation]:
+        """Evaluate open predictions using first-touch TP/SL semantics.
+
+        TP is +0.60% and SL is -0.30% relative to the prediction direction.
+        A prediction is evaluated immediately when either barrier is first
+        observed in persisted market snapshots. If neither barrier is touched
+        by expiry, it receives label 0 (expired_no_touch).
+
+        Since market snapshots are sampled periodically, this is an
+        approximation of true tick-level first touch.
+        """
+
         async with self._session_factory() as session:
             query = (
                 select(PredictionRow)
@@ -72,7 +87,7 @@ class PredictionRepository:
                     PredictionEvaluationRow.prediction_id == PredictionRow.id,
                 )
                 .where(
-                    PredictionRow.expires_at <= now,
+                    PredictionRow.created_at < now,
                     PredictionEvaluationRow.prediction_id.is_(None),
                 )
             )
@@ -80,45 +95,77 @@ class PredictionRepository:
             evaluations: list[PredictionEvaluation] = []
 
             for prediction in predictions:
-                latest_allowed = prediction.expires_at + timedelta(
-                    seconds=max_snapshot_delay_seconds
-                )
+                observation_end = min(now, prediction.expires_at)
 
-                price_query = (
+                path_query = (
                     select(MarketSnapshotRow)
                     .where(
                         MarketSnapshotRow.symbol == prediction.symbol,
-                        MarketSnapshotRow.timestamp >= prediction.expires_at,
-                        MarketSnapshotRow.timestamp <= latest_allowed,
+                        MarketSnapshotRow.timestamp > prediction.created_at,
+                        MarketSnapshotRow.timestamp <= observation_end,
                         MarketSnapshotRow.price.is_not(None),
                     )
                     .order_by(MarketSnapshotRow.timestamp.asc())
-                    .limit(1)
                 )
-                snapshot = await session.scalar(price_query)
+                snapshots = list((await session.scalars(path_query)).all())
 
-                if snapshot is not None and snapshot.price is not None:
-                    evaluation = self._build_evaluation(
-                        prediction=prediction,
-                        evaluated_at=snapshot.timestamp,
-                        exit_price=snapshot.price,
+                evaluation = self._first_touch_evaluation(
+                    prediction=prediction,
+                    snapshots=snapshots,
+                )
+
+                if evaluation is None and now >= prediction.expires_at:
+                    latest_allowed = prediction.expires_at + timedelta(
+                        seconds=max_snapshot_delay_seconds
                     )
-                elif now > latest_allowed:
-                    evaluation = PredictionEvaluation(
-                        prediction_id=prediction.id,
-                        status=PredictionEvaluationStatus.EXPIRED_WITHOUT_DATA,
-                        evaluated_at=now,
-                        exit_price=None,
-                        return_pct=None,
-                        success=None,
+
+                    expiry_query = (
+                        select(MarketSnapshotRow)
+                        .where(
+                            MarketSnapshotRow.symbol == prediction.symbol,
+                            MarketSnapshotRow.timestamp >= prediction.expires_at,
+                            MarketSnapshotRow.timestamp <= latest_allowed,
+                            MarketSnapshotRow.price.is_not(None),
+                        )
+                        .order_by(MarketSnapshotRow.timestamp.asc())
+                        .limit(1)
                     )
-                else:
+                    expiry_snapshot = await session.scalar(expiry_query)
+
+                    if (
+                        expiry_snapshot is not None
+                        and expiry_snapshot.price is not None
+                    ):
+                        evaluation = self._expired_no_touch_evaluation(
+                            prediction=prediction,
+                            evaluated_at=expiry_snapshot.timestamp,
+                            exit_price=expiry_snapshot.price,
+                        )
+                    elif now > latest_allowed:
+                        evaluation = PredictionEvaluation(
+                            prediction_id=prediction.id,
+                            status=(
+                                PredictionEvaluationStatus.EXPIRED_WITHOUT_DATA
+                            ),
+                            outcome=(
+                                PredictionEvaluationOutcome.EXPIRED_WITHOUT_DATA
+                            ),
+                            label=None,
+                            evaluated_at=now,
+                            exit_price=None,
+                            return_pct=None,
+                            success=None,
+                        )
+
+                if evaluation is None:
                     continue
 
                 session.add(
                     PredictionEvaluationRow(
                         prediction_id=evaluation.prediction_id,
                         status=evaluation.status.value,
+                        outcome=evaluation.outcome.value,
+                        label=evaluation.label,
                         evaluated_at=evaluation.evaluated_at,
                         exit_price=evaluation.exit_price,
                         return_pct=evaluation.return_pct,
@@ -130,32 +177,150 @@ class PredictionRepository:
             await session.commit()
             return evaluations
 
-    @staticmethod
-    def _build_evaluation(
+    @classmethod
+    def _first_touch_evaluation(
+        cls,
+        *,
+        prediction: PredictionRow,
+        snapshots: list[MarketSnapshotRow],
+    ) -> PredictionEvaluation | None:
+        direction = PredictionDirection(prediction.direction)
+        tp_price, sl_price = cls._barrier_prices(
+            entry_price=prediction.entry_price,
+            direction=direction,
+        )
+
+        for snapshot in snapshots:
+            if snapshot.price is None:
+                continue
+
+            price = snapshot.price
+
+            if direction == PredictionDirection.LONG:
+                if price >= tp_price:
+                    return cls._barrier_evaluation(
+                        prediction=prediction,
+                        evaluated_at=snapshot.timestamp,
+                        exit_price=price,
+                        outcome=PredictionEvaluationOutcome.TAKE_PROFIT,
+                        label=1,
+                        success=True,
+                    )
+                if price <= sl_price:
+                    return cls._barrier_evaluation(
+                        prediction=prediction,
+                        evaluated_at=snapshot.timestamp,
+                        exit_price=price,
+                        outcome=PredictionEvaluationOutcome.STOP_LOSS,
+                        label=-1,
+                        success=False,
+                    )
+            else:
+                if price <= tp_price:
+                    return cls._barrier_evaluation(
+                        prediction=prediction,
+                        evaluated_at=snapshot.timestamp,
+                        exit_price=price,
+                        outcome=PredictionEvaluationOutcome.TAKE_PROFIT,
+                        label=1,
+                        success=True,
+                    )
+                if price >= sl_price:
+                    return cls._barrier_evaluation(
+                        prediction=prediction,
+                        evaluated_at=snapshot.timestamp,
+                        exit_price=price,
+                        outcome=PredictionEvaluationOutcome.STOP_LOSS,
+                        label=-1,
+                        success=False,
+                    )
+
+        return None
+
+    @classmethod
+    def _barrier_prices(
+        cls,
+        *,
+        entry_price: Decimal,
+        direction: PredictionDirection,
+    ) -> tuple[Decimal, Decimal]:
+        tp_fraction = cls.TAKE_PROFIT_PCT / Decimal("100")
+        sl_fraction = cls.STOP_LOSS_PCT / Decimal("100")
+
+        if direction == PredictionDirection.LONG:
+            return (
+                entry_price * (Decimal("1") + tp_fraction),
+                entry_price * (Decimal("1") - sl_fraction),
+            )
+
+        return (
+            entry_price * (Decimal("1") - tp_fraction),
+            entry_price * (Decimal("1") + sl_fraction),
+        )
+
+    @classmethod
+    def _barrier_evaluation(
+        cls,
+        *,
+        prediction: PredictionRow,
+        evaluated_at: datetime,
+        exit_price: Decimal,
+        outcome: PredictionEvaluationOutcome,
+        label: int,
+        success: bool,
+    ) -> PredictionEvaluation:
+        return PredictionEvaluation(
+            prediction_id=prediction.id,
+            status=PredictionEvaluationStatus.EVALUATED,
+            outcome=outcome,
+            label=label,
+            evaluated_at=evaluated_at,
+            exit_price=exit_price,
+            return_pct=cls._directional_return_pct(
+                prediction=prediction,
+                exit_price=exit_price,
+            ),
+            success=success,
+        )
+
+    @classmethod
+    def _expired_no_touch_evaluation(
+        cls,
         *,
         prediction: PredictionRow,
         evaluated_at: datetime,
         exit_price: Decimal,
     ) -> PredictionEvaluation:
-        return_pct = (
+        return PredictionEvaluation(
+            prediction_id=prediction.id,
+            status=PredictionEvaluationStatus.EVALUATED,
+            outcome=PredictionEvaluationOutcome.EXPIRED_NO_TOUCH,
+            label=0,
+            evaluated_at=evaluated_at,
+            exit_price=exit_price,
+            return_pct=cls._directional_return_pct(
+                prediction=prediction,
+                exit_price=exit_price,
+            ),
+            success=None,
+        )
+
+    @staticmethod
+    def _directional_return_pct(
+        *,
+        prediction: PredictionRow,
+        exit_price: Decimal,
+    ) -> Decimal:
+        raw_return = (
             (exit_price - prediction.entry_price)
             / prediction.entry_price
         ) * Decimal("100")
 
         direction = PredictionDirection(prediction.direction)
-        success = (
-            return_pct > 0
+        return (
+            raw_return
             if direction == PredictionDirection.LONG
-            else return_pct < 0
-        )
-
-        return PredictionEvaluation(
-            prediction_id=prediction.id,
-            status=PredictionEvaluationStatus.EVALUATED,
-            evaluated_at=evaluated_at,
-            exit_price=exit_price,
-            return_pct=return_pct,
-            success=success,
+            else -raw_return
         )
 
     async def latest_open_for_horizon(
