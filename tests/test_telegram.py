@@ -1,0 +1,79 @@
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from uuid import uuid4
+
+import pytest
+
+from crypto_signal_engine.integrations.telegram import TelegramNotifier
+from crypto_signal_engine.predictions import (
+    Prediction,
+    PredictionDirection,
+    PredictionEvaluation,
+    PredictionEvaluationOutcome,
+    PredictionEvaluationStatus,
+)
+
+
+def make_prediction() -> Prediction:
+    created_at = datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
+    return Prediction(
+        id=uuid4(),
+        symbol="BTCUSDT",
+        created_at=created_at,
+        expires_at=created_at + timedelta(minutes=5),
+        horizon_seconds=300,
+        direction=PredictionDirection.LONG,
+        entry_price=Decimal("100"),
+        raw_score=Decimal("0.31"),
+        data_quality=Decimal("0.83"),
+        model_name="composite_rules_v3_5m",
+        reason="trend=+0.100",
+    )
+
+
+def test_telegram_notifier_requires_credentials() -> None:
+    with pytest.raises(ValueError):
+        TelegramNotifier("", "123")
+
+    with pytest.raises(ValueError):
+        TelegramNotifier("token", "")
+
+
+def test_prediction_text_does_not_invent_confidence() -> None:
+    text = TelegramNotifier.prediction_text(make_prediction())
+
+    assert "LONG" in text
+    assert "Confidence: not calibrated" in text
+
+
+def test_prediction_text_uses_calibrated_confidence_when_supplied() -> None:
+    text = TelegramNotifier.prediction_text(
+        make_prediction(),
+        calibrated_confidence=Decimal("68.42"),
+    )
+
+    assert "Confidence: 68.42%" in text
+
+
+def test_evaluation_text_formats_measured_outcome() -> None:
+    prediction = make_prediction()
+    evaluation = PredictionEvaluation(
+        prediction_id=prediction.id,
+        status=PredictionEvaluationStatus.EVALUATED,
+        outcome=PredictionEvaluationOutcome.TAKE_PROFIT,
+        label=1,
+        evaluated_at=prediction.created_at + timedelta(seconds=30),
+        exit_price=Decimal("100.60"),
+        return_pct=Decimal("0.60"),
+        success=True,
+    )
+
+    text = TelegramNotifier.evaluation_text(
+        evaluation,
+        symbol=prediction.symbol,
+        horizon_seconds=prediction.horizon_seconds,
+        direction=prediction.direction.value,
+    )
+
+    assert "Outcome: take_profit" in text
+    assert "Return: +0.6000%" in text
