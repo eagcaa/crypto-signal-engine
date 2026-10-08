@@ -691,6 +691,8 @@ async def main() -> None:
             f"max_open_positions={settings.paper_max_open_positions} "
             f"max_drawdown={settings.paper_max_drawdown_pct}% "
             f"max_consecutive_losses={settings.paper_max_consecutive_losses} "
+            f"fee_per_side={settings.paper_fee_pct_per_side}% "
+            f"slippage_per_side={settings.paper_slippage_pct_per_side}% "
             f"restored_positions={len(stored_paper_positions)} "
             f"models={','.join(current_model_names)}"
         )
