@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from decimal import Decimal
 
 from crypto_signal_engine.calibration import CalibrationBucket
 from crypto_signal_engine.paper.validation import PaperValidationResult
@@ -14,6 +16,11 @@ def evaluate_readiness(
     calibration_buckets: tuple[CalibrationBucket, ...],
     paper_validation: PaperValidationResult,
     *,
+    latest_market_timestamp: datetime | None = None,
+    latest_market_quality: Decimal | None = None,
+    now: datetime | None = None,
+    maximum_market_age: timedelta = timedelta(minutes=2),
+    minimum_market_quality: Decimal = Decimal("0.67"),
     required_horizons: tuple[int, ...] = (300, 900),
     required_directions: tuple[str, ...] = ("long", "short"),
 ) -> ReadinessResult:
@@ -39,6 +46,24 @@ def evaluate_readiness(
         reasons.extend(
             f"paper:{reason}"
             for reason in paper_validation.reasons
+        )
+
+    if latest_market_timestamp is None:
+        reasons.append("market_snapshot_missing")
+    elif now is not None:
+        market_age = now - latest_market_timestamp
+        if market_age > maximum_market_age:
+            reasons.append(
+                "market_snapshot_stale:"
+                f"{int(market_age.total_seconds())}s"
+            )
+
+    if latest_market_quality is None:
+        reasons.append("market_quality_missing")
+    elif latest_market_quality < minimum_market_quality:
+        reasons.append(
+            "market_quality_below_minimum:"
+            f"{latest_market_quality:.2f}/{minimum_market_quality:.2f}"
         )
 
     return ReadinessResult(
