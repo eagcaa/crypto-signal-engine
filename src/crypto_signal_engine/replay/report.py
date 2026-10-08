@@ -42,6 +42,7 @@ class RegimeStats:
 @dataclass(frozen=True, slots=True)
 class ScoreBinStats:
     horizon_seconds: int
+    direction: str
     lower_bound: Decimal
     upper_bound: Decimal | None
     stats: ReplayStats
@@ -69,7 +70,10 @@ def build_replay_report(
 
     horizon_groups: dict[int, list] = defaultdict(list)
     regime_groups: dict[tuple[int, str, str, str], list] = defaultdict(list)
-    score_groups: dict[tuple[int, Decimal, Decimal | None], list] = defaultdict(list)
+    score_groups: dict[
+        tuple[int, str, Decimal, Decimal | None],
+        list,
+    ] = defaultdict(list)
 
     for prediction in result.predictions:
         evaluation = evaluation_by_prediction.get(prediction.id)
@@ -77,7 +81,12 @@ def build_replay_report(
 
         lower_bound, upper_bound = _score_bin(abs(prediction.raw_score))
         score_groups[
-            (prediction.horizon_seconds, lower_bound, upper_bound)
+            (
+                prediction.horizon_seconds,
+                prediction.direction.value,
+                lower_bound,
+                upper_bound,
+            )
         ].append(evaluation)
 
         feature = feature_by_key.get(
@@ -121,13 +130,18 @@ def build_replay_report(
     by_score_bin = tuple(
         ScoreBinStats(
             horizon_seconds=key[0],
-            lower_bound=key[1],
-            upper_bound=key[2],
+            direction=key[1],
+            lower_bound=key[2],
+            upper_bound=key[3],
             stats=_stats(evaluations),
         )
         for key, evaluations in sorted(
             score_groups.items(),
-            key=lambda item: (item[0][0], item[0][1]),
+            key=lambda item: (
+                item[0][0],
+                item[0][1],
+                item[0][2],
+            ),
         )
     )
 
