@@ -78,7 +78,14 @@ class MarketSnapshotAggregator:
         async with self._lock:
             accumulator.update(trade)
             self._trade_last_seen[key] = trade.event_time
-            self._latest_price = trade.price
+
+            # Keep prediction entry/evaluation reference prices on the same
+            # canonical market used by the live first-touch evaluator.
+            if (
+                trade.exchange == Exchange.BINANCE
+                and trade.market_type == MarketType.SPOT
+            ):
+                self._latest_price = trade.price
 
     async def update_order_book(
         self,
