@@ -30,6 +30,9 @@ class Settings(BaseSettings):
 
     calibration_file: str = "runtime-data/calibration.json"
 
+    data_quality_alert_threshold: Decimal = Decimal("0.67")
+    data_quality_bad_intervals: int = 3
+
     binance_api_key: str = ""
     binance_api_secret: str = ""
     bybit_api_key: str = ""
