@@ -165,3 +165,70 @@ class LiquidationEventRow(Base):
     price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
     notional_usd: Mapped[Decimal] = mapped_column(Numeric(30, 6), nullable=False)
+
+
+class ResearchFeatureSnapshotRow(Base):
+    __tablename__ = "research_feature_snapshots"
+
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        primary_key=True,
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(32),
+        primary_key=True,
+    )
+    price: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
+
+    spot_cvd_1m: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    spot_cvd_5m: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    spot_cvd_15m: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    futures_cvd_1m: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    futures_cvd_5m: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    futures_cvd_15m: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    spot_trade_sources: Mapped[int] = mapped_column(Integer, nullable=False)
+    futures_trade_sources: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    binance_oi_change_5m_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
+    binance_oi_change_15m_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
+    bybit_oi_change_5m_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
+    bybit_oi_change_15m_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
+    binance_funding_rate: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
+    bybit_funding_rate: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
+    binance_long_short_ratio: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
+    bybit_long_short_ratio: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
+    binance_top_trader_long_short_ratio: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 10)
+    )
+    binance_taker_buy_sell_ratio: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 10)
+    )
+
+    long_liquidations_5m_usd: Mapped[Decimal] = mapped_column(
+        Numeric(30, 6),
+        nullable=False,
+    )
+    short_liquidations_5m_usd: Mapped[Decimal] = mapped_column(
+        Numeric(30, 6),
+        nullable=False,
+    )
+    liquidation_imbalance_5m: Mapped[Decimal] = mapped_column(
+        Numeric(20, 12),
+        nullable=False,
+    )
+    long_liquidations_15m_usd: Mapped[Decimal] = mapped_column(
+        Numeric(30, 6),
+        nullable=False,
+    )
+    short_liquidations_15m_usd: Mapped[Decimal] = mapped_column(
+        Numeric(30, 6),
+        nullable=False,
+    )
+    liquidation_imbalance_15m: Mapped[Decimal] = mapped_column(
+        Numeric(20, 12),
+        nullable=False,
+    )
+
+    binance_book_imbalance: Mapped[Decimal | None] = mapped_column(Numeric(20, 16))
+    bybit_book_imbalance: Mapped[Decimal | None] = mapped_column(Numeric(20, 16))
+    market_data_quality: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
