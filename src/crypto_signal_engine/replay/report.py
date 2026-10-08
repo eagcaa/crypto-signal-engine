@@ -40,9 +40,18 @@ class RegimeStats:
 
 
 @dataclass(frozen=True, slots=True)
+class ScoreBinStats:
+    horizon_seconds: int
+    lower_bound: Decimal
+    upper_bound: Decimal | None
+    stats: ReplayStats
+
+
+@dataclass(frozen=True, slots=True)
 class ReplayReport:
     by_horizon: dict[int, ReplayStats]
     by_regime: tuple[RegimeStats, ...]
+    by_score_bin: tuple[ScoreBinStats, ...]
 
 
 def build_replay_report(
@@ -60,10 +69,16 @@ def build_replay_report(
 
     horizon_groups: dict[int, list] = defaultdict(list)
     regime_groups: dict[tuple[int, str, str, str], list] = defaultdict(list)
+    score_groups: dict[tuple[int, Decimal, Decimal | None], list] = defaultdict(list)
 
     for prediction in result.predictions:
         evaluation = evaluation_by_prediction.get(prediction.id)
         horizon_groups[prediction.horizon_seconds].append(evaluation)
+
+        lower_bound, upper_bound = _score_bin(abs(prediction.raw_score))
+        score_groups[
+            (prediction.horizon_seconds, lower_bound, upper_bound)
+        ].append(evaluation)
 
         feature = feature_by_key.get(
             (prediction.symbol.upper(), prediction.created_at)
@@ -103,9 +118,23 @@ def build_replay_report(
         for key, evaluations in sorted(regime_groups.items())
     )
 
+    by_score_bin = tuple(
+        ScoreBinStats(
+            horizon_seconds=key[0],
+            lower_bound=key[1],
+            upper_bound=key[2],
+            stats=_stats(evaluations),
+        )
+        for key, evaluations in sorted(
+            score_groups.items(),
+            key=lambda item: (item[0][0], item[0][1]),
+        )
+    )
+
     return ReplayReport(
         by_horizon=by_horizon,
         by_regime=by_regime,
+        by_score_bin=by_score_bin,
     )
 
 
@@ -137,3 +166,16 @@ def _stats(evaluations: list) -> ReplayStats:
         expired_no_touch=expired_no_touch,
         expired_without_data=expired_without_data,
     )
+
+
+
+def _score_bin(
+    absolute_score: Decimal,
+) -> tuple[Decimal, Decimal | None]:
+    if absolute_score < Decimal("0.25"):
+        return Decimal("0.20"), Decimal("0.25")
+    if absolute_score < Decimal("0.30"):
+        return Decimal("0.25"), Decimal("0.30")
+    if absolute_score < Decimal("0.40"):
+        return Decimal("0.30"), Decimal("0.40")
+    return Decimal("0.40"), None
