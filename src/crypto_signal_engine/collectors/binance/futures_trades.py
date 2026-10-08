@@ -63,6 +63,13 @@ class BinanceFuturesTradeCollector:
                     yield trade
             except asyncio.CancelledError:
                 raise
+            except TimeoutError as exc:
+                logger.warning(
+                    "%s; reconnecting in %.1fs",
+                    exc,
+                    self._reconnect_delay_seconds,
+                )
+                await asyncio.sleep(self._reconnect_delay_seconds)
             except Exception:
                 logger.exception(
                     "Binance futures trade stream disconnected; reconnecting in %.1fs",
