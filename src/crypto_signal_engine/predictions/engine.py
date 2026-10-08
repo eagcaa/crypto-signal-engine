@@ -76,6 +76,7 @@ class _HorizonProfile:
     long_flow_window: str
     oi_window: str
     liquidation_window: str
+    required_history_seconds: int
 
 
 class CompositePredictionEngine:
@@ -102,6 +103,7 @@ class CompositePredictionEngine:
             long_flow_window="5m",
             oi_window="5m",
             liquidation_window="5m",
+            required_history_seconds=300,
         ),
         900: _HorizonProfile(
             name="15m",
@@ -119,6 +121,7 @@ class CompositePredictionEngine:
             long_flow_window="15m",
             oi_window="15m",
             liquidation_window="15m",
+            required_history_seconds=900,
         ),
     }
 
@@ -144,6 +147,16 @@ class CompositePredictionEngine:
                 features,
                 horizon_seconds,
                 reason=f"Unsupported horizon: {horizon_seconds}s.",
+            )
+
+        if features.history_seconds < profile.required_history_seconds:
+            return self._no_trade(
+                features,
+                horizon_seconds,
+                reason=(
+                    f"Warmup: {features.history_seconds}s/"
+                    f"{profile.required_history_seconds}s history ready."
+                ),
             )
 
         if features.price is None:
