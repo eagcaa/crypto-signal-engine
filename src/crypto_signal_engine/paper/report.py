@@ -18,6 +18,8 @@ class PaperPerformanceStats:
     profit_factor: Decimal | None
     expectancy: Decimal | None
     average_return_pct: Decimal | None
+    execution_costs: Decimal = Decimal("0")
+    gross_pnl_before_costs: Decimal = Decimal("0")
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +112,29 @@ def _stats(positions: list[PaperPosition]) -> PaperPerformanceStats:
         else None
     )
 
+    execution_costs = sum(
+        (
+            position.notional
+            * (position.trading_cost_pct or Decimal("0"))
+            / Decimal("100")
+            for position in positions
+        ),
+        Decimal("0"),
+    )
+    gross_pnl_before_costs = sum(
+        (
+            position.notional
+            * (
+                position.gross_return_pct
+                if position.gross_return_pct is not None
+                else (position.return_pct or Decimal("0"))
+            )
+            / Decimal("100")
+            for position in positions
+        ),
+        Decimal("0"),
+    )
+
     return PaperPerformanceStats(
         trades=trades,
         wins=wins,
@@ -122,4 +147,6 @@ def _stats(positions: list[PaperPosition]) -> PaperPerformanceStats:
         profit_factor=profit_factor,
         expectancy=expectancy,
         average_return_pct=average_return_pct,
+        execution_costs=execution_costs,
+        gross_pnl_before_costs=gross_pnl_before_costs,
     )
