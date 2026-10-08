@@ -503,8 +503,14 @@ async def persist_snapshots(
                     if paper_snapshot.win_rate is not None
                     else "n/a"
                 )
+                current_model_names = tuple(
+                    model_name
+                    for _, model_name
+                    in CompositePredictionEngine.current_model_names()
+                )
                 performance = build_paper_performance_report(
-                    list(paper_broker.positions)
+                    list(paper_broker.positions),
+                    model_names=current_model_names,
                 ).overall
                 profit_factor = (
                     "n/a"
