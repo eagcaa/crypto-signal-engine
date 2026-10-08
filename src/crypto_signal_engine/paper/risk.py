@@ -60,3 +60,7 @@ class PaperRiskManager:
             raise ValueError("max_drawdown_pct must be in (0, 100]")
         if config.max_consecutive_losses <= 0:
             raise ValueError("max_consecutive_losses must be positive")
+        if not Decimal("0") <= config.fee_pct_per_side <= Decimal("5"):
+            raise ValueError("fee_pct_per_side must be in [0, 5]")
+        if not Decimal("0") <= config.slippage_pct_per_side <= Decimal("5"):
+            raise ValueError("slippage_pct_per_side must be in [0, 5]")
