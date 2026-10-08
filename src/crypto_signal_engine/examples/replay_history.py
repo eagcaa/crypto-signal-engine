@@ -1,0 +1,120 @@
+import argparse
+import asyncio
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
+from crypto_signal_engine.db import (
+    create_database_engine,
+    create_session_factory,
+    initialize_database,
+)
+from crypto_signal_engine.db.replay_repository import ReplayDataRepository
+from crypto_signal_engine.replay import ReplayRunner
+from crypto_signal_engine.replay.report import build_replay_report
+from crypto_signal_engine.settings import get_settings
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Replay persisted research features through the live V3 engine."
+    )
+    parser.add_argument("--symbol", default="BTCUSDT")
+    parser.add_argument("--hours", type=float, default=6.0)
+    return parser.parse_args()
+
+
+def format_rate(value: Decimal | None) -> str:
+    return "n/a" if value is None else f"{value:.2f}%"
+
+
+async def run(symbol: str, hours: float) -> None:
+    settings = get_settings()
+    engine = create_database_engine(settings.database_url)
+    await initialize_database(engine)
+
+    try:
+        session_factory = create_session_factory(engine)
+        repository = ReplayDataRepository(session_factory)
+
+        end = datetime.now(UTC)
+        start = end - timedelta(hours=hours)
+
+        features, prices = await asyncio.gather(
+            repository.load_features(
+                symbol=symbol,
+                start=start,
+                end=end,
+            ),
+            repository.load_price_points(
+                symbol=symbol,
+                start=start,
+                end=end,
+            ),
+        )
+
+        print(
+            f"REPLAY symbol={symbol.upper()} "
+            f"start={start.isoformat()} end={end.isoformat()}"
+        )
+        print(
+            f"loaded features={len(features)} price_points={len(prices)}"
+        )
+
+        if not features:
+            print("No research feature snapshots found for the selected period.")
+            return
+        if not prices:
+            print("No market price snapshots found for the selected period.")
+            return
+
+        result = ReplayRunner().run(features, prices)
+        report = build_replay_report(result, features)
+
+        print()
+        print("NOTE: persisted market snapshots are sampled, so first-touch")
+        print("results are approximate until trade-level historical replay is added.")
+        print()
+
+        for horizon, stats in report.by_horizon.items():
+            print(
+                f"{horizon // 60}m "
+                f"predictions={stats.predictions} "
+                f"TP={stats.take_profit} "
+                f"SL={stats.stop_loss} "
+                f"no_touch={stats.expired_no_touch} "
+                f"no_data={stats.expired_without_data} "
+                f"TP_rate={format_rate(stats.tp_rate)}"
+            )
+
+        print()
+        print("REGIMES")
+        for item in report.by_regime:
+            if item.stats.predictions == 0:
+                continue
+            print(
+                f"{item.horizon_seconds // 60}m "
+                f"{item.direction.upper()} "
+                f"{item.trend_regime}+{item.volatility_regime} "
+                f"n={item.stats.predictions} "
+                f"TP={item.stats.take_profit} "
+                f"SL={item.stats.stop_loss} "
+                f"no_touch={item.stats.expired_no_touch} "
+                f"TP_rate={format_rate(item.stats.tp_rate)}"
+            )
+
+        print()
+        print(
+            f"no_trade_decisions={result.no_trade_count} "
+            f"open_predictions={len(result.open_predictions)}"
+        )
+    finally:
+        await engine.dispose()
+
+
+def main() -> None:
+    args = parse_args()
+    asyncio.run(run(args.symbol, args.hours))
+
+
+if __name__ == "__main__":
+    main()
