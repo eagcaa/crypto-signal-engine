@@ -35,7 +35,8 @@ async def run(symbol: str = "BTCUSDT") -> None:
                 f"TP={row.take_profit} "
                 f"SL={row.stop_loss} "
                 f"no_touch={row.expired_no_touch} "
-                f"no_data={row.expired_without_data}"
+                f"no_data={row.expired_without_data} "
+                f"unresolved={row.unresolved}"
             )
     finally:
         await engine.dispose()
