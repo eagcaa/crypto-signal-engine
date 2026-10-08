@@ -267,8 +267,8 @@ class PredictionRepository:
                         exit_price=evaluation.exit_price,
                         return_pct=evaluation.return_pct,
                         success=evaluation.success,
-                    evaluation_source=evaluation.evaluation_source,
-                    evaluation_version=evaluation.evaluation_version,
+                        evaluation_source=evaluation.evaluation_source,
+                        evaluation_version=evaluation.evaluation_version,
                     )
                     .on_conflict_do_nothing(
                         index_elements=[PredictionEvaluationRow.prediction_id]
