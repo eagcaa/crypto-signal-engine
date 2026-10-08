@@ -68,6 +68,7 @@ class _BybitTradeCollector:
         market_type: MarketType,
         base_url: str,
         reconnect_delay_seconds: float = 2.0,
+        receive_timeout_seconds: float = 45.0,
     ) -> None:
         if not symbols:
             raise ValueError("At least one symbol is required")
@@ -76,6 +77,7 @@ class _BybitTradeCollector:
         self._market_type = market_type
         self._base_url = base_url
         self._reconnect_delay_seconds = reconnect_delay_seconds
+        self._receive_timeout_seconds = receive_timeout_seconds
 
     @property
     def topics(self) -> tuple[str, ...]:
@@ -105,8 +107,7 @@ class _BybitTradeCollector:
 
         async with websockets.connect(
             self._base_url,
-            ping_interval=20,
-            ping_timeout=20,
+            ping_interval=None,
             close_timeout=10,
             max_queue=4096,
         ) as websocket:
@@ -119,7 +120,26 @@ class _BybitTradeCollector:
                 )
             )
 
-            async for message in websocket:
+            logger.info(
+                "Bybit %s trade stream connected: %s",
+                self._market_type.value,
+                self._base_url,
+            )
+            first_trade = True
+
+            while True:
+                try:
+                    message = await asyncio.wait_for(
+                        websocket.recv(),
+                        timeout=self._receive_timeout_seconds,
+                    )
+                except TimeoutError as exc:
+                    raise TimeoutError(
+                        f"Bybit {self._market_type.value} trade stream "
+                        f"received no messages for "
+                        f"{self._receive_timeout_seconds:.0f}s"
+                    ) from exc
+
                 raw = message.decode("utf-8") if isinstance(message, bytes) else message
                 payload = json.loads(raw)
 
@@ -133,6 +153,14 @@ class _BybitTradeCollector:
                     payload,
                     market_type=self._market_type,
                 ):
+                    if first_trade:
+                        logger.info(
+                            "Bybit %s first trade received: %s price=%s",
+                            self._market_type.value,
+                            trade.symbol,
+                            trade.price,
+                        )
+                        first_trade = False
                     yield trade
 
 
@@ -142,12 +170,14 @@ class BybitSpotTradeCollector(_BybitTradeCollector):
         symbols: list[str],
         *,
         reconnect_delay_seconds: float = 2.0,
+        receive_timeout_seconds: float = 45.0,
     ) -> None:
         super().__init__(
             symbols,
             market_type=MarketType.SPOT,
             base_url=BYBIT_SPOT_PUBLIC_URL,
             reconnect_delay_seconds=reconnect_delay_seconds,
+            receive_timeout_seconds=receive_timeout_seconds,
         )
 
 
@@ -157,10 +187,12 @@ class BybitFuturesTradeCollector(_BybitTradeCollector):
         symbols: list[str],
         *,
         reconnect_delay_seconds: float = 2.0,
+        receive_timeout_seconds: float = 45.0,
     ) -> None:
         super().__init__(
             symbols,
             market_type=MarketType.FUTURES,
             base_url=BYBIT_LINEAR_PUBLIC_URL,
             reconnect_delay_seconds=reconnect_delay_seconds,
+            receive_timeout_seconds=receive_timeout_seconds,
         )
