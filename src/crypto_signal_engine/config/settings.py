@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     paper_max_open_positions: int = 1
     paper_max_drawdown_pct: Decimal = Decimal("5.00")
     paper_max_consecutive_losses: int = 5
+    paper_fee_pct_per_side: Decimal = Decimal("0.05")
+    paper_slippage_pct_per_side: Decimal = Decimal("0.01")
 
     telegram_enabled: bool = False
     telegram_bot_token: str = ""
