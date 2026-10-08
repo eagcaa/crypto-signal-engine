@@ -126,3 +126,21 @@ def test_paper_report_can_filter_old_model_positions() -> None:
 
     assert report.overall.trades == 1
     assert report.overall.net_pnl == Decimal("6")
+
+
+
+def test_paper_report_surfaces_execution_cost_drag() -> None:
+    position = make_closed(
+        horizon=300,
+        direction="long",
+        pnl="4.80",
+        return_pct="0.48",
+    )
+    position.gross_return_pct = Decimal("0.60")
+    position.trading_cost_pct = Decimal("0.12")
+
+    report = build_paper_performance_report([position])
+
+    assert report.overall.net_pnl == Decimal("4.80")
+    assert report.overall.execution_costs == Decimal("1.20")
+    assert report.overall.gross_pnl_before_costs == Decimal("6.00")
