@@ -24,6 +24,11 @@ def make_closed(
         entry_price=Decimal("100"),
         notional=Decimal("1000"),
         quantity=Decimal("10"),
+        model_name=(
+            "composite_rules_v3_5m"
+            if horizon == 300
+            else "composite_rules_v3_15m"
+        ),
         status=PaperPositionStatus.CLOSED,
         closed_at=now,
         exit_price=Decimal("100"),
@@ -96,3 +101,28 @@ def test_paper_report_groups_by_horizon_and_direction() -> None:
     assert long_group.horizon_seconds == 300
     assert long_group.stats.trades == 1
     assert long_group.stats.net_pnl == Decimal("6")
+
+
+
+def test_paper_report_can_filter_old_model_positions() -> None:
+    current = make_closed(
+        horizon=300,
+        direction="long",
+        pnl="6",
+        return_pct="0.60",
+    )
+    old = make_closed(
+        horizon=300,
+        direction="long",
+        pnl="-3",
+        return_pct="-0.30",
+    )
+    old.model_name = "composite_rules_v2_5m"
+
+    report = build_paper_performance_report(
+        [current, old],
+        model_names=("composite_rules_v3_5m",),
+    )
+
+    assert report.overall.trades == 1
+    assert report.overall.net_pnl == Decimal("6")
