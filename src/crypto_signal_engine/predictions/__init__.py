@@ -2,6 +2,7 @@ from crypto_signal_engine.predictions.engine import (
     BaselinePredictionEngine,
     CompositePredictionEngine,
 )
+from crypto_signal_engine.predictions.live_evaluator import LiveFirstTouchEvaluator
 from crypto_signal_engine.predictions.models import (
     Prediction,
     PredictionDecision,
@@ -15,6 +16,7 @@ from crypto_signal_engine.predictions.models import (
 __all__ = [
     "BaselinePredictionEngine",
     "CompositePredictionEngine",
+    "LiveFirstTouchEvaluator",
     "Prediction",
     "PredictionDecision",
     "PredictionDecisionDirection",
