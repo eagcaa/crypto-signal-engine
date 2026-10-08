@@ -66,6 +66,7 @@ class BinanceSpotOrderBookCollector:
         depth: int = 20,
         update_ms: int = 100,
         reconnect_delay_seconds: float = 2.0,
+        receive_timeout_seconds: float = 45.0,
     ) -> None:
         if not symbols:
             raise ValueError("At least one symbol is required")
@@ -78,6 +79,7 @@ class BinanceSpotOrderBookCollector:
         self._depth = depth
         self._update_ms = update_ms
         self._reconnect_delay_seconds = reconnect_delay_seconds
+        self._receive_timeout_seconds = receive_timeout_seconds
 
     @property
     def stream_names(self) -> tuple[str, ...]:
@@ -103,12 +105,22 @@ class BinanceSpotOrderBookCollector:
 
         async with websockets.connect(
             url,
-            ping_interval=20,
-            ping_timeout=20,
+            ping_interval=None,
             close_timeout=10,
             max_queue=4096,
         ) as websocket:
-            async for message in websocket:
+            logger.info("Binance order-book stream connected: %s", url)
+            while True:
+                try:
+                    message = await asyncio.wait_for(
+                        websocket.recv(),
+                        timeout=self._receive_timeout_seconds,
+                    )
+                except TimeoutError as exc:
+                    raise TimeoutError(
+                        "Binance order-book stream received no messages for "
+                        f"{self._receive_timeout_seconds:.0f}s"
+                    ) from exc
                 raw = message.decode("utf-8") if isinstance(message, bytes) else message
                 payload = json.loads(raw)
 
