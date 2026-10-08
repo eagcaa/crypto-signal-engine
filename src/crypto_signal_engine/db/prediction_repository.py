@@ -63,6 +63,66 @@ class PredictionRepository:
             )
             await session.commit()
 
+    async def load_open_predictions(
+        self,
+        *,
+        now: datetime,
+        symbols: list[str] | None = None,
+    ) -> list[Prediction]:
+        """Load still-active predictions that have no persisted evaluation.
+
+        Live tick evaluation keeps open predictions in RAM, so this method
+        restores that state after a process restart.
+        """
+        async with self._session_factory() as session:
+            query = (
+                select(PredictionRow)
+                .outerjoin(
+                    PredictionEvaluationRow,
+                    PredictionEvaluationRow.prediction_id == PredictionRow.id,
+                )
+                .where(
+                    PredictionRow.expires_at >= now,
+                    PredictionEvaluationRow.prediction_id.is_(None),
+                )
+                .order_by(PredictionRow.created_at.asc())
+            )
+
+            if symbols:
+                normalized_symbols = [symbol.upper() for symbol in symbols]
+                query = query.where(PredictionRow.symbol.in_(normalized_symbols))
+
+            rows = list((await session.scalars(query)).all())
+
+            predictions: list[Prediction] = []
+            for row in rows:
+                contributions = None
+                if row.feature_contributions_json:
+                    parsed = json.loads(row.feature_contributions_json)
+                    contributions = {
+                        key: Decimal(value)
+                        for key, value in parsed.items()
+                    }
+
+                predictions.append(
+                    Prediction(
+                        id=row.id,
+                        symbol=row.symbol,
+                        created_at=row.created_at,
+                        expires_at=row.expires_at,
+                        horizon_seconds=row.horizon_seconds,
+                        direction=PredictionDirection(row.direction),
+                        entry_price=row.entry_price,
+                        raw_score=row.raw_score,
+                        data_quality=row.data_quality,
+                        model_name=row.model_name,
+                        feature_contributions=contributions,
+                        reason=row.reason,
+                    )
+                )
+
+            return predictions
+
     async def add_evaluation(
         self,
         evaluation: PredictionEvaluation,
