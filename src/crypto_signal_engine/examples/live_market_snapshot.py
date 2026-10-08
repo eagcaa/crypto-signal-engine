@@ -34,7 +34,11 @@ from crypto_signal_engine.features.orderbook import calculate_order_book_metrics
 from crypto_signal_engine.features.research import ResearchFeatureAggregator
 from crypto_signal_engine.features.technical import build_technical_features
 from crypto_signal_engine.health import DataQualityMonitor
-from crypto_signal_engine.integrations import CoinGlassClient, TelegramNotifier
+from crypto_signal_engine.integrations import (
+    CoinGlassClient,
+    TelegramDispatcher,
+    TelegramNotifier,
+)
 from crypto_signal_engine.integrations.coinglass import CoinGlassApiError
 from crypto_signal_engine.market import MarketSnapshotAggregator
 from crypto_signal_engine.paper import (
@@ -49,20 +53,14 @@ from crypto_signal_engine.predictions import (
 
 
 async def send_telegram(
-    notifier: TelegramNotifier | None,
+    dispatcher: TelegramDispatcher | None,
     text: str,
 ) -> None:
-    if notifier is None:
+    if dispatcher is None:
         return
-    try:
-        await notifier.send(text)
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:
-        print(
-            "TELEGRAM unavailable: "
-            f"{type(exc).__name__}: {exc}"
-        )
+
+    if not dispatcher.enqueue(text):
+        print("TELEGRAM queue unavailable/full; alert dropped")
 
 
 def print_paper_position(position, *, event: str) -> None:
@@ -126,7 +124,7 @@ async def consume_trades(
     prediction_repository: PredictionRepository,
     paper_broker: PaperBroker | None = None,
     paper_repository: PaperPositionRepository | None = None,
-    telegram_notifier: TelegramNotifier | None = None,
+    telegram_dispatcher: TelegramDispatcher | None = None,
 ) -> None:
     async for trade in collector.trades():
         await aggregator.update_trade(trade)
@@ -151,7 +149,7 @@ async def consume_trades(
                     )
                     if paper_position is not None:
                         await send_telegram(
-                            telegram_notifier,
+                            telegram_dispatcher,
                             TelegramNotifier.paper_account_text(
                                 paper_broker.snapshot(),
                                 position=paper_position,
@@ -309,7 +307,7 @@ async def persist_snapshots(
     live_evaluator: LiveFirstTouchEvaluator,
     paper_broker: PaperBroker | None = None,
     paper_repository: PaperPositionRepository | None = None,
-    telegram_notifier: TelegramNotifier | None = None,
+    telegram_dispatcher: TelegramDispatcher | None = None,
     calibration_buckets=(),
     data_quality_monitor: DataQualityMonitor | None = None,
     *,
@@ -335,7 +333,7 @@ async def persist_snapshots(
                     f"bad_intervals={quality_event.bad_intervals}"
                 )
                 await send_telegram(
-                    telegram_notifier,
+                    telegram_dispatcher,
                     TelegramNotifier.data_quality_text(
                         symbol=snapshot.symbol,
                         kind=quality_event.kind,
@@ -394,7 +392,7 @@ async def persist_snapshots(
                 )
                 if paper_position is not None:
                     await send_telegram(
-                        telegram_notifier,
+                        telegram_dispatcher,
                         TelegramNotifier.paper_account_text(
                             paper_broker.snapshot(),
                             position=paper_position,
@@ -469,7 +467,7 @@ async def persist_snapshots(
                     )
 
                     await send_telegram(
-                        telegram_notifier,
+                        telegram_dispatcher,
                         TelegramNotifier.prediction_text(
                             prediction,
                             calibrated_confidence=calibrated_confidence,
@@ -589,6 +587,7 @@ async def main() -> None:
     live_evaluator = LiveFirstTouchEvaluator()
     paper_broker = None
     telegram_notifier = None
+    telegram_dispatcher = None
     data_quality_monitor = DataQualityMonitor(
         minimum_quality=settings.data_quality_alert_threshold,
         bad_intervals_before_alert=settings.data_quality_bad_intervals,
@@ -618,6 +617,10 @@ async def main() -> None:
                 settings.telegram_bot_token,
                 settings.telegram_chat_id,
             )
+            telegram_dispatcher = TelegramDispatcher(
+                telegram_notifier
+            )
+            await telegram_dispatcher.start()
             print("TELEGRAM enabled")
         else:
             print(
@@ -676,7 +679,7 @@ async def main() -> None:
                     prediction_repository,
                     paper_broker,
                     paper_repository,
-                    telegram_notifier,
+                    telegram_dispatcher,
                 )
             )
             task_group.create_task(
@@ -738,7 +741,7 @@ async def main() -> None:
                     live_evaluator,
                     paper_broker,
                     paper_repository,
-                    telegram_notifier,
+                    telegram_dispatcher,
                     calibration_buckets,
                     data_quality_monitor,
                     interval_seconds=5.0,
@@ -803,6 +806,8 @@ async def main() -> None:
                     "integration disabled."
                 )
     finally:
+        if telegram_dispatcher is not None:
+            await telegram_dispatcher.stop()
         await engine.dispose()
 
 
