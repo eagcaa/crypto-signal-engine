@@ -120,12 +120,12 @@ class CompositePredictionEngine:
             "spot_cvd": self._flow_score(
                 features.spot_cvd_1m,
                 features.spot_cvd_5m,
-                available=features.spot_trade_sources > 0,
+                source_count=features.spot_trade_sources,
             ),
             "futures_cvd": self._flow_score(
                 features.futures_cvd_1m,
                 features.futures_cvd_5m,
-                available=features.futures_trade_sources > 0,
+                source_count=features.futures_trade_sources,
             ),
             "open_interest": self._open_interest_score(features),
             "funding": self._funding_score(features),
@@ -235,14 +235,20 @@ class CompositePredictionEngine:
         one_minute: Decimal,
         five_minutes: Decimal,
         *,
-        available: bool,
+        source_count: int,
     ) -> Decimal | None:
-        if not available:
+        if source_count <= 0:
             return None
-        return (
+
+        direction_score = (
             self._sign(one_minute) * Decimal("0.60")
             + self._sign(five_minutes) * Decimal("0.40")
         )
+
+        # Two venues is the current full-coverage target. If only one
+        # exchange is feeding the window, reduce the feature's strength.
+        coverage = min(Decimal(source_count) / Decimal("2"), Decimal("1"))
+        return direction_score * coverage
 
     def _open_interest_score(
         self,
