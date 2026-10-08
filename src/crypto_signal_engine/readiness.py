@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from crypto_signal_engine.calibration import CalibrationBucket
 from crypto_signal_engine.paper.validation import PaperValidationResult
+from crypto_signal_engine.predictions.engine import CompositePredictionEngine
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,15 +22,17 @@ def evaluate_readiness(
     now: datetime | None = None,
     maximum_market_age: timedelta = timedelta(minutes=2),
     minimum_market_quality: Decimal = Decimal("0.67"),
-    required_models: tuple[tuple[int, str], ...] = (
-        (300, "composite_rules_v3_5m"),
-        (900, "composite_rules_v3_15m"),
-    ),
+    required_models: tuple[tuple[int, str], ...] | None = None,
     required_directions: tuple[str, ...] = ("long", "short"),
 ) -> ReadinessResult:
     """Evaluate explicit gates before a live-money pilot is even considered."""
 
     reasons: list[str] = []
+    required_models = (
+        required_models
+        if required_models is not None
+        else CompositePredictionEngine.current_model_names()
+    )
 
     ready_keys = {
         (
