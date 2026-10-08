@@ -32,17 +32,50 @@ from crypto_signal_engine.features.research import ResearchFeatureAggregator
 from crypto_signal_engine.integrations import CoinGlassClient
 from crypto_signal_engine.integrations.coinglass import CoinGlassApiError
 from crypto_signal_engine.market import MarketSnapshotAggregator
-from crypto_signal_engine.predictions import CompositePredictionEngine
+from crypto_signal_engine.predictions import (
+    CompositePredictionEngine,
+    LiveFirstTouchEvaluator,
+)
+
+
+def print_evaluation(evaluation, *, source: str) -> None:
+    if evaluation.return_pct is None:
+        print(
+            "EVALUATED "
+            f"source={source} "
+            f"id={evaluation.prediction_id} "
+            f"status={evaluation.status.value} "
+            f"outcome={evaluation.outcome.value} "
+            f"label={evaluation.label}"
+        )
+    else:
+        print(
+            "EVALUATED "
+            f"source={source} "
+            f"id={evaluation.prediction_id} "
+            f"status={evaluation.status.value} "
+            f"outcome={evaluation.outcome.value} "
+            f"label={evaluation.label} "
+            f"return={evaluation.return_pct:.4f}% "
+            f"success={evaluation.success}"
+        )
 
 
 async def consume_trades(
     collector,
     aggregator: MarketSnapshotAggregator,
     research_aggregator: ResearchFeatureAggregator,
+    live_evaluator: LiveFirstTouchEvaluator,
+    prediction_repository: PredictionRepository,
 ) -> None:
     async for trade in collector.trades():
         await aggregator.update_trade(trade)
         await research_aggregator.update_trade(trade)
+
+        evaluations = await live_evaluator.process_trade(trade)
+        for evaluation in evaluations:
+            if await prediction_repository.add_evaluation(evaluation):
+                print_evaluation(evaluation, source="tick")
 
 
 async def consume_order_book(
@@ -152,6 +185,7 @@ async def persist_snapshots(
     research_repository: ResearchFeatureRepository,
     research_aggregator: ResearchFeatureAggregator,
     prediction_engine: CompositePredictionEngine,
+    live_evaluator: LiveFirstTouchEvaluator,
     *,
     interval_seconds: float = 5.0,
     prediction_interval_seconds: int = 60,
@@ -195,24 +229,7 @@ async def persist_snapshots(
 
         evaluations = await prediction_repository.evaluate_due(snapshot.timestamp)
         for evaluation in evaluations:
-            if evaluation.return_pct is None:
-                print(
-                    "EVALUATED "
-                    f"id={evaluation.prediction_id} "
-                    f"status={evaluation.status.value} "
-                    f"outcome={evaluation.outcome.value} "
-                    f"label={evaluation.label}"
-                )
-            else:
-                print(
-                    "EVALUATED "
-                    f"id={evaluation.prediction_id} "
-                    f"status={evaluation.status.value} "
-                    f"outcome={evaluation.outcome.value} "
-                    f"label={evaluation.label} "
-                    f"return={evaluation.return_pct:.4f}% "
-                    f"success={evaluation.success}"
-                )
+            print_evaluation(evaluation, source="snapshot")
 
         should_generate = (
             last_prediction_at is None
@@ -244,6 +261,7 @@ async def persist_snapshots(
                 else:
                     prediction = decision.prediction
                     await prediction_repository.add(prediction)
+                    await live_evaluator.register(prediction)
                     print(
                         "PREDICTION "
                         f"id={prediction.id} "
@@ -309,6 +327,7 @@ async def main() -> None:
     derivatives_repository = DerivativesRepository(session_factory)
     research_repository = ResearchFeatureRepository(session_factory)
     prediction_engine = CompositePredictionEngine()
+    live_evaluator = LiveFirstTouchEvaluator()
 
     symbols = ["BTCUSDT"]
     aggregator = MarketSnapshotAggregator("BTCUSDT")
@@ -321,6 +340,8 @@ async def main() -> None:
                     BinanceSpotTradeCollector(symbols),
                     aggregator,
                     research_aggregator,
+                    live_evaluator,
+                    prediction_repository,
                 )
             )
             task_group.create_task(
@@ -328,6 +349,8 @@ async def main() -> None:
                     BinanceFuturesTradeCollector(symbols),
                     aggregator,
                     research_aggregator,
+                    live_evaluator,
+                    prediction_repository,
                 )
             )
             task_group.create_task(
@@ -335,6 +358,8 @@ async def main() -> None:
                     BybitSpotTradeCollector(symbols),
                     aggregator,
                     research_aggregator,
+                    live_evaluator,
+                    prediction_repository,
                 )
             )
             task_group.create_task(
@@ -342,6 +367,8 @@ async def main() -> None:
                     BybitFuturesTradeCollector(symbols),
                     aggregator,
                     research_aggregator,
+                    live_evaluator,
+                    prediction_repository,
                 )
             )
             task_group.create_task(
@@ -373,6 +400,7 @@ async def main() -> None:
                     research_repository,
                     research_aggregator,
                     prediction_engine,
+                    live_evaluator,
                     interval_seconds=5.0,
                     prediction_interval_seconds=60,
                 )
@@ -401,6 +429,8 @@ async def main() -> None:
                     BinanceLiquidationCollector(symbols),
                     derivatives_repository,
                     research_aggregator,
+                    live_evaluator,
+                    prediction_repository,
                 )
             )
             task_group.create_task(
@@ -408,6 +438,8 @@ async def main() -> None:
                     BybitLiquidationCollector(symbols),
                     derivatives_repository,
                     research_aggregator,
+                    live_evaluator,
+                    prediction_repository,
                 )
             )
 
