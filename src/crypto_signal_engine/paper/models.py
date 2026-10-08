@@ -20,6 +20,8 @@ class PaperRiskConfig:
     stop_loss_pct: Decimal = Decimal("0.30")
     max_drawdown_pct: Decimal = Decimal("5.00")
     max_consecutive_losses: int = 5
+    fee_pct_per_side: Decimal = Decimal("0.05")
+    slippage_pct_per_side: Decimal = Decimal("0.01")
 
 
 @dataclass(slots=True)
@@ -37,6 +39,8 @@ class PaperPosition:
     status: PaperPositionStatus = PaperPositionStatus.OPEN
     closed_at: datetime | None = None
     exit_price: Decimal | None = None
+    gross_return_pct: Decimal | None = None
+    trading_cost_pct: Decimal | None = None
     return_pct: Decimal | None = None
     pnl: Decimal | None = None
     close_reason: str | None = None
