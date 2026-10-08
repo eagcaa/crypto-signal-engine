@@ -72,7 +72,14 @@ async def run(symbol: str, hours: float) -> None:
         report = build_replay_report(result, features)
         paper = simulate_replay(
             result,
-            risk_config=PaperRiskConfig(),
+            risk_config=PaperRiskConfig(
+                starting_equity=settings.paper_starting_equity,
+                risk_per_trade_pct=settings.paper_risk_per_trade_pct,
+                max_notional_pct=settings.paper_max_notional_pct,
+                max_open_positions=settings.paper_max_open_positions,
+                max_drawdown_pct=settings.paper_max_drawdown_pct,
+                max_consecutive_losses=settings.paper_max_consecutive_losses,
+            ),
         )
 
         print()
