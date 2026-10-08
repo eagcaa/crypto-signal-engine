@@ -100,6 +100,7 @@ async def consume_order_book(
 
 async def poll_technicals(
     client: BinanceSpotCandleClient,
+    research_aggregator: ResearchFeatureAggregator,
     *,
     symbol: str,
     interval_seconds: float = 30.0,
@@ -112,6 +113,9 @@ async def poll_technicals(
             )
             features_5m = build_technical_features(candles_5m)
             features_15m = build_technical_features(candles_15m)
+
+            await research_aggregator.update_technical(features_5m)
+            await research_aggregator.update_technical(features_15m)
 
             for features in (features_5m, features_15m):
                 print(
@@ -257,6 +261,10 @@ async def persist_snapshots(
             f"trade_sources={research_snapshot.spot_trade_sources}/"
             f"{research_snapshot.futures_trade_sources} "
             f"history={research_snapshot.history_seconds}s "
+            f"trend_5m={research_snapshot.trend_score_5m} "
+            f"trend_15m={research_snapshot.trend_score_15m} "
+            f"atr_pct_5m={research_snapshot.atr_pct_5m} "
+            f"atr_pct_15m={research_snapshot.atr_pct_15m} "
             f"liq_5m={research_snapshot.liquidation_imbalance_5m} "
             f"liq_15m={research_snapshot.liquidation_imbalance_15m} "
             f"binance_oi_5m={research_snapshot.binance_oi_change_5m_pct} "
@@ -447,6 +455,7 @@ async def main() -> None:
             task_group.create_task(
                 poll_technicals(
                     BinanceSpotCandleClient(),
+                    research_aggregator,
                     symbol="BTCUSDT",
                     interval_seconds=30.0,
                 )
