@@ -306,6 +306,8 @@ class PaperPositionRow(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     exit_price: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
+    gross_return_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
+    trading_cost_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
     return_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
     pnl: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
     close_reason: Mapped[str | None] = mapped_column(String(64))
