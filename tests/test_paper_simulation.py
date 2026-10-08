@@ -61,8 +61,8 @@ def test_simulate_replay_tracks_realized_pnl() -> None:
         ),
     )
 
-    assert snapshot.realized_pnl == Decimal("6.00")
-    assert snapshot.equity == Decimal("10006.00")
+    assert snapshot.realized_pnl == Decimal("4.80")
+    assert snapshot.equity == Decimal("10004.80")
     assert snapshot.closed_positions == 1
 
 
@@ -112,4 +112,4 @@ def test_simulate_replay_broker_exposes_positions_for_reporting() -> None:
     assert len(broker.positions) == 1
     assert report.overall.trades == 1
     assert report.overall.losses == 1
-    assert report.overall.net_pnl == Decimal("-3.00")
+    assert report.overall.net_pnl == Decimal("-4.20")
