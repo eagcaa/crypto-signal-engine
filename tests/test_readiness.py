@@ -10,6 +10,11 @@ def bucket(horizon: int, direction: str) -> CalibrationBucket:
     return CalibrationBucket(
         horizon_seconds=horizon,
         direction=direction,
+        model_name=(
+            "composite_rules_v3_5m"
+            if horizon == 300
+            else "composite_rules_v3_15m"
+        ),
         lower_bound=Decimal("0.30"),
         upper_bound=Decimal("0.40"),
         samples=40,
