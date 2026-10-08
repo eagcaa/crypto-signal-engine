@@ -1,7 +1,10 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 
-from crypto_signal_engine.calibration import ReplayCalibrator, load_calibration
+from crypto_signal_engine.calibration import (
+    ReplayCalibrator,
+    load_calibration_artifact,
+)
 from crypto_signal_engine.collectors.binance import (
     BinanceDerivativesClient,
     BinanceFuturesTradeCollector,
@@ -602,22 +605,51 @@ async def main() -> None:
         minimum_quality=settings.data_quality_alert_threshold,
         bad_intervals_before_alert=settings.data_quality_bad_intervals,
     )
-    calibration_buckets = load_calibration(settings.calibration_file)
-    if calibration_buckets:
-        ready_buckets = sum(
-            1
-            for bucket in calibration_buckets
-            if bucket.calibrated_confidence is not None
+    calibration_artifact = load_calibration_artifact(
+        settings.calibration_file
+    )
+    calibration_buckets = ()
+
+    if calibration_artifact is not None:
+        calibration_age = (
+            datetime.now(UTC) - calibration_artifact.generated_at
         )
-        print(
-            "CALIBRATION loaded "
-            f"path={settings.calibration_file} "
-            f"buckets={len(calibration_buckets)} "
-            f"ready={ready_buckets}"
+        calibration_max_age = timedelta(
+            hours=settings.calibration_max_age_hours
         )
+        is_exact = (
+            calibration_artifact.price_source
+            == "binance_spot_aggTrades"
+        )
+        is_fresh = calibration_age <= calibration_max_age
+
+        if is_exact and is_fresh:
+            calibration_buckets = calibration_artifact.buckets
+            ready_buckets = sum(
+                1
+                for bucket in calibration_buckets
+                if bucket.calibrated_confidence is not None
+            )
+            print(
+                "CALIBRATION loaded "
+                f"path={settings.calibration_file} "
+                f"source={calibration_artifact.price_source} "
+                f"generated_at={calibration_artifact.generated_at.isoformat()} "
+                f"buckets={len(calibration_buckets)} "
+                f"ready={ready_buckets}"
+            )
+        else:
+            print(
+                "CALIBRATION rejected "
+                f"path={settings.calibration_file} "
+                f"source={calibration_artifact.price_source} "
+                f"age_seconds={int(calibration_age.total_seconds())} "
+                f"exact={is_exact} "
+                f"fresh={is_fresh}"
+            )
     else:
         print(
-            "CALIBRATION unavailable "
+            "CALIBRATION unavailable_or_legacy "
             f"path={settings.calibration_file}"
         )
 
