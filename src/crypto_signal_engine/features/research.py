@@ -27,6 +27,7 @@ class ResearchFeatureSnapshot:
     futures_cvd_15m: Decimal
     spot_trade_sources: int
     futures_trade_sources: int
+    history_seconds: int
 
     binance_oi_change_5m_pct: Decimal | None
     binance_oi_change_15m_pct: Decimal | None
@@ -65,6 +66,7 @@ class ResearchFeatureAggregator:
         self._trades: dict[tuple[Exchange, MarketType], deque[_SignedTrade]] = {}
         self._derivatives: dict[Exchange, ExchangeDerivativesSnapshot] = {}
         self._liquidations: deque[LiquidationEvent] = deque()
+        self._first_trade_time: datetime | None = None
         self._lock = asyncio.Lock()
 
     async def update_trade(self, trade: TradeTick) -> None:
@@ -78,6 +80,12 @@ class ResearchFeatureAggregator:
         )
 
         async with self._lock:
+            if (
+                self._first_trade_time is None
+                or trade.event_time < self._first_trade_time
+            ):
+                self._first_trade_time = trade.event_time
+
             key = (trade.exchange, trade.market_type)
             queue = self._trades.setdefault(key, deque())
             queue.append(_SignedTrade(trade.event_time, signed_quantity))
@@ -125,6 +133,7 @@ class ResearchFeatureAggregator:
                 futures_cvd_15m=self._cvd_window(now, MarketType.FUTURES, timedelta(minutes=15)),
                 spot_trade_sources=self._source_count(MarketType.SPOT),
                 futures_trade_sources=self._source_count(MarketType.FUTURES),
+                history_seconds=self._history_seconds(now),
                 binance_oi_change_5m_pct=binance.oi_change_5m_pct if binance else None,
                 binance_oi_change_15m_pct=binance.oi_change_15m_pct if binance else None,
                 bybit_oi_change_5m_pct=bybit.oi_change_5m_pct if bybit else None,
@@ -149,6 +158,14 @@ class ResearchFeatureAggregator:
                 bybit_book_imbalance=market_snapshot.bybit_book_imbalance,
                 market_data_quality=market_snapshot.data_quality,
             )
+
+    def _history_seconds(self, now: datetime) -> int:
+        if self._first_trade_time is None:
+            return 0
+        return max(
+            0,
+            int((now - self._first_trade_time).total_seconds()),
+        )
 
     def _cvd_window(
         self,
