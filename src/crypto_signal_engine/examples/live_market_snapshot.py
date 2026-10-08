@@ -670,7 +670,14 @@ async def main() -> None:
                 max_consecutive_losses=settings.paper_max_consecutive_losses,
             )
         )
-        stored_paper_positions = await paper_repository.load_all()
+        current_model_names = tuple(
+            model_name
+            for _, model_name
+            in CompositePredictionEngine.current_model_names()
+        )
+        stored_paper_positions = await paper_repository.load_all(
+            model_names=current_model_names
+        )
         paper_broker.restore(stored_paper_positions)
         paper_snapshot = paper_broker.snapshot()
         print(
@@ -681,7 +688,8 @@ async def main() -> None:
             f"max_open_positions={settings.paper_max_open_positions} "
             f"max_drawdown={settings.paper_max_drawdown_pct}% "
             f"max_consecutive_losses={settings.paper_max_consecutive_losses} "
-            f"restored_positions={len(stored_paper_positions)}"
+            f"restored_positions={len(stored_paper_positions)} "
+            f"models={','.join(current_model_names)}"
         )
 
     symbols = ["BTCUSDT"]
