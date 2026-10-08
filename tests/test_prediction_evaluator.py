@@ -63,6 +63,8 @@ def test_long_take_profit_is_first_touch_label_plus_one() -> None:
     assert evaluation.label == 1
     assert evaluation.success is True
     assert evaluation.evaluated_at == snapshots[1].timestamp
+    assert evaluation.evaluation_source == "persisted_snapshot"
+    assert evaluation.evaluation_version == "first_touch_v1"
 
 
 def test_long_stop_loss_is_first_touch_label_minus_one() -> None:
