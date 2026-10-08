@@ -3,6 +3,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from crypto_signal_engine.calibration import ReplayCalibrator
 from crypto_signal_engine.collectors.binance import (
     BinanceSpotHistoricalTradeClient,
 )
@@ -29,6 +30,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--symbol", default="BTCUSDT")
     parser.add_argument("--hours", type=float, default=6.0)
     parser.add_argument(
+        "--min-calibration-samples",
+        type=int,
+        default=30,
+        help="Minimum evaluated samples required before exposing confidence.",
+    )
+    parser.add_argument(
         "--exact-binance-trades",
         action="store_true",
         help=(
@@ -48,6 +55,7 @@ async def run(
     hours: float,
     *,
     exact_binance_trades: bool = False,
+    minimum_calibration_samples: int = 30,
 ) -> None:
     settings = get_settings()
     engine = create_database_engine(settings.database_url)
@@ -100,6 +108,9 @@ async def run(
 
         result = ReplayRunner().run(features, prices)
         report = build_replay_report(result, features)
+        calibration = ReplayCalibrator(
+            minimum_samples=minimum_calibration_samples
+        ).build(report)
         paper_broker = simulate_replay_broker(
             result,
             risk_config=PaperRiskConfig(
@@ -158,6 +169,33 @@ async def run(
                 f"SL={item.stats.stop_loss} "
                 f"no_touch={item.stats.expired_no_touch} "
                 f"TP_rate={format_rate(item.stats.tp_rate)}"
+            )
+
+        print()
+        print("CALIBRATION")
+        for bucket in calibration:
+            upper = (
+                f"{bucket.upper_bound:.2f}"
+                if bucket.upper_bound is not None
+                else "+"
+            )
+            label = (
+                f"{bucket.lower_bound:.2f}-{upper}"
+                if bucket.upper_bound is not None
+                else f"{bucket.lower_bound:.2f}+"
+            )
+            observed = format_rate(bucket.observed_tp_rate)
+            confidence = (
+                "not_ready"
+                if bucket.calibrated_confidence is None
+                else format_rate(bucket.calibrated_confidence)
+            )
+            print(
+                f"{bucket.horizon_seconds // 60}m "
+                f"score={label} "
+                f"n={bucket.samples} "
+                f"observed={observed} "
+                f"confidence={confidence}"
             )
 
         print()
@@ -266,6 +304,7 @@ def main() -> None:
             args.symbol,
             args.hours,
             exact_binance_trades=args.exact_binance_trades,
+            minimum_calibration_samples=args.min_calibration_samples,
         )
     )
 
