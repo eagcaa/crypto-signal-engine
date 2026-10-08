@@ -385,10 +385,16 @@ async def persist_snapshots(
                                 event="open",
                             )
                         else:
+                            paper_snapshot = paper_broker.snapshot()
+                            reason = (
+                                paper_snapshot.halt_reason
+                                if paper_snapshot.trading_halted
+                                else "risk_or_position_limit"
+                            )
                             print(
                                 "PAPER_SKIP "
                                 f"prediction_id={prediction.id} "
-                                "reason=risk_or_position_limit"
+                                f"reason={reason}"
                             )
 
                     print(
@@ -467,6 +473,8 @@ async def main() -> None:
                 risk_per_trade_pct=settings.paper_risk_per_trade_pct,
                 max_notional_pct=settings.paper_max_notional_pct,
                 max_open_positions=settings.paper_max_open_positions,
+                max_drawdown_pct=settings.paper_max_drawdown_pct,
+                max_consecutive_losses=settings.paper_max_consecutive_losses,
             )
         )
         stored_paper_positions = await paper_repository.load_all()
@@ -478,6 +486,8 @@ async def main() -> None:
             f"risk_per_trade={settings.paper_risk_per_trade_pct}% "
             f"max_notional={settings.paper_max_notional_pct}% "
             f"max_open_positions={settings.paper_max_open_positions} "
+            f"max_drawdown={settings.paper_max_drawdown_pct}% "
+            f"max_consecutive_losses={settings.paper_max_consecutive_losses} "
             f"restored_positions={len(stored_paper_positions)}"
         )
 
