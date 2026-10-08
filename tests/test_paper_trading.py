@@ -164,3 +164,105 @@ def test_paper_broker_restores_equity_and_open_positions() -> None:
     assert snapshot.realized_pnl == Decimal("6.00")
     assert snapshot.closed_positions == 1
     assert snapshot.open_positions == 1
+
+
+
+def _loss_evaluation(prediction: Prediction) -> PredictionEvaluation:
+    return PredictionEvaluation(
+        prediction_id=prediction.id,
+        status=PredictionEvaluationStatus.EVALUATED,
+        outcome=PredictionEvaluationOutcome.STOP_LOSS,
+        label=-1,
+        evaluated_at=prediction.created_at + timedelta(seconds=30),
+        exit_price=Decimal("99.70"),
+        return_pct=Decimal("-0.30"),
+        success=False,
+    )
+
+
+def test_paper_broker_tracks_win_rate_and_drawdown() -> None:
+    broker = PaperBroker(
+        PaperRiskConfig(
+            starting_equity=Decimal("10000"),
+            max_open_positions=1,
+            max_drawdown_pct=Decimal("5"),
+            max_consecutive_losses=5,
+        )
+    )
+
+    winner = make_prediction()
+    assert broker.open_from_prediction(winner) is not None
+    broker.apply_evaluation(
+        PredictionEvaluation(
+            prediction_id=winner.id,
+            status=PredictionEvaluationStatus.EVALUATED,
+            outcome=PredictionEvaluationOutcome.TAKE_PROFIT,
+            label=1,
+            evaluated_at=winner.created_at + timedelta(seconds=30),
+            exit_price=Decimal("100.60"),
+            return_pct=Decimal("0.60"),
+            success=True,
+        )
+    )
+
+    loser = make_prediction()
+    assert broker.open_from_prediction(loser) is not None
+    broker.apply_evaluation(_loss_evaluation(loser))
+
+    snapshot = broker.snapshot()
+
+    assert snapshot.wins == 1
+    assert snapshot.losses == 1
+    assert snapshot.win_rate == Decimal("50")
+    assert snapshot.peak_equity == Decimal("10006.00")
+    assert snapshot.drawdown_pct > Decimal("0")
+    assert snapshot.max_drawdown_pct == snapshot.drawdown_pct
+    assert snapshot.trading_halted is False
+
+
+def test_paper_broker_halts_after_consecutive_losses() -> None:
+    broker = PaperBroker(
+        PaperRiskConfig(
+            starting_equity=Decimal("10000"),
+            max_open_positions=1,
+            max_drawdown_pct=Decimal("50"),
+            max_consecutive_losses=2,
+        )
+    )
+
+    first = make_prediction()
+    assert broker.open_from_prediction(first) is not None
+    broker.apply_evaluation(_loss_evaluation(first))
+
+    second = make_prediction()
+    assert broker.open_from_prediction(second) is not None
+    broker.apply_evaluation(_loss_evaluation(second))
+
+    snapshot = broker.snapshot()
+
+    assert snapshot.consecutive_losses == 2
+    assert snapshot.trading_halted is True
+    assert snapshot.halt_reason == "max_consecutive_losses_reached:2"
+    assert broker.open_from_prediction(make_prediction()) is None
+
+
+def test_paper_broker_halts_when_drawdown_limit_is_hit() -> None:
+    broker = PaperBroker(
+        PaperRiskConfig(
+            starting_equity=Decimal("10000"),
+            max_open_positions=1,
+            max_drawdown_pct=Decimal("0.02"),
+            max_consecutive_losses=10,
+        )
+    )
+
+    prediction = make_prediction()
+    assert broker.open_from_prediction(prediction) is not None
+    broker.apply_evaluation(_loss_evaluation(prediction))
+
+    snapshot = broker.snapshot()
+
+    assert snapshot.max_drawdown_pct >= Decimal("0.02")
+    assert snapshot.trading_halted is True
+    assert snapshot.halt_reason is not None
+    assert snapshot.halt_reason.startswith("max_drawdown_reached:")
