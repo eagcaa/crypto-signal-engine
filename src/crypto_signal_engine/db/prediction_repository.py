@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -39,6 +40,20 @@ class PredictionRepository:
                     raw_score=prediction.raw_score,
                     data_quality=prediction.data_quality,
                     model_name=prediction.model_name,
+                    feature_contributions_json=(
+                        json.dumps(
+                            {
+                                key: str(value)
+                                for key, value in (
+                                    prediction.feature_contributions or {}
+                                ).items()
+                            },
+                            sort_keys=True,
+                        )
+                        if prediction.feature_contributions
+                        else None
+                    ),
+                    reason=prediction.reason,
                 )
             )
             await session.commit()
