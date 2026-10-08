@@ -3,6 +3,9 @@ from crypto_signal_engine.collectors.binance.derivatives import (
     BinanceDerivativesClient,
     BinanceLiquidationCollector,
 )
+from crypto_signal_engine.collectors.binance.historical_trades import (
+    BinanceSpotHistoricalTradeClient,
+)
 from crypto_signal_engine.collectors.binance.futures_trades import (
     BinanceFuturesTradeCollector,
 )
@@ -16,6 +19,7 @@ __all__ = [
     "BinanceFuturesTradeCollector",
     "BinanceLiquidationCollector",
     "BinanceSpotCandleClient",
+    "BinanceSpotHistoricalTradeClient",
     "BinanceSpotOrderBookCollector",
     "BinanceSpotTradeCollector",
 ]
