@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from crypto_signal_engine.calibration import CalibrationBucket
+from crypto_signal_engine.calibration import CalibrationArtifact, CalibrationBucket
 from crypto_signal_engine.paper.validation import PaperValidationResult
 from crypto_signal_engine.predictions.engine import CompositePredictionEngine
 
@@ -22,6 +22,8 @@ def evaluate_readiness(
     now: datetime | None = None,
     maximum_market_age: timedelta = timedelta(minutes=2),
     minimum_market_quality: Decimal = Decimal("0.67"),
+    calibration_artifact: CalibrationArtifact | None = None,
+    maximum_calibration_age: timedelta = timedelta(days=7),
     required_models: tuple[tuple[int, str], ...] | None = None,
     required_directions: tuple[str, ...] = ("long", "short"),
 ) -> ReadinessResult:
@@ -50,6 +52,22 @@ def evaluate_readiness(
                 reasons.append(
                     "calibration_not_ready:"
                     f"{horizon}s:{direction}:{model_name}"
+                )
+
+    if calibration_artifact is None:
+        reasons.append("calibration_artifact_missing")
+    else:
+        if calibration_artifact.price_source != "binance_spot_aggTrades":
+            reasons.append(
+                "calibration_price_source_invalid:"
+                f"{calibration_artifact.price_source}"
+            )
+        if now is not None:
+            artifact_age = now - calibration_artifact.generated_at
+            if artifact_age > maximum_calibration_age:
+                reasons.append(
+                    "calibration_artifact_stale:"
+                    f"{int(artifact_age.total_seconds())}s"
                 )
 
     if not paper_validation.passed:
