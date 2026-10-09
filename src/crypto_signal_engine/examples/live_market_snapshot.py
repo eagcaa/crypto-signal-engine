@@ -496,6 +496,8 @@ async def persist_snapshots(
                         f"raw_score={prediction.raw_score:+.4f} "
                         f"confidence={confidence_text} "
                         f"entry={prediction.entry_price} "
+                        f"tp={prediction.take_profit_pct:.4f}% "
+                        f"sl={prediction.stop_loss_pct:.4f}% "
                         f"{contribution_text} "
                         f"reason={prediction.reason}"
                     )
@@ -598,7 +600,10 @@ async def main() -> None:
     coinglass_repository = CoinGlassSnapshotRepository(session_factory)
     derivatives_repository = DerivativesRepository(session_factory)
     research_repository = ResearchFeatureRepository(session_factory)
-    prediction_engine = CompositePredictionEngine()
+    prediction_engine = CompositePredictionEngine(
+        fee_pct_per_side=settings.paper_fee_pct_per_side,
+        slippage_pct_per_side=settings.paper_slippage_pct_per_side,
+    )
     live_evaluator = LiveFirstTouchEvaluator()
     paper_broker = None
     telegram_notifier = None
