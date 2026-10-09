@@ -1,3 +1,8 @@
+from crypto_signal_engine.replay.barrier_sweep import (
+    BarrierSweepRow,
+    build_barrier_sweep,
+    top_barrier_sweep_rows,
+)
 from crypto_signal_engine.replay.compare import (
     ReplayComparisonRow,
     compare_replay_reports,
@@ -21,6 +26,7 @@ from crypto_signal_engine.replay.report import (
 from crypto_signal_engine.replay.runner import ReplayRunner
 
 __all__ = [
+    "BarrierSweepRow",
     "ExcursionStats",
     "RegimeExcursionStats",
     "RegimeStats",
@@ -32,9 +38,11 @@ __all__ = [
     "ReplayStats",
     "ScoreExcursionStats",
     "ScoreBinStats",
+    "build_barrier_sweep",
     "build_excursion_stats",
     "build_regime_excursion_stats",
     "build_score_excursion_stats",
     "build_replay_report",
     "compare_replay_reports",
+    "top_barrier_sweep_rows",
 ]
