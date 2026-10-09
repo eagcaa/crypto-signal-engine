@@ -476,3 +476,65 @@ def test_v3_open_interest_expansion_confirms_futures_direction() -> None:
     )
 
     assert decision.feature_contributions["open_interest"] < Decimal("0")
+
+
+def test_v4_uses_atr_aware_barriers() -> None:
+    features = make_features(
+        binance_book="0.8",
+        bybit_book="0.6",
+        spot_cvd_1m="3",
+        spot_cvd_5m="5",
+        futures_cvd_1m="4",
+        futures_cvd_5m="7",
+        binance_oi_5m="0.4",
+        bybit_oi_5m="0.3",
+        funding_binance="-0.0001",
+        funding_bybit="-0.0001",
+        binance_long_short="0.9",
+        bybit_long_short="0.9",
+        top_trader="0.9",
+        taker_ratio="1.5",
+        liq_imbalance="0.5",
+    )
+
+    decision = CompositePredictionEngine().decide(
+        features,
+        horizon_seconds=300,
+    )
+
+    assert decision.prediction is not None
+    assert decision.prediction.take_profit_pct == Decimal("0.45")
+    assert decision.prediction.stop_loss_pct == Decimal("0.28")
+    assert decision.prediction.model_name == "composite_rules_v4_5m"
+
+
+def test_v4_rejects_low_volatility_target_that_cannot_clear_cost_floor() -> None:
+    features = replace(
+        make_features(
+            binance_book="0.8",
+            bybit_book="0.6",
+            spot_cvd_1m="3",
+            spot_cvd_5m="5",
+            futures_cvd_1m="4",
+            futures_cvd_5m="7",
+            binance_oi_5m="0.4",
+            bybit_oi_5m="0.3",
+            funding_binance="-0.0001",
+            funding_bybit="-0.0001",
+            binance_long_short="0.9",
+            bybit_long_short="0.9",
+            top_trader="0.9",
+            taker_ratio="1.5",
+            liq_imbalance="0.5",
+        ),
+        atr_pct_5m=Decimal("0.10"),
+    )
+
+    decision = CompositePredictionEngine().decide(
+        features,
+        horizon_seconds=300,
+    )
+
+    assert decision.prediction is None
+    assert decision.direction == PredictionDecisionDirection.NO_TRADE
+    assert "cost+edge floor" in decision.reason
