@@ -1,4 +1,6 @@
+from bisect import bisect_right
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 import random
 
@@ -19,32 +21,50 @@ class CandidateRobustnessResult:
     reasons: tuple[str, ...]
 
 
-def build_candidate_trade_returns(
+@dataclass(frozen=True, slots=True)
+class _TimedReturn:
+    timestamp: datetime
+    return_pct: Decimal
+
+
+def _candidate_timed_returns(
     result: ReplayResult,
     price_points: list[ReplayPricePoint],
     *,
     take_profit_pct: Decimal,
     stop_loss_pct: Decimal,
     round_trip_cost_pct: Decimal,
-) -> tuple[Decimal, ...]:
+) -> tuple[_TimedReturn, ...]:
     points_by_symbol: dict[str, list[ReplayPricePoint]] = {}
     for point in price_points:
         points_by_symbol.setdefault(point.symbol.upper(), []).append(point)
-    for points in points_by_symbol.values():
-        points.sort(key=lambda item: item.timestamp)
 
-    returns: list[Decimal] = []
+    timestamps_by_symbol: dict[str, list[datetime]] = {}
+    for symbol, points in points_by_symbol.items():
+        points.sort(key=lambda item: item.timestamp)
+        timestamps_by_symbol[symbol] = [point.timestamp for point in points]
+
+    returns: list[_TimedReturn] = []
+
     for prediction in result.predictions:
-        path = [
-            point
-            for point in points_by_symbol.get(prediction.symbol.upper(), [])
-            if prediction.created_at < point.timestamp <= prediction.expires_at
-        ]
-        if not path:
+        symbol = prediction.symbol.upper()
+        points = points_by_symbol.get(symbol, [])
+        timestamps = timestamps_by_symbol.get(symbol, [])
+        if not points:
             continue
 
-        closed = False
-        for point in path:
+        # O(log N) window lookup instead of scanning every price point for
+        # every prediction. The slice is then limited to the prediction's
+        # actual lifetime.
+        start_index = bisect_right(timestamps, prediction.created_at)
+        end_index = bisect_right(timestamps, prediction.expires_at)
+        if start_index >= end_index:
+            continue
+
+        closed_return: Decimal | None = None
+        final_directional: Decimal | None = None
+
+        for point in points[start_index:end_index]:
             raw = (
                 (point.price - prediction.entry_price)
                 / prediction.entry_price
@@ -55,31 +75,100 @@ def build_candidate_trade_returns(
                 if prediction.direction == PredictionDirection.SHORT
                 else raw
             )
+            final_directional = directional
+
             if directional >= take_profit_pct:
-                returns.append(take_profit_pct - round_trip_cost_pct)
-                closed = True
+                closed_return = take_profit_pct - round_trip_cost_pct
                 break
             if directional <= -stop_loss_pct:
-                returns.append(-stop_loss_pct - round_trip_cost_pct)
-                closed = True
+                closed_return = -stop_loss_pct - round_trip_cost_pct
                 break
 
-        if closed:
-            continue
+        if closed_return is None:
+            if final_directional is None:
+                continue
+            closed_return = final_directional - round_trip_cost_pct
 
-        final_raw = (
-            (path[-1].price - prediction.entry_price)
-            / prediction.entry_price
-            * Decimal("100")
+        returns.append(
+            _TimedReturn(
+                timestamp=prediction.created_at,
+                return_pct=closed_return,
+            )
         )
-        final_directional = (
-            -final_raw
-            if prediction.direction == PredictionDirection.SHORT
-            else final_raw
-        )
-        returns.append(final_directional - round_trip_cost_pct)
 
     return tuple(returns)
+
+
+def build_candidate_trade_returns(
+    result: ReplayResult,
+    price_points: list[ReplayPricePoint],
+    *,
+    take_profit_pct: Decimal,
+    stop_loss_pct: Decimal,
+    round_trip_cost_pct: Decimal,
+) -> tuple[Decimal, ...]:
+    """Return one outcome per prediction.
+
+    This is useful for diagnostics, but the observations are not assumed to be
+    statistically independent. Use build_candidate_independent_returns for
+    robustness / promotion decisions.
+    """
+
+    return tuple(
+        item.return_pct
+        for item in _candidate_timed_returns(
+            result,
+            price_points,
+            take_profit_pct=take_profit_pct,
+            stop_loss_pct=stop_loss_pct,
+            round_trip_cost_pct=round_trip_cost_pct,
+        )
+    )
+
+
+def build_candidate_independent_returns(
+    result: ReplayResult,
+    price_points: list[ReplayPricePoint],
+    *,
+    take_profit_pct: Decimal,
+    stop_loss_pct: Decimal,
+    round_trip_cost_pct: Decimal,
+    bucket_minutes: int = 60,
+) -> tuple[Decimal, ...]:
+    """Collapse correlated predictions into time buckets.
+
+    The live engine can emit overlapping predictions every minute. Treating
+    those predictions as independent bootstrap samples creates pseudo-
+    replication because many of them observe the same underlying BTC move.
+    We therefore collapse all prediction returns in the same fixed UTC time
+    bucket into a single mean return before bootstrap robustness analysis.
+    """
+
+    if bucket_minutes <= 0:
+        raise ValueError("bucket_minutes must be positive")
+
+    timed_returns = _candidate_timed_returns(
+        result,
+        price_points,
+        take_profit_pct=take_profit_pct,
+        stop_loss_pct=stop_loss_pct,
+        round_trip_cost_pct=round_trip_cost_pct,
+    )
+    if not timed_returns:
+        return ()
+
+    bucket_seconds = bucket_minutes * 60
+    grouped: dict[int, list[Decimal]] = {}
+
+    for item in timed_returns:
+        epoch_seconds = int(item.timestamp.timestamp())
+        bucket_key = epoch_seconds // bucket_seconds
+        grouped.setdefault(bucket_key, []).append(item.return_pct)
+
+    return tuple(
+        sum(values, Decimal("0")) / Decimal(len(values))
+        for _, values in sorted(grouped.items())
+    )
 
 
 def bootstrap_candidate_robustness(
@@ -104,7 +193,7 @@ def bootstrap_candidate_robustness(
             p95_expectancy_pct=Decimal("0"),
             worst_expectancy_pct=Decimal("0"),
             passed=False,
-            reasons=("no_trade_returns",),
+            reasons=("no_independent_returns",),
         )
 
     rng = random.Random(seed)
@@ -122,9 +211,7 @@ def bootstrap_candidate_robustness(
 
     expectancies.sort()
     positive = sum(1 for value in expectancies if value > 0)
-    positive_rate = (
-        Decimal(positive) / Decimal(simulations)
-    )
+    positive_rate = Decimal(positive) / Decimal(simulations)
 
     def percentile(fraction: Decimal) -> Decimal:
         if len(expectancies) == 1:
@@ -142,7 +229,7 @@ def bootstrap_candidate_robustness(
     reasons: list[str] = []
     if sample_size < minimum_samples:
         reasons.append(
-            f"insufficient_samples:{sample_size}/{minimum_samples}"
+            f"insufficient_independent_samples:{sample_size}/{minimum_samples}"
         )
     if positive_rate < minimum_positive_expectancy_rate:
         reasons.append(
