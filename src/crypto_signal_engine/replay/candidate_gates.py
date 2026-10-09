@@ -38,6 +38,8 @@ CANDIDATE_GATES = (
         direction=PredictionDirection.LONG,
         required_trend_regime="range",
         required_volatility_regime="high",
+        frozen_take_profit_pct=Decimal("0.40"),
+        frozen_stop_loss_pct=Decimal("0.18"),
     ),
     CandidateGate(
         name="15m_long_support6_range_high",
