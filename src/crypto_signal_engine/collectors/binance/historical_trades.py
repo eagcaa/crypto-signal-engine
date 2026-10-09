@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -15,13 +16,26 @@ class BinanceSpotHistoricalTradeClient:
     def __init__(
         self,
         *,
-        timeout_seconds: float = 20.0,
+        timeout_seconds: float = 30.0,
         request_limit: int = 1000,
+        max_retries: int = 4,
+        retry_backoff_seconds: float = 1.0,
     ) -> None:
         if request_limit <= 0 or request_limit > 1000:
             raise ValueError("request_limit must be in [1, 1000]")
-        self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+        if max_retries < 0:
+            raise ValueError("max_retries must be >= 0")
+        if retry_backoff_seconds < 0:
+            raise ValueError("retry_backoff_seconds must be >= 0")
+
+        self._timeout = aiohttp.ClientTimeout(
+            total=timeout_seconds,
+            connect=min(timeout_seconds, 10.0),
+            sock_read=timeout_seconds,
+        )
         self._request_limit = request_limit
+        self._max_retries = max_retries
+        self._retry_backoff_seconds = retry_backoff_seconds
 
     async def fetch_price_points(
         self,
@@ -59,6 +73,68 @@ class BinanceSpotHistoricalTradeClient:
 
         points.sort(key=lambda point: point.timestamp)
         return points
+
+    async def _request_agg_trades(
+        self,
+        session: aiohttp.ClientSession,
+        *,
+        params: dict[str, str],
+    ):
+        url = f"{self.BASE_URL}/api/v3/aggTrades"
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                async with session.get(url, params=params) as response:
+                    payload = await response.json(content_type=None)
+
+                    if response.status < 400:
+                        return payload
+
+                    if response.status in {418, 429} or response.status >= 500:
+                        if attempt < self._max_retries:
+                            retry_after = response.headers.get("Retry-After")
+                            delay = (
+                                float(retry_after)
+                                if retry_after is not None
+                                else self._retry_delay(attempt)
+                            )
+                            print(
+                                "EXACT FETCH retry "
+                                f"status={response.status} "
+                                f"attempt={attempt + 1}/"
+                                f"{self._max_retries} "
+                                f"delay={delay:.1f}s"
+                            )
+                            await asyncio.sleep(delay)
+                            continue
+
+                    raise RuntimeError(
+                        "Binance spot aggTrades HTTP "
+                        f"{response.status}: {payload}"
+                    )
+
+            except (asyncio.TimeoutError, aiohttp.ClientError) as exc:
+                if attempt >= self._max_retries:
+                    raise RuntimeError(
+                        "Binance spot aggTrades request failed after "
+                        f"{self._max_retries + 1} attempts: "
+                        f"{type(exc).__name__}"
+                    ) from exc
+
+                delay = self._retry_delay(attempt)
+                print(
+                    "EXACT FETCH retry "
+                    f"error={type(exc).__name__} "
+                    f"attempt={attempt + 1}/"
+                    f"{self._max_retries} "
+                    f"delay={delay:.1f}s"
+                )
+                await asyncio.sleep(delay)
+
+        raise RuntimeError("Binance spot aggTrades retry loop exhausted")
+
+    def _retry_delay(self, attempt: int) -> float:
+        return self._retry_backoff_seconds * (2**attempt)
 
     async def fetch_price_points_for_windows(
         self,
@@ -142,16 +218,10 @@ class BinanceSpotHistoricalTradeClient:
             else:
                 params["fromId"] = str(from_id)
 
-            async with session.get(
-                f"{self.BASE_URL}/api/v3/aggTrades",
+            payload = await self._request_agg_trades(
+                session,
                 params=params,
-            ) as response:
-                payload = await response.json(content_type=None)
-                if response.status >= 400:
-                    raise RuntimeError(
-                        "Binance spot aggTrades HTTP "
-                        f"{response.status}: {payload}"
-                    )
+            )
 
             if not isinstance(payload, list):
                 raise RuntimeError("Unexpected Binance aggTrades response")
