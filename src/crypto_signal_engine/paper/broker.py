@@ -66,6 +66,9 @@ class PaperBroker:
         self,
         prediction: Prediction,
     ) -> PaperPosition | None:
+        if prediction.id in self._positions:
+            return None
+
         if self._trading_halted:
             return None
 
@@ -79,7 +82,10 @@ class PaperBroker:
         ):
             return None
 
-        notional = self._risk.position_notional(equity=self._equity)
+        notional = self._risk.position_notional(
+            equity=self._equity,
+            stop_loss_pct=prediction.stop_loss_pct,
+        )
         if notional <= 0 or prediction.entry_price <= 0:
             return None
 
