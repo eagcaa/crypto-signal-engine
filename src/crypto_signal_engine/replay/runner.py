@@ -31,9 +31,6 @@ class ReplayRunner:
     supported but are necessarily lower-resolution approximations.
     """
 
-    TAKE_PROFIT_PCT = Decimal("0.60")
-    STOP_LOSS_PCT = Decimal("0.30")
-
     def __init__(
         self,
         prediction_engine: CompositePredictionEngine | None = None,
@@ -224,8 +221,8 @@ class ReplayRunner:
         price: Decimal,
         evaluated_at: datetime,
     ) -> PredictionEvaluation | None:
-        tp_fraction = cls.TAKE_PROFIT_PCT / Decimal("100")
-        sl_fraction = cls.STOP_LOSS_PCT / Decimal("100")
+        tp_fraction = prediction.take_profit_pct / Decimal("100")
+        sl_fraction = prediction.stop_loss_pct / Decimal("100")
 
         if prediction.direction == PredictionDirection.LONG:
             take_profit = prediction.entry_price * (Decimal("1") + tp_fraction)
