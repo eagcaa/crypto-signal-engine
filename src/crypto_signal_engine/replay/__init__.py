@@ -46,6 +46,7 @@ __all__ = [
     "CANDIDATE_GATES",
     "CandidateGate",
     "CandidateLeaderboardRow",
+    "CandidateRobustnessResult",
     "CandidateWindowResult",
     "BarrierSweepRow",
     "FeatureEdgeStats",
@@ -62,8 +63,10 @@ __all__ = [
     "ScoreExcursionStats",
     "ScoreBinStats",
     "build_agreement_edge_stats",
+    "bootstrap_candidate_robustness",
     "build_barrier_sweep",
     "build_candidate_leaderboard",
+    "build_candidate_trade_returns",
     "build_feature_edge_stats",
     "build_excursion_stats",
     "build_regime_excursion_stats",
@@ -80,4 +83,10 @@ from crypto_signal_engine.replay.walk_forward import (
     CandidateLeaderboardRow,
     CandidateWindowResult,
     build_candidate_leaderboard,
+)
+
+from crypto_signal_engine.replay.robustness import (
+    CandidateRobustnessResult,
+    bootstrap_candidate_robustness,
+    build_candidate_trade_returns,
 )
