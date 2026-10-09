@@ -18,6 +18,7 @@ class PaperRiskManager:
         self,
         *,
         equity: Decimal,
+        stop_loss_pct: Decimal | None = None,
     ) -> Decimal:
         if equity <= 0:
             return Decimal("0")
@@ -27,7 +28,12 @@ class PaperRiskManager:
             * self.config.risk_per_trade_pct
             / Decimal("100")
         )
-        stop_fraction = self.config.stop_loss_pct / Decimal("100")
+        effective_stop_loss_pct = (
+            stop_loss_pct
+            if stop_loss_pct is not None
+            else self.config.stop_loss_pct
+        )
+        stop_fraction = effective_stop_loss_pct / Decimal("100")
         risk_sized_notional = (
             risk_budget / stop_fraction
             if stop_fraction > 0
