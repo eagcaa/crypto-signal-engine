@@ -1,7 +1,28 @@
+from dataclasses import dataclass
+from datetime import datetime
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from crypto_signal_engine.db.models import ResearchFeatureSnapshotRow
 from crypto_signal_engine.features.research import ResearchFeatureSnapshot
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchFeatureCoverage:
+    symbol: str
+    first_timestamp: datetime | None
+    last_timestamp: datetime | None
+    rows: int
+    usable_rows: int
+
+    @property
+    def span_hours(self) -> float:
+        if self.first_timestamp is None or self.last_timestamp is None:
+            return 0.0
+        return (
+            self.last_timestamp - self.first_timestamp
+        ).total_seconds() / 3600.0
 
 
 class ResearchFeatureRepository:
@@ -67,3 +88,42 @@ class ResearchFeatureRepository:
                 )
             )
             await session.commit()
+
+
+    async def coverage(
+        self,
+        symbol: str,
+    ) -> ResearchFeatureCoverage:
+        symbol = symbol.upper()
+        async with self._session_factory() as session:
+            summary = (
+                await session.execute(
+                    select(
+                        func.min(ResearchFeatureSnapshotRow.timestamp),
+                        func.max(ResearchFeatureSnapshotRow.timestamp),
+                        func.count(),
+                    ).where(
+                        ResearchFeatureSnapshotRow.symbol == symbol
+                    )
+                )
+            ).one()
+
+            usable_rows = (
+                await session.scalar(
+                    select(func.count()).where(
+                        ResearchFeatureSnapshotRow.symbol == symbol,
+                        ResearchFeatureSnapshotRow.price.is_not(None),
+                        ResearchFeatureSnapshotRow.history_seconds >= 900,
+                        ResearchFeatureSnapshotRow.trend_regime_15m.is_not(None),
+                        ResearchFeatureSnapshotRow.volatility_regime_15m.is_not(None),
+                    )
+                )
+            ) or 0
+
+            return ResearchFeatureCoverage(
+                symbol=symbol,
+                first_timestamp=summary[0],
+                last_timestamp=summary[1],
+                rows=int(summary[2] or 0),
+                usable_rows=int(usable_rows),
+            )
