@@ -1,0 +1,122 @@
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from uuid import uuid4
+
+from crypto_signal_engine.predictions import Prediction, PredictionDirection
+from crypto_signal_engine.replay import (
+    CandidateGate,
+    ReplayResult,
+    filter_replay_result,
+    prediction_passes_gate,
+)
+
+
+def _prediction(
+    *,
+    direction: PredictionDirection,
+    horizon_seconds: int,
+    contributions: dict[str, Decimal],
+) -> Prediction:
+    created_at = datetime(2026, 10, 9, 7, 0, tzinfo=UTC)
+    return Prediction(
+        id=uuid4(),
+        symbol="BTCUSDT",
+        created_at=created_at,
+        expires_at=created_at + timedelta(seconds=horizon_seconds),
+        horizon_seconds=horizon_seconds,
+        direction=direction,
+        entry_price=Decimal("100"),
+        raw_score=Decimal("-0.30") if direction == PredictionDirection.SHORT else Decimal("0.30"),
+        data_quality=Decimal("0.83"),
+        model_name="test",
+        feature_contributions=contributions,
+    )
+
+
+def test_candidate_gate_requires_support_count_and_oi_alignment() -> None:
+    prediction = _prediction(
+        direction=PredictionDirection.SHORT,
+        horizon_seconds=900,
+        contributions={
+            "trend": Decimal("-0.10"),
+            "futures_cvd": Decimal("-0.10"),
+            "spot_cvd": Decimal("-0.05"),
+            "open_interest": Decimal("-0.08"),
+            "liquidations": Decimal("-0.03"),
+            "crowding": Decimal("-0.02"),
+            "order_book": Decimal("0.02"),
+        },
+    )
+    gate = CandidateGate(
+        name="test",
+        horizon_seconds=900,
+        direction=PredictionDirection.SHORT,
+        minimum_supporting_features=6,
+        require_open_interest_support=True,
+    )
+
+    assert prediction_passes_gate(prediction, gate) is True
+
+
+def test_candidate_gate_rejects_oi_opposition() -> None:
+    prediction = _prediction(
+        direction=PredictionDirection.SHORT,
+        horizon_seconds=900,
+        contributions={
+            "trend": Decimal("-0.10"),
+            "futures_cvd": Decimal("-0.10"),
+            "spot_cvd": Decimal("-0.05"),
+            "open_interest": Decimal("0.08"),
+            "liquidations": Decimal("-0.03"),
+            "crowding": Decimal("-0.02"),
+            "taker_flow": Decimal("-0.01"),
+        },
+    )
+    gate = CandidateGate(
+        name="test",
+        horizon_seconds=900,
+        direction=PredictionDirection.SHORT,
+        minimum_supporting_features=6,
+        require_open_interest_support=True,
+    )
+
+    assert prediction_passes_gate(prediction, gate) is False
+
+
+def test_filter_replay_result_keeps_only_accepted_predictions() -> None:
+    accepted = _prediction(
+        direction=PredictionDirection.LONG,
+        horizon_seconds=300,
+        contributions={
+            "a": Decimal("0.1"),
+            "b": Decimal("0.1"),
+            "c": Decimal("0.1"),
+            "d": Decimal("0.1"),
+            "e": Decimal("0.1"),
+            "f": Decimal("0.1"),
+        },
+    )
+    rejected = _prediction(
+        direction=PredictionDirection.LONG,
+        horizon_seconds=300,
+        contributions={
+            "a": Decimal("0.1"),
+            "b": Decimal("0.1"),
+        },
+    )
+    result = ReplayResult(
+        decisions=(),
+        predictions=(accepted, rejected),
+        evaluations=(),
+        open_predictions=(),
+    )
+    gate = CandidateGate(
+        name="test",
+        horizon_seconds=300,
+        direction=PredictionDirection.LONG,
+        minimum_supporting_features=6,
+    )
+
+    filtered = filter_replay_result(result, gate)
+
+    assert filtered.predictions == (accepted,)
