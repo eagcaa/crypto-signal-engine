@@ -202,3 +202,27 @@ def test_regime_candidate_freezes_wide_barriers() -> None:
     assert gate.required_volatility_regime == "high"
     assert gate.frozen_take_profit_pct == Decimal("0.40")
     assert gate.frozen_stop_loss_pct == Decimal("0.30")
+
+
+
+def test_long_range_high_candidates_are_research_only() -> None:
+    from crypto_signal_engine.replay import CANDIDATE_GATES
+
+    by_name = {gate.name: gate for gate in CANDIDATE_GATES}
+
+    regime_only = by_name["15m_long_range_high"]
+    support6 = by_name["15m_long_support6_range_high"]
+    support6_oi = by_name["15m_long_support6_oi_range_high"]
+
+    for gate in (regime_only, support6, support6_oi):
+        assert gate.horizon_seconds == 900
+        assert gate.direction == PredictionDirection.LONG
+        assert gate.required_trend_regime == "range"
+        assert gate.required_volatility_regime == "high"
+        assert gate.frozen_take_profit_pct is None
+        assert gate.frozen_stop_loss_pct is None
+
+    assert regime_only.minimum_supporting_features == 0
+    assert support6.minimum_supporting_features == 6
+    assert support6_oi.minimum_supporting_features == 6
+    assert support6_oi.require_open_interest_support is True
