@@ -104,18 +104,30 @@ def test_excursion_stats_handle_short_direction() -> None:
 
 
 def test_score_excursion_stats_split_score_bins() -> None:
-    first = _prediction(direction=PredictionDirection.LONG)
+    base = _prediction(direction=PredictionDirection.LONG)
+    first = Prediction(
+        id=base.id,
+        symbol=base.symbol,
+        created_at=base.created_at,
+        expires_at=base.expires_at,
+        horizon_seconds=base.horizon_seconds,
+        direction=base.direction,
+        entry_price=base.entry_price,
+        raw_score=Decimal("0.22"),
+        data_quality=base.data_quality,
+        model_name=base.model_name,
+    )
     second = Prediction(
         id=uuid4(),
-        symbol=first.symbol,
-        created_at=first.created_at,
-        expires_at=first.expires_at,
-        horizon_seconds=first.horizon_seconds,
-        direction=first.direction,
-        entry_price=first.entry_price,
+        symbol=base.symbol,
+        created_at=base.created_at,
+        expires_at=base.expires_at,
+        horizon_seconds=base.horizon_seconds,
+        direction=base.direction,
+        entry_price=base.entry_price,
         raw_score=Decimal("0.35"),
-        data_quality=first.data_quality,
-        model_name=first.model_name,
+        data_quality=base.data_quality,
+        model_name=base.model_name,
     )
     result = ReplayResult(
         decisions=(),
@@ -138,7 +150,10 @@ def test_score_excursion_stats_split_score_bins() -> None:
     )
 
     assert len(rows) == 2
-    assert rows[0].lower_bound == Decimal("0.30") or rows[1].lower_bound == Decimal("0.30")
+    assert {row.lower_bound for row in rows} == {
+        Decimal("0.20"),
+        Decimal("0.30"),
+    }
 
 
 def test_regime_excursion_stats_use_matching_horizon_regime() -> None:
