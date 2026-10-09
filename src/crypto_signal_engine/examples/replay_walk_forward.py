@@ -223,6 +223,16 @@ async def run(
                 if row.profit_factor is None
                 else f"{row.profit_factor:.3f}"
             )
+            robustness_rate = (
+                "n/a"
+                if row.robustness_positive_expectancy_rate is None
+                else f"{row.robustness_positive_expectancy_rate * Decimal('100'):.1f}%"
+            )
+            robustness_p05 = (
+                "n/a"
+                if row.robustness_p05_expectancy_pct is None
+                else f"{row.robustness_p05_expectancy_pct:+.4f}%"
+            )
             reasons = ",".join(row.reasons) or "none"
             status = "PROMOTE_TO_PAPER_V5" if row.promotion_ready else "HOLD"
             print(
@@ -233,6 +243,9 @@ async def run(
                 f"trades={row.trades} "
                 f"expectancy={expectancy} "
                 f"profit_factor={profit_factor} "
+                f"robust={row.robustness_passed} "
+                f"bootstrap_positive={robustness_rate} "
+                f"bootstrap_p05={robustness_p05} "
                 f"status={status} "
                 f"reasons={reasons}"
             )
