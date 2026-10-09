@@ -301,3 +301,33 @@ def test_paper_broker_can_disable_execution_costs_explicitly() -> None:
     assert closed.trading_cost_pct == Decimal("0")
     assert closed.return_pct == Decimal("0.60")
     assert closed.pnl == Decimal("6.00")
+
+
+def test_paper_broker_rejects_duplicate_prediction_id() -> None:
+    broker = PaperBroker(PaperRiskConfig(max_open_positions=2))
+    prediction = make_prediction()
+
+    first = broker.open_from_prediction(prediction)
+    duplicate = broker.open_from_prediction(prediction)
+
+    assert first is not None
+    assert duplicate is None
+    assert len(broker.positions) == 1
+
+
+def test_risk_manager_uses_prediction_stop_distance_when_provided() -> None:
+    manager = PaperRiskManager(
+        PaperRiskConfig(
+            starting_equity=Decimal("10000"),
+            risk_per_trade_pct=Decimal("0.50"),
+            max_notional_pct=Decimal("100"),
+            stop_loss_pct=Decimal("0.30"),
+        )
+    )
+
+    notional = manager.position_notional(
+        equity=Decimal("10000"),
+        stop_loss_pct=Decimal("0.50"),
+    )
+
+    assert notional == Decimal("10000")
