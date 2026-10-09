@@ -49,37 +49,6 @@ class BaselinePredictionEngine:
         if abs(raw_score) < self._minimum_abs_score:
             return None
 
-        barriers = self._barrier_percentages(
-            features,
-            horizon_seconds=horizon_seconds,
-        )
-        if barriers is None:
-            return self._no_trade(
-                features,
-                horizon_seconds,
-                reason="ATR is unavailable for dynamic risk barriers.",
-            )
-
-        take_profit_pct, stop_loss_pct = barriers
-        minimum_economic_move = (
-            self._round_trip_cost_pct + self._minimum_net_edge_pct
-        )
-        if take_profit_pct <= minimum_economic_move:
-            return PredictionDecision(
-                symbol=features.symbol,
-                timestamp=features.timestamp,
-                horizon_seconds=horizon_seconds,
-                direction=PredictionDecisionDirection.NO_TRADE,
-                raw_score=raw_score,
-                feature_contributions=contributions,
-                reason=(
-                    f"{reason}; no trade: target {take_profit_pct:.4f}% "
-                    f"does not clear cost+edge floor "
-                    f"{minimum_economic_move:.4f}%."
-                ),
-                prediction=None,
-            )
-
         direction = (
             PredictionDirection.LONG
             if raw_score > 0
@@ -305,6 +274,37 @@ class CompositePredictionEngine:
                 raw_score=raw_score,
                 feature_contributions=contributions,
                 reason=reason,
+                prediction=None,
+            )
+
+        barriers = self._barrier_percentages(
+            features,
+            horizon_seconds=horizon_seconds,
+        )
+        if barriers is None:
+            return self._no_trade(
+                features,
+                horizon_seconds,
+                reason="ATR is unavailable for dynamic risk barriers.",
+            )
+
+        take_profit_pct, stop_loss_pct = barriers
+        minimum_economic_move = (
+            self._round_trip_cost_pct + self._minimum_net_edge_pct
+        )
+        if take_profit_pct <= minimum_economic_move:
+            return PredictionDecision(
+                symbol=features.symbol,
+                timestamp=features.timestamp,
+                horizon_seconds=horizon_seconds,
+                direction=PredictionDecisionDirection.NO_TRADE,
+                raw_score=raw_score,
+                feature_contributions=contributions,
+                reason=(
+                    f"{reason}; no trade: target {take_profit_pct:.4f}% "
+                    f"does not clear cost+edge floor "
+                    f"{minimum_economic_move:.4f}%."
+                ),
                 prediction=None,
             )
 
