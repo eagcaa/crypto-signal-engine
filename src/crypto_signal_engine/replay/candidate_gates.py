@@ -38,6 +38,15 @@ CANDIDATE_GATES = (
         frozen_take_profit_pct=Decimal("0.15"),
         frozen_stop_loss_pct=Decimal("0.18"),
     ),
+    CandidateGate(
+        name="15m_short_support6_oi_wide",
+        horizon_seconds=900,
+        direction=PredictionDirection.SHORT,
+        minimum_supporting_features=6,
+        require_open_interest_support=True,
+        frozen_take_profit_pct=Decimal("0.40"),
+        frozen_stop_loss_pct=Decimal("0.30"),
+    ),
 )
 
 
