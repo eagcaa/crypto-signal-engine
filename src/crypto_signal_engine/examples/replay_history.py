@@ -26,6 +26,7 @@ from crypto_signal_engine.paper import (
 )
 from crypto_signal_engine.predictions import CompositePredictionEngine
 from crypto_signal_engine.replay import (
+    CANDIDATE_GATES,
     ReplayRunner,
     build_agreement_edge_stats,
     build_barrier_sweep,
@@ -34,6 +35,7 @@ from crypto_signal_engine.replay import (
     build_regime_excursion_stats,
     build_score_excursion_stats,
     compare_replay_reports,
+    filter_replay_result,
     top_barrier_sweep_rows,
 )
 from crypto_signal_engine.replay.report import build_replay_report
@@ -269,6 +271,25 @@ async def run(
             round_trip_cost_pct=round_trip_cost_pct,
         )
 
+        candidate_gate_results = []
+        for gate in CANDIDATE_GATES:
+            gated_result = filter_replay_result(
+                excursion_result,
+                gate,
+            )
+            gated_rows = build_barrier_sweep(
+                gated_result,
+                list(excursion_price_points or []),
+                round_trip_cost_pct=round_trip_cost_pct,
+            )
+            gated_top = top_barrier_sweep_rows(
+                gated_rows,
+                per_group=3,
+            )
+            candidate_gate_results.append(
+                (gate, gated_result, gated_top)
+            )
+
         if write_calibration_path:
             artifact = CalibrationArtifact(
                 schema_version=1,
@@ -450,6 +471,30 @@ async def run(
                 f"median_mfe={item.median_mfe_pct:.4f}% "
                 f"median_mae={item.median_mae_pct:.4f}%"
             )
+
+        print()
+        print("CANDIDATE GATES (replay research only)")
+        for gate, gated_result, gated_top in candidate_gate_results:
+            print(
+                f"{gate.name} "
+                f"accepted={len(gated_result.predictions)}"
+            )
+            for item in gated_top:
+                profit_factor = (
+                    "n/a"
+                    if item.profit_factor is None
+                    else f"{item.profit_factor:.3f}"
+                )
+                print(
+                    f"  tp={item.take_profit_pct:.2f}% "
+                    f"sl={item.stop_loss_pct:.2f}% "
+                    f"n={item.samples} "
+                    f"TP={item.take_profit} "
+                    f"SL={item.stop_loss} "
+                    f"NT={item.no_touch} "
+                    f"expectancy={item.expectancy_pct:+.4f}% "
+                    f"profit_factor={profit_factor}"
+                )
 
         print()
         print("SCORE BINS (observed TP rate, not calibrated confidence)")
