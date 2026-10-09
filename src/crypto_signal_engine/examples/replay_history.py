@@ -306,6 +306,28 @@ async def run(
                 (gate, gated_result, gated_top)
             )
 
+        frozen_candidate_results = []
+        for gate in CANDIDATE_GATES:
+            if (
+                gate.frozen_take_profit_pct is None
+                or gate.frozen_stop_loss_pct is None
+            ):
+                continue
+            gated_result = filter_replay_result(
+                excursion_result,
+                gate,
+            )
+            frozen_rows = build_barrier_sweep(
+                gated_result,
+                list(excursion_price_points or []),
+                round_trip_cost_pct=round_trip_cost_pct,
+                take_profit_grid=(gate.frozen_take_profit_pct,),
+                stop_loss_grid=(gate.frozen_stop_loss_pct,),
+            )
+            frozen_candidate_results.append(
+                (gate, frozen_rows[0] if frozen_rows else None)
+            )
+
         if write_calibration_path:
             artifact = CalibrationArtifact(
                 schema_version=1,
@@ -511,6 +533,34 @@ async def run(
                     f"expectancy={item.expectancy_pct:+.4f}% "
                     f"profit_factor={profit_factor}"
                 )
+
+        print()
+        print("FROZEN CANDIDATE VALIDATION")
+        for gate, row in frozen_candidate_results:
+            if row is None:
+                print(
+                    f"{gate.name} "
+                    f"tp={gate.frozen_take_profit_pct:.2f}% "
+                    f"sl={gate.frozen_stop_loss_pct:.2f}% "
+                    "n=0"
+                )
+                continue
+            profit_factor = (
+                "n/a"
+                if row.profit_factor is None
+                else f"{row.profit_factor:.3f}"
+            )
+            print(
+                f"{gate.name} "
+                f"tp={row.take_profit_pct:.2f}% "
+                f"sl={row.stop_loss_pct:.2f}% "
+                f"n={row.samples} "
+                f"TP={row.take_profit} "
+                f"SL={row.stop_loss} "
+                f"NT={row.no_touch} "
+                f"expectancy={row.expectancy_pct:+.4f}% "
+                f"profit_factor={profit_factor}"
+            )
 
         print()
         print("SCORE BINS (observed TP rate, not calibrated confidence)")
