@@ -38,6 +38,7 @@ def build_candidate_leaderboard(
     minimum_active_windows: int = 3,
     minimum_positive_window_ratio: Decimal = Decimal("0.60"),
     minimum_profit_factor: Decimal = Decimal("1.10"),
+    round_trip_cost_pct: Decimal = Decimal("0.12"),
 ) -> tuple[CandidateLeaderboardRow, ...]:
     by_candidate: dict[str, list[CandidateWindowResult]] = {}
     for item in windows:
@@ -95,7 +96,7 @@ def build_candidate_leaderboard(
             aggregate_rows = build_barrier_sweep(
                 aggregate_result,
                 price_points,
-                round_trip_cost_pct=_round_trip_cost(items),
+                round_trip_cost_pct=round_trip_cost_pct,
                 take_profit_grid=(gate.frozen_take_profit_pct,),
                 stop_loss_grid=(gate.frozen_stop_loss_pct,),
             )
@@ -169,15 +170,3 @@ def build_candidate_leaderboard(
             reverse=True,
         )
     )
-
-
-def _round_trip_cost(
-    items: list[CandidateWindowResult],
-) -> Decimal:
-    rows = [item.row for item in items if item.row is not None]
-    if not rows:
-        return Decimal("0.12")
-
-    # Barrier rows contain net returns but not the configured cost itself.
-    # The project currently standardizes research cost at 0.12%.
-    return Decimal("0.12")
