@@ -1,3 +1,4 @@
+from crypto_signal_engine.paper.candidate import CandidatePaperTracker, ForwardCandidate
 from crypto_signal_engine.paper.broker import PaperBroker
 from crypto_signal_engine.paper.models import (
     PaperAccountSnapshot,
@@ -20,6 +21,8 @@ from crypto_signal_engine.paper.validation import (
 from crypto_signal_engine.paper.simulation import simulate_replay, simulate_replay_broker
 
 __all__ = [
+    "CandidatePaperTracker",
+    "ForwardCandidate",
     "PaperAccountSnapshot",
     "PaperBroker",
     "PaperPosition",
