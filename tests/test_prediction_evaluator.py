@@ -91,6 +91,7 @@ def test_short_take_profit_and_stop_loss_prices_are_directional() -> None:
     prediction = make_prediction(direction="short")
 
     tp_price, sl_price = PredictionRepository._barrier_prices(
+        prediction=prediction,
         entry_price=prediction.entry_price,
         direction=prediction.direction,
     )
