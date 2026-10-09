@@ -244,6 +244,7 @@ async def run(
                 f"expectancy={expectancy} "
                 f"profit_factor={profit_factor} "
                 f"robust={row.robustness_passed} "
+                f"independent_samples={row.robustness_independent_samples} "
                 f"bootstrap_positive={robustness_rate} "
                 f"bootstrap_p05={robustness_p05} "
                 f"status={status} "
