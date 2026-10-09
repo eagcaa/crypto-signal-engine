@@ -79,27 +79,36 @@ def test_candidate_leaderboard_promotes_consistent_frozen_candidate() -> None:
         frozen_stop_loss_pct=Decimal("0.18"),
     )
     windows = [
-        _window(index=1, gate=gate, outcome="tp"),
-        _window(index=2, gate=gate, outcome="tp"),
-        _window(index=3, gate=gate, outcome="sl"),
+        *[
+            _window(index=index, gate=gate, outcome="tp")
+            for index in range(1, 20)
+        ],
+        _window(index=20, gate=gate, outcome="sl"),
     ]
 
     row = build_candidate_leaderboard(
         windows,
-        minimum_trades=3,
+        minimum_trades=20,
         minimum_active_windows=3,
         minimum_positive_window_ratio=Decimal("0.60"),
         minimum_profit_factor=Decimal("1.10"),
+        minimum_robustness_samples=20,
+        robustness_simulations=200,
     )[0]
 
-    assert row.windows_tested == 3
-    assert row.active_windows == 3
-    assert row.positive_windows == 2
-    assert row.trades == 3
+    assert row.windows_tested == 20
+    assert row.active_windows == 20
+    assert row.positive_windows == 19
+    assert row.trades == 20
     assert row.expectancy_pct is not None
     assert row.expectancy_pct > 0
     assert row.profit_factor is not None
     assert row.profit_factor > Decimal("1.10")
+    assert row.robustness_passed is True
+    assert row.robustness_positive_expectancy_rate is not None
+    assert row.robustness_positive_expectancy_rate >= Decimal("0.80")
+    assert row.robustness_p05_expectancy_pct is not None
+    assert row.robustness_p05_expectancy_pct > 0
     assert row.promotion_ready is True
     assert row.reasons == ()
 
