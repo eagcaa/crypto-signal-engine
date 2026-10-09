@@ -1,4 +1,7 @@
+import logging
+
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -7,6 +10,8 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from crypto_signal_engine.db.models import Base
+
+logger = logging.getLogger(__name__)
 
 
 def create_database_engine(database_url: str) -> AsyncEngine:
@@ -25,11 +30,49 @@ def create_session_factory(
     )
 
 
-async def initialize_database(engine: AsyncEngine) -> None:
-    async with engine.begin() as connection:
-        await connection.execute(
-            text("CREATE EXTENSION IF NOT EXISTS timescaledb")
+async def _try_enable_timescaledb(engine: AsyncEngine) -> bool:
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("CREATE EXTENSION IF NOT EXISTS timescaledb")
+            )
+        return True
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "TimescaleDB extension unavailable; continuing with standard PostgreSQL: %s",
+            exc,
         )
+        return False
+
+
+async def _try_make_market_snapshots_hypertable(
+    engine: AsyncEngine,
+) -> None:
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    """
+                    SELECT create_hypertable(
+                        'market_snapshots',
+                        'timestamp',
+                        if_not_exists => TRUE
+                    )
+                    """
+                )
+            )
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "TimescaleDB hypertable setup unavailable; "
+            "market_snapshots will remain a normal PostgreSQL table: %s",
+            exc,
+        )
+
+
+async def initialize_database(engine: AsyncEngine) -> None:
+    timescaledb_enabled = await _try_enable_timescaledb(engine)
+
+    async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 
         await connection.execute(
@@ -178,6 +221,7 @@ async def initialize_database(engine: AsyncEngine) -> None:
                 """
             )
         )
+
         for column_name in (
             "spot_cvd_ratio_1m",
             "spot_cvd_ratio_5m",
@@ -215,14 +259,5 @@ async def initialize_database(engine: AsyncEngine) -> None:
                 )
             )
 
-        await connection.execute(
-            text(
-                """
-                SELECT create_hypertable(
-                    'market_snapshots',
-                    'timestamp',
-                    if_not_exists => TRUE
-                )
-                """
-            )
-        )
+    if timescaledb_enabled:
+        await _try_make_market_snapshots_hypertable(engine)

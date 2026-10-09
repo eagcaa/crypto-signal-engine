@@ -155,18 +155,21 @@ class BinanceDerivativesClient:
 
 
 class BinanceLiquidationCollector:
-    BASE_URL = "wss://fstream.binance.com/ws"
+    BASE_URL = "wss://fstream.binance.com/public/ws"
 
     def __init__(self, symbols: list[str]) -> None:
         self._symbols = [symbol.lower() for symbol in symbols]
 
-    async def events(self):
+    def _build_url(self) -> str:
         streams = "/".join(f"{symbol}@forceOrder" for symbol in self._symbols)
-        url = (
-            f"{self.BASE_URL}/{streams}"
-            if len(self._symbols) == 1
-            else f"wss://fstream.binance.com/stream?streams={streams}"
-        )
+        if len(self._symbols) == 1:
+            return f"{self.BASE_URL}/{streams}"
+
+        combined_base = self.BASE_URL.removesuffix("/ws")
+        return f"{combined_base}/stream?streams={streams}"
+
+    async def events(self):
+        url = self._build_url()
 
         while True:
             try:

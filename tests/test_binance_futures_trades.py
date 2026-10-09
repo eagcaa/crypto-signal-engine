@@ -28,6 +28,15 @@ def test_builds_binance_futures_combined_stream() -> None:
     collector = BinanceFuturesTradeCollector(["BTCUSDT", "ETHUSDT"])
 
     assert collector._build_url() == (
-        "wss://fstream.binance.com/stream?"
+        "wss://fstream.binance.com/public/stream?"
         "streams=btcusdt@aggTrade/ethusdt@aggTrade"
+    )
+
+
+
+def test_builds_binance_futures_single_public_stream() -> None:
+    collector = BinanceFuturesTradeCollector(["BTCUSDT"])
+
+    assert collector._build_url() == (
+        "wss://fstream.binance.com/public/ws/btcusdt@aggTrade"
     )
