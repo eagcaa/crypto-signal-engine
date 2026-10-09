@@ -27,10 +27,12 @@ from crypto_signal_engine.paper import (
 from crypto_signal_engine.predictions import CompositePredictionEngine
 from crypto_signal_engine.replay import (
     ReplayRunner,
+    build_barrier_sweep,
     build_excursion_stats,
     build_regime_excursion_stats,
     build_score_excursion_stats,
     compare_replay_reports,
+    top_barrier_sweep_rows,
 )
 from crypto_signal_engine.replay.report import build_replay_report
 
@@ -244,6 +246,16 @@ async def run(
             round_trip_cost_pct=round_trip_cost_pct,
         )
 
+        barrier_sweep_rows = build_barrier_sweep(
+            excursion_result,
+            list(excursion_price_points or []),
+            round_trip_cost_pct=round_trip_cost_pct,
+        )
+        top_barriers = top_barrier_sweep_rows(
+            barrier_sweep_rows,
+            per_group=5,
+        )
+
         if write_calibration_path:
             artifact = CalibrationArtifact(
                 schema_version=1,
@@ -374,6 +386,27 @@ async def run(
                 f"median_mae={item.median_mae_pct:.4f}% "
                 f"p90_mae={item.p90_mae_pct:.4f}% "
                 f"cost_clear={item.cost_clear_rate_pct:.2f}%"
+            )
+
+        print()
+        print("BARRIER SWEEP (in-sample research only)")
+        for item in top_barriers:
+            profit_factor = (
+                "n/a"
+                if item.profit_factor is None
+                else f"{item.profit_factor:.3f}"
+            )
+            print(
+                f"{item.horizon_seconds // 60}m "
+                f"{item.direction.upper()} "
+                f"tp={item.take_profit_pct:.2f}% "
+                f"sl={item.stop_loss_pct:.2f}% "
+                f"n={item.samples} "
+                f"TP={item.take_profit} "
+                f"SL={item.stop_loss} "
+                f"NT={item.no_touch} "
+                f"expectancy={item.expectancy_pct:+.4f}% "
+                f"profit_factor={profit_factor}"
             )
 
         print()
