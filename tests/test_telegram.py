@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from crypto_signal_engine.integrations.telegram import TelegramNotifier
+from crypto_signal_engine.paper.models import PaperPosition, PaperPositionStatus
 from crypto_signal_engine.predictions import (
     Prediction,
     PredictionDirection,
@@ -77,3 +78,52 @@ def test_evaluation_text_formats_measured_outcome() -> None:
 
     assert "Outcome: take_profit" in text
     assert "Return: +0.6000%" in text
+
+
+
+def test_candidate_open_text_is_clearly_paper_only() -> None:
+    prediction = make_prediction()
+    prediction.take_profit_pct = Decimal("0.40")
+    prediction.stop_loss_pct = Decimal("0.18")
+
+    text = TelegramNotifier.candidate_open_text(
+        prediction,
+        candidate_name="15m_long_range_high",
+    )
+
+    assert "EARLY CANDIDATE - PAPER ONLY" in text
+    assert "15m_long_range_high" in text
+    assert "TP: +0.4000%" in text
+    assert "SL: -0.1800%" in text
+
+
+def test_candidate_close_text_formats_result() -> None:
+    prediction = make_prediction()
+    position = PaperPosition(
+        id=uuid4(),
+        prediction_id=prediction.id,
+        symbol="BTCUSDT",
+        horizon_seconds=900,
+        direction="long",
+        opened_at=prediction.created_at,
+        entry_price=Decimal("100"),
+        notional=Decimal("1000"),
+        quantity=Decimal("10"),
+        model_name="candidate_paper_v5_15m_long_range_high",
+        status=PaperPositionStatus.CLOSED,
+        closed_at=prediction.created_at + timedelta(minutes=5),
+        exit_price=Decimal("100.40"),
+        return_pct=Decimal("0.28"),
+        pnl=Decimal("2.80"),
+        close_reason="take_profit",
+    )
+
+    text = TelegramNotifier.candidate_close_text(
+        position,
+        candidate_name="15m_long_range_high",
+    )
+
+    assert "CANDIDATE RESULT - PAPER ONLY" in text
+    assert "Result: take_profit" in text
+    assert "Return: +0.2800%" in text
+    assert "PnL: +2.80" in text

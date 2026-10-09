@@ -1,6 +1,7 @@
 from decimal import Decimal
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,6 +45,18 @@ class Settings(BaseSettings):
     bybit_api_key: str = ""
     bybit_api_secret: str = ""
     coinglass_api_key: str = ""
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+
+        if value.startswith("postgres://"):
+            return "postgresql+asyncpg://" + value.removeprefix("postgres://")
+        if value.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + value.removeprefix("postgresql://")
+        return value
 
     model_config = SettingsConfigDict(
         env_file=".env",

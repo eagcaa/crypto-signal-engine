@@ -120,6 +120,43 @@ class TelegramNotifier:
 
 
     @staticmethod
+    def candidate_open_text(
+        prediction: Prediction,
+        *,
+        candidate_name: str,
+    ) -> str:
+        return (
+            "EARLY CANDIDATE - PAPER ONLY\n"
+            f"{candidate_name}\n"
+            f"{prediction.symbol} {prediction.direction.value.upper()}\n"
+            f"Entry: {prediction.entry_price}\n"
+            f"TP: +{prediction.take_profit_pct:.4f}%\n"
+            f"SL: -{prediction.stop_loss_pct:.4f}%\n"
+            f"Score: {prediction.raw_score:+.4f}"
+        )
+
+    @staticmethod
+    def candidate_close_text(
+        position: PaperPosition,
+        *,
+        candidate_name: str,
+    ) -> str:
+        return_pct = (
+            "n/a"
+            if position.return_pct is None
+            else f"{position.return_pct:+.4f}%"
+        )
+        pnl = "n/a" if position.pnl is None else f"{position.pnl:+.2f}"
+        return (
+            "CANDIDATE RESULT - PAPER ONLY\n"
+            f"{candidate_name}\n"
+            f"{position.symbol} {position.direction.upper()}\n"
+            f"Result: {position.close_reason or position.status.value}\n"
+            f"Return: {return_pct}\n"
+            f"PnL: {pnl}"
+        )
+
+    @staticmethod
     def data_quality_text(
         *,
         symbol: str,

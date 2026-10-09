@@ -42,7 +42,7 @@ class BinanceFuturesTradeCollector:
         *,
         base_url: str = BINANCE_FUTURES_STREAM_URL,
         reconnect_delay_seconds: float = 2.0,
-        receive_timeout_seconds: float = 45.0,
+        receive_timeout_seconds: float = 120.0,
     ) -> None:
         if not symbols:
             raise ValueError("At least one symbol is required")
@@ -83,7 +83,8 @@ class BinanceFuturesTradeCollector:
 
         async with websockets.connect(
             url,
-            ping_interval=None,
+            ping_interval=20,
+            ping_timeout=20,
             close_timeout=10,
             max_queue=4096,
         ) as websocket:

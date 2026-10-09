@@ -185,6 +185,13 @@ async def consume_trades(
                             f"pnl={candidate_position.pnl} "
                             f"reason={candidate_position.close_reason}"
                         )
+                        await send_telegram(
+                            telegram_dispatcher,
+                            TelegramNotifier.candidate_close_text(
+                                candidate_position,
+                                candidate_name=candidate_paper_tracker.gate.name,
+                            ),
+                        )
 
 
 async def consume_order_book(
@@ -449,6 +456,13 @@ async def persist_snapshots(
                         f"pnl={candidate_position.pnl} "
                         f"reason={candidate_position.close_reason}"
                     )
+                    await send_telegram(
+                        telegram_dispatcher,
+                        TelegramNotifier.candidate_close_text(
+                            candidate_position,
+                            candidate_name=candidate_paper_tracker.gate.name,
+                        ),
+                    )
 
         should_generate = (
             last_prediction_at is None
@@ -539,6 +553,13 @@ async def persist_snapshots(
                                     f"entry={candidate_prediction.entry_price} "
                                     f"tp={candidate_prediction.take_profit_pct:.4f}% "
                                     f"sl={candidate_prediction.stop_loss_pct:.4f}%"
+                                )
+                                await send_telegram(
+                                    telegram_dispatcher,
+                                    TelegramNotifier.candidate_open_text(
+                                        candidate_prediction,
+                                        candidate_name=candidate_paper_tracker.gate.name,
+                                    ),
                                 )
                             else:
                                 candidate_snapshot = (
