@@ -66,6 +66,7 @@ __all__ = [
     "bootstrap_candidate_robustness",
     "build_barrier_sweep",
     "build_candidate_leaderboard",
+    "build_candidate_independent_returns",
     "build_candidate_trade_returns",
     "build_feature_edge_stats",
     "build_excursion_stats",
@@ -88,5 +89,6 @@ from crypto_signal_engine.replay.walk_forward import (
 from crypto_signal_engine.replay.robustness import (
     CandidateRobustnessResult,
     bootstrap_candidate_robustness,
+    build_candidate_independent_returns,
     build_candidate_trade_returns,
 )
