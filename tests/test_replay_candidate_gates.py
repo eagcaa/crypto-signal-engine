@@ -219,13 +219,19 @@ def test_long_range_high_candidates_are_research_only() -> None:
         assert gate.direction == PredictionDirection.LONG
         assert gate.required_trend_regime == "range"
         assert gate.required_volatility_regime == "high"
-        assert gate.frozen_take_profit_pct is None
-        assert gate.frozen_stop_loss_pct is None
 
     assert regime_only.minimum_supporting_features == 0
+    assert regime_only.frozen_take_profit_pct == Decimal("0.40")
+    assert regime_only.frozen_stop_loss_pct == Decimal("0.18")
+
     assert support6.minimum_supporting_features == 6
+    assert support6.frozen_take_profit_pct is None
+    assert support6.frozen_stop_loss_pct is None
+
     assert support6_oi.minimum_supporting_features == 6
     assert support6_oi.require_open_interest_support is True
+    assert support6_oi.frozen_take_profit_pct is None
+    assert support6_oi.frozen_stop_loss_pct is None
 
 
 
