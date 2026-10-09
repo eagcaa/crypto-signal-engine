@@ -25,7 +25,11 @@ from crypto_signal_engine.paper import (
     validate_paper_performance,
 )
 from crypto_signal_engine.predictions import CompositePredictionEngine
-from crypto_signal_engine.replay import ReplayRunner, compare_replay_reports
+from crypto_signal_engine.replay import (
+    ReplayRunner,
+    build_excursion_stats,
+    compare_replay_reports,
+)
 from crypto_signal_engine.replay.report import build_replay_report
 
 
@@ -199,6 +203,29 @@ async def run(
             minimum_samples=minimum_calibration_samples
         ).build(report)
 
+        excursion_price_points = (
+            exact_prices
+            if exact_binance_trades
+            else prices
+        )
+        excursion_result = (
+            result
+            if exact_binance_trades
+            else (
+                runner.run(features, exact_prices or [])
+                if compare_price_sources
+                else result
+            )
+        )
+        excursion_stats = build_excursion_stats(
+            excursion_result,
+            list(excursion_price_points or []),
+            round_trip_cost_pct=Decimal("2") * (
+                settings.paper_fee_pct_per_side
+                + settings.paper_slippage_pct_per_side
+            ),
+        )
+
         if write_calibration_path:
             artifact = CalibrationArtifact(
                 schema_version=1,
@@ -276,6 +303,20 @@ async def run(
                     f"SL:{row.stop_loss_delta:+d}/"
                     f"NT:{row.no_touch_delta:+d}"
                 )
+
+        print()
+        print("MFE/MAE (full prediction horizon; exact when available)")
+        for item in excursion_stats:
+            print(
+                f"{item.horizon_seconds // 60}m "
+                f"{item.direction.upper()} "
+                f"n={item.samples} "
+                f"median_mfe={item.median_mfe_pct:.4f}% "
+                f"p75_mfe={item.p75_mfe_pct:.4f}% "
+                f"median_mae={item.median_mae_pct:.4f}% "
+                f"p90_mae={item.p90_mae_pct:.4f}% "
+                f"cost_clear={item.cost_clear_rate_pct:.2f}%"
+            )
 
         print()
         print("SCORE BINS (observed TP rate, not calibrated confidence)")
