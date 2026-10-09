@@ -22,9 +22,6 @@ class LiveFirstTouchEvaluator:
     snapshot-based evaluator remains as a restart/replay/fallback path.
     """
 
-    TAKE_PROFIT_PCT = Decimal("0.60")
-    STOP_LOSS_PCT = Decimal("0.30")
-
     def __init__(self) -> None:
         self._predictions: dict[object, Prediction] = {}
         self._lock = asyncio.Lock()
@@ -141,8 +138,8 @@ class LiveFirstTouchEvaluator:
         cls,
         prediction: Prediction,
     ) -> tuple[Decimal, Decimal]:
-        tp_fraction = cls.TAKE_PROFIT_PCT / Decimal("100")
-        sl_fraction = cls.STOP_LOSS_PCT / Decimal("100")
+        tp_fraction = prediction.take_profit_pct / Decimal("100")
+        sl_fraction = prediction.stop_loss_pct / Decimal("100")
 
         if prediction.direction == PredictionDirection.LONG:
             return (
