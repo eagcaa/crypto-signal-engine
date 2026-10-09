@@ -143,7 +143,11 @@ class ResearchFeatureAggregator:
             self._trim_liquidations(now)
 
             binance = self._derivatives.get(Exchange.BINANCE)
+            if binance is not None and binance.timestamp > now:
+                binance = None
             bybit = self._derivatives.get(Exchange.BYBIT)
+            if bybit is not None and bybit.timestamp > now:
+                bybit = None
             technical_5m = self._technicals.get("5m")
             technical_15m = self._technicals.get("15m")
             long_5m, short_5m = self._liquidation_totals(now, timedelta(minutes=5))
