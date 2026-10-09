@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from crypto_signal_engine.features.research import ResearchFeatureSnapshot
 from crypto_signal_engine.predictions.models import Prediction, PredictionDirection
 from crypto_signal_engine.replay.models import ReplayResult
 
@@ -12,6 +13,8 @@ class CandidateGate:
     direction: PredictionDirection
     minimum_supporting_features: int = 0
     require_open_interest_support: bool = False
+    required_trend_regime: str | None = None
+    required_volatility_regime: str | None = None
     frozen_take_profit_pct: Decimal | None = None
     frozen_stop_loss_pct: Decimal | None = None
 
@@ -47,17 +50,39 @@ CANDIDATE_GATES = (
         frozen_take_profit_pct=Decimal("0.40"),
         frozen_stop_loss_pct=Decimal("0.30"),
     ),
+    CandidateGate(
+        name="15m_short_support6_oi_wide_downtrend_high",
+        horizon_seconds=900,
+        direction=PredictionDirection.SHORT,
+        minimum_supporting_features=6,
+        require_open_interest_support=True,
+        required_trend_regime="downtrend",
+        required_volatility_regime="high",
+        frozen_take_profit_pct=Decimal("0.40"),
+        frozen_stop_loss_pct=Decimal("0.30"),
+    ),
 )
 
 
 def filter_replay_result(
     result: ReplayResult,
     gate: CandidateGate,
+    feature_snapshots: list[ResearchFeatureSnapshot] | None = None,
 ) -> ReplayResult:
+    feature_by_key = {
+        (feature.symbol.upper(), feature.timestamp): feature
+        for feature in (feature_snapshots or [])
+    }
     accepted = tuple(
         prediction
         for prediction in result.predictions
-        if prediction_passes_gate(prediction, gate)
+        if prediction_passes_gate(
+            prediction,
+            gate,
+            feature_by_key.get(
+                (prediction.symbol.upper(), prediction.created_at)
+            ),
+        )
     )
     accepted_ids = {prediction.id for prediction in accepted}
 
@@ -80,6 +105,7 @@ def filter_replay_result(
 def prediction_passes_gate(
     prediction: Prediction,
     gate: CandidateGate,
+    feature_snapshot: ResearchFeatureSnapshot | None = None,
 ) -> bool:
     if prediction.horizon_seconds != gate.horizon_seconds:
         return False
@@ -103,6 +129,30 @@ def prediction_passes_gate(
     if gate.require_open_interest_support:
         open_interest = contributions.get("open_interest")
         if open_interest is None or open_interest * direction_sign <= 0:
+            return False
+
+    if (
+        gate.required_trend_regime is not None
+        or gate.required_volatility_regime is not None
+    ):
+        if feature_snapshot is None:
+            return False
+        if prediction.horizon_seconds == 900:
+            trend_regime = feature_snapshot.trend_regime_15m
+            volatility_regime = feature_snapshot.volatility_regime_15m
+        else:
+            trend_regime = feature_snapshot.trend_regime_5m
+            volatility_regime = feature_snapshot.volatility_regime_5m
+
+        if (
+            gate.required_trend_regime is not None
+            and trend_regime != gate.required_trend_regime
+        ):
+            return False
+        if (
+            gate.required_volatility_regime is not None
+            and volatility_regime != gate.required_volatility_regime
+        ):
             return False
 
     return True
