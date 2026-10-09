@@ -134,3 +134,17 @@ def test_research_candidate_has_frozen_holdout_barriers() -> None:
 
     assert gate.frozen_take_profit_pct == Decimal("0.15")
     assert gate.frozen_stop_loss_pct == Decimal("0.18")
+
+
+
+def test_wide_candidate_freezes_second_holdout_barriers() -> None:
+    from crypto_signal_engine.replay import CANDIDATE_GATES
+
+    gate = next(
+        item
+        for item in CANDIDATE_GATES
+        if item.name == "15m_short_support6_oi_wide"
+    )
+
+    assert gate.frozen_take_profit_pct == Decimal("0.40")
+    assert gate.frozen_stop_loss_pct == Decimal("0.30")
