@@ -226,3 +226,17 @@ def test_long_range_high_candidates_are_research_only() -> None:
     assert support6.minimum_supporting_features == 6
     assert support6_oi.minimum_supporting_features == 6
     assert support6_oi.require_open_interest_support is True
+
+
+
+def test_long_range_high_candidate_freezes_barriers() -> None:
+    from crypto_signal_engine.replay import CANDIDATE_GATES
+
+    gate = next(
+        item
+        for item in CANDIDATE_GATES
+        if item.name == "15m_long_range_high"
+    )
+
+    assert gate.frozen_take_profit_pct == Decimal("0.40")
+    assert gate.frozen_stop_loss_pct == Decimal("0.18")
