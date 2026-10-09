@@ -46,6 +46,7 @@ from crypto_signal_engine.integrations import (
 from crypto_signal_engine.integrations.coinglass import CoinGlassApiError
 from crypto_signal_engine.market import MarketSnapshotAggregator
 from crypto_signal_engine.paper import (
+    CandidatePaperTracker,
     PaperBroker,
     PaperRiskConfig,
     build_paper_performance_report,
@@ -132,6 +133,7 @@ async def consume_trades(
     prediction_repository: PredictionRepository,
     paper_broker: PaperBroker | None = None,
     paper_repository: PaperPositionRepository | None = None,
+    candidate_paper_tracker: CandidatePaperTracker | None = None,
     telegram_dispatcher: TelegramDispatcher | None = None,
 ) -> None:
     async for trade in collector.trades():
@@ -162,6 +164,26 @@ async def consume_trades(
                                 paper_broker.snapshot(),
                                 position=paper_position,
                             ),
+                        )
+                if candidate_paper_tracker is not None:
+                    candidate_position = (
+                        candidate_paper_tracker.broker.apply_evaluation(
+                            evaluation
+                        )
+                    )
+                    if (
+                        candidate_position is not None
+                        and paper_repository is not None
+                    ):
+                        await paper_repository.update(candidate_position)
+                    if candidate_position is not None:
+                        print(
+                            "CANDIDATE_PAPER_CLOSE "
+                            f"model={candidate_position.model_name} "
+                            f"prediction_id={candidate_position.prediction_id} "
+                            f"return={candidate_position.return_pct} "
+                            f"pnl={candidate_position.pnl} "
+                            f"reason={candidate_position.close_reason}"
                         )
 
 
@@ -315,6 +337,7 @@ async def persist_snapshots(
     live_evaluator: LiveFirstTouchEvaluator,
     paper_broker: PaperBroker | None = None,
     paper_repository: PaperPositionRepository | None = None,
+    candidate_paper_tracker: CandidatePaperTracker | None = None,
     telegram_dispatcher: TelegramDispatcher | None = None,
     calibration_buckets=(),
     data_quality_monitor: DataQualityMonitor | None = None,
@@ -406,6 +429,26 @@ async def persist_snapshots(
                             position=paper_position,
                         ),
                     )
+            if candidate_paper_tracker is not None:
+                candidate_position = (
+                    candidate_paper_tracker.broker.apply_evaluation(
+                        evaluation
+                    )
+                )
+                if (
+                    candidate_position is not None
+                    and paper_repository is not None
+                ):
+                    await paper_repository.update(candidate_position)
+                if candidate_position is not None:
+                    print(
+                        "CANDIDATE_PAPER_CLOSE "
+                        f"model={candidate_position.model_name} "
+                        f"prediction_id={candidate_position.prediction_id} "
+                        f"return={candidate_position.return_pct} "
+                        f"pnl={candidate_position.pnl} "
+                        f"reason={candidate_position.close_reason}"
+                    )
 
         should_generate = (
             last_prediction_at is None
@@ -464,6 +507,54 @@ async def persist_snapshots(
                                 f"prediction_id={prediction.id} "
                                 f"reason={reason}"
                             )
+
+                    if candidate_paper_tracker is not None:
+                        candidate_prediction = (
+                            candidate_paper_tracker.candidate_prediction(
+                                prediction,
+                                research_snapshot,
+                            )
+                        )
+                        if candidate_prediction is not None:
+                            await prediction_repository.add(
+                                candidate_prediction
+                            )
+                            await live_evaluator.register(
+                                candidate_prediction
+                            )
+                            candidate_position = (
+                                candidate_paper_tracker.broker
+                                .open_from_prediction(candidate_prediction)
+                            )
+                            if candidate_position is not None:
+                                if paper_repository is not None:
+                                    await paper_repository.add(
+                                        candidate_position
+                                    )
+                                print(
+                                    "CANDIDATE_PAPER_OPEN "
+                                    f"candidate={candidate_paper_tracker.gate.name} "
+                                    f"model={candidate_prediction.model_name} "
+                                    f"prediction_id={candidate_prediction.id} "
+                                    f"entry={candidate_prediction.entry_price} "
+                                    f"tp={candidate_prediction.take_profit_pct:.4f}% "
+                                    f"sl={candidate_prediction.stop_loss_pct:.4f}%"
+                                )
+                            else:
+                                candidate_snapshot = (
+                                    candidate_paper_tracker.broker.snapshot()
+                                )
+                                reason = (
+                                    candidate_snapshot.halt_reason
+                                    if candidate_snapshot.trading_halted
+                                    else "risk_or_position_limit"
+                                )
+                                print(
+                                    "CANDIDATE_PAPER_SKIP "
+                                    f"candidate={candidate_paper_tracker.gate.name} "
+                                    f"prediction_id={candidate_prediction.id} "
+                                    f"reason={reason}"
+                                )
 
                     calibrated_confidence = (
                         ReplayCalibrator().confidence_for_prediction(
@@ -606,6 +697,7 @@ async def main() -> None:
     )
     live_evaluator = LiveFirstTouchEvaluator()
     paper_broker = None
+    candidate_paper_tracker = None
     telegram_notifier = None
     telegram_dispatcher = None
     data_quality_monitor = DataQualityMonitor(
@@ -702,6 +794,37 @@ async def main() -> None:
             f"models={','.join(current_model_names)}"
         )
 
+    if settings.candidate_paper_enabled:
+        candidate_broker = PaperBroker(
+            PaperRiskConfig(
+                starting_equity=settings.paper_starting_equity,
+                risk_per_trade_pct=settings.paper_risk_per_trade_pct,
+                max_notional_pct=settings.paper_max_notional_pct,
+                max_open_positions=1,
+                max_drawdown_pct=settings.paper_max_drawdown_pct,
+                max_consecutive_losses=settings.paper_max_consecutive_losses,
+                fee_pct_per_side=settings.paper_fee_pct_per_side,
+                slippage_pct_per_side=settings.paper_slippage_pct_per_side,
+            )
+        )
+        candidate_paper_tracker = CandidatePaperTracker(
+            candidate_broker,
+            candidate_name=settings.candidate_paper_name,
+        )
+        stored_candidate_positions = await paper_repository.load_all(
+            model_names=(candidate_paper_tracker.model_name,)
+        )
+        candidate_broker.restore(stored_candidate_positions)
+        candidate_snapshot = candidate_broker.snapshot()
+        print(
+            "CANDIDATE_PAPER_ENABLED "
+            f"candidate={candidate_paper_tracker.gate.name} "
+            f"model={candidate_paper_tracker.model_name} "
+            f"equity={candidate_snapshot.equity:.2f} "
+            f"restored_positions={len(stored_candidate_positions)} "
+            "exchange_orders=disabled"
+        )
+
     symbols = ["BTCUSDT"]
     restored_predictions = await prediction_repository.load_open_predictions(
         now=datetime.now(UTC),
@@ -728,6 +851,7 @@ async def main() -> None:
                     prediction_repository,
                     paper_broker,
                     paper_repository,
+                    candidate_paper_tracker,
                     telegram_dispatcher,
                 )
             )
@@ -790,6 +914,7 @@ async def main() -> None:
                     live_evaluator,
                     paper_broker,
                     paper_repository,
+                    candidate_paper_tracker,
                     telegram_dispatcher,
                     calibration_buckets,
                     data_quality_monitor,
