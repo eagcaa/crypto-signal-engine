@@ -30,9 +30,9 @@ def bucket(horizon: int, direction: str) -> CalibrationBucket:
         horizon_seconds=horizon,
         direction=direction,
         model_name=(
-            "composite_rules_v3_5m"
+            "composite_rules_v4_5m"
             if horizon == 300
-            else "composite_rules_v3_15m"
+            else "composite_rules_v4_15m"
         ),
         lower_bound=Decimal("0.30"),
         upper_bound=Decimal("0.40"),
@@ -82,15 +82,15 @@ def test_readiness_reports_missing_calibration_and_paper_failures() -> None:
 
     assert result.ready is False
     assert (
-        "calibration_not_ready:300s:short:composite_rules_v3_5m"
+        "calibration_not_ready:300s:short:composite_rules_v4_5m"
         in result.reasons
     )
     assert (
-        "calibration_not_ready:900s:long:composite_rules_v3_15m"
+        "calibration_not_ready:900s:long:composite_rules_v4_15m"
         in result.reasons
     )
     assert (
-        "calibration_not_ready:900s:short:composite_rules_v3_15m"
+        "calibration_not_ready:900s:short:composite_rules_v4_15m"
         in result.reasons
     )
     assert "paper:insufficient_trades:12/30" in result.reasons
@@ -163,7 +163,7 @@ def test_readiness_rejects_stale_model_calibration() -> None:
 
     assert result.ready is False
     assert (
-        "calibration_not_ready:300s:long:composite_rules_v3_5m"
+        "calibration_not_ready:300s:long:composite_rules_v4_5m"
         in result.reasons
     )
 
