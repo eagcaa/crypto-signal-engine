@@ -30,7 +30,7 @@ def make_report(*, evaluated: int, take_profit: int) -> ReplayReport:
             ScoreBinStats(
                 horizon_seconds=300,
                 direction="long",
-                model_name="composite_rules_v3_5m",
+                model_name="composite_rules_v4_5m",
                 lower_bound=Decimal("0.20"),
                 upper_bound=Decimal("0.25"),
                 stats=stats,
@@ -51,7 +51,7 @@ def make_prediction(score: str = "0.22") -> Prediction:
         entry_price=Decimal("100"),
         raw_score=Decimal(score),
         data_quality=Decimal("0.83"),
-        model_name="composite_rules_v3_5m",
+        model_name="composite_rules_v4_5m",
     )
 
 
@@ -113,7 +113,7 @@ def test_calibration_does_not_cross_direction() -> None:
         entry_price=Decimal("100"),
         raw_score=Decimal("-0.22"),
         data_quality=Decimal("0.83"),
-        model_name="composite_rules_v3_5m",
+        model_name="composite_rules_v4_5m",
     )
 
     assert calibrator.confidence_for_prediction(
@@ -157,7 +157,7 @@ def test_calibration_does_not_cross_model_version() -> None:
         entry_price=prediction.entry_price,
         raw_score=prediction.raw_score,
         data_quality=prediction.data_quality,
-        model_name="composite_rules_v4_5m",
+        model_name="composite_rules_v3_5m",
         feature_contributions=prediction.feature_contributions,
         reason=prediction.reason,
     )
