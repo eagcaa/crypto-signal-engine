@@ -1,3 +1,9 @@
+from crypto_signal_engine.replay.feature_edge import (
+    AgreementEdgeStats,
+    FeatureEdgeStats,
+    build_agreement_edge_stats,
+    build_feature_edge_stats,
+)
 from crypto_signal_engine.replay.barrier_sweep import (
     BarrierSweepRow,
     build_barrier_sweep,
@@ -26,7 +32,9 @@ from crypto_signal_engine.replay.report import (
 from crypto_signal_engine.replay.runner import ReplayRunner
 
 __all__ = [
+    "AgreementEdgeStats",
     "BarrierSweepRow",
+    "FeatureEdgeStats",
     "ExcursionStats",
     "RegimeExcursionStats",
     "RegimeStats",
@@ -38,7 +46,9 @@ __all__ = [
     "ReplayStats",
     "ScoreExcursionStats",
     "ScoreBinStats",
+    "build_agreement_edge_stats",
     "build_barrier_sweep",
+    "build_feature_edge_stats",
     "build_excursion_stats",
     "build_regime_excursion_stats",
     "build_score_excursion_stats",
