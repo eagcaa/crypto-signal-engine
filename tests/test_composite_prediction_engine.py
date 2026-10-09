@@ -115,7 +115,7 @@ def test_v2_generates_long_when_multiple_features_align() -> None:
 
     assert decision.direction == PredictionDecisionDirection.LONG
     assert decision.prediction is not None
-    assert decision.prediction.model_name == "composite_rules_v3_5m"
+    assert decision.prediction.model_name == "composite_rules_v4_5m"
     assert decision.raw_score > Decimal("0.20")
     assert "order_book" in decision.feature_contributions
     assert "open_interest" in decision.feature_contributions
@@ -259,7 +259,7 @@ def test_v2_uses_different_windows_for_5m_and_15m() -> None:
     # 15m profile must react to its 15m CVD/OI inputs.
     assert fifteen_minute_before.raw_score != fifteen_minute_after.raw_score
     assert fifteen_minute_before.prediction is not None
-    assert fifteen_minute_before.prediction.model_name == "composite_rules_v3_15m"
+    assert fifteen_minute_before.prediction.model_name == "composite_rules_v4_15m"
 
 
 def test_v2_rejects_unsupported_horizon() -> None:
