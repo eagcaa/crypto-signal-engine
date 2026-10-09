@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from crypto_signal_engine.domain.derivatives import (
+    ExchangeDerivativesSnapshot,
     LiquidatedPositionSide,
     LiquidationEvent,
 )
@@ -124,5 +125,43 @@ def test_rolling_cvd_and_liquidation_imbalance() -> None:
         assert snapshot.long_liquidations_5m_usd == Decimal("85000")
         assert snapshot.short_liquidations_5m_usd == Decimal("255000")
         assert snapshot.liquidation_imbalance_5m == Decimal("0.5")
+
+    asyncio.run(run())
+
+
+
+def test_future_derivatives_snapshot_is_not_used() -> None:
+    async def run() -> None:
+        now = datetime(2026, 10, 9, 18, 0, tzinfo=UTC)
+        aggregator = ResearchFeatureAggregator("BTCUSDT")
+
+        await aggregator.update_derivatives(
+            ExchangeDerivativesSnapshot(
+                exchange=Exchange.BINANCE,
+                symbol="BTCUSDT",
+                timestamp=now + timedelta(seconds=5),
+                open_interest=Decimal("100"),
+                open_interest_value_usd=Decimal("100000"),
+                oi_change_5m_pct=Decimal("0.50"),
+                oi_change_15m_pct=Decimal("0.75"),
+                funding_rate=Decimal("0.0001"),
+                long_short_ratio=Decimal("1.10"),
+                long_account_ratio=Decimal("0.52"),
+                short_account_ratio=Decimal("0.48"),
+                top_trader_long_short_ratio=Decimal("1.20"),
+                taker_buy_sell_ratio=Decimal("1.30"),
+                taker_buy_volume=Decimal("1000"),
+                taker_sell_volume=Decimal("900"),
+            )
+        )
+
+        snapshot = await aggregator.snapshot(_market_snapshot(now))
+
+        assert snapshot.binance_oi_change_5m_pct is None
+        assert snapshot.binance_oi_change_15m_pct is None
+        assert snapshot.binance_funding_rate is None
+        assert snapshot.binance_long_short_ratio is None
+        assert snapshot.binance_top_trader_long_short_ratio is None
+        assert snapshot.binance_taker_buy_sell_ratio is None
 
     asyncio.run(run())
