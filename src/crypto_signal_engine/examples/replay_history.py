@@ -11,27 +11,27 @@ from crypto_signal_engine.calibration import (
 from crypto_signal_engine.collectors.binance import (
     BinanceSpotHistoricalTradeClient,
 )
+from crypto_signal_engine.config.settings import get_settings
 from crypto_signal_engine.db import (
     create_database_engine,
     create_session_factory,
     initialize_database,
 )
 from crypto_signal_engine.db.replay_repository import ReplayDataRepository
-from crypto_signal_engine.predictions import CompositePredictionEngine
 from crypto_signal_engine.paper import (
     PaperRiskConfig,
     build_paper_performance_report,
     simulate_replay_broker,
     validate_paper_performance,
 )
+from crypto_signal_engine.predictions import CompositePredictionEngine
 from crypto_signal_engine.replay import ReplayRunner, compare_replay_reports
 from crypto_signal_engine.replay.report import build_replay_report
-from crypto_signal_engine.config.settings import get_settings
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Replay persisted research features through the live V3 engine."
+        description="Replay persisted research features through the live V4 engine."
     )
     parser.add_argument("--symbol", default="BTCUSDT")
     parser.add_argument("--hours", type=float, default=6.0)
