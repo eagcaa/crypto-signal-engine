@@ -35,8 +35,6 @@ class EvaluationProvenanceStats:
 
 
 class PredictionRepository:
-    TAKE_PROFIT_PCT = Decimal("0.60")
-    STOP_LOSS_PCT = Decimal("0.30")
 
     def __init__(
         self,
@@ -57,6 +55,8 @@ class PredictionRepository:
                     entry_price=prediction.entry_price,
                     raw_score=prediction.raw_score,
                     data_quality=prediction.data_quality,
+                    take_profit_pct=prediction.take_profit_pct,
+                    stop_loss_pct=prediction.stop_loss_pct,
                     model_name=prediction.model_name,
                     feature_contributions_json=(
                         json.dumps(
@@ -128,6 +128,8 @@ class PredictionRepository:
                         entry_price=row.entry_price,
                         raw_score=row.raw_score,
                         data_quality=row.data_quality,
+                        take_profit_pct=row.take_profit_pct,
+                        stop_loss_pct=row.stop_loss_pct,
                         model_name=row.model_name,
                         feature_contributions=contributions,
                         reason=row.reason,
@@ -304,6 +306,7 @@ class PredictionRepository:
     ) -> PredictionEvaluation | None:
         direction = PredictionDirection(prediction.direction)
         tp_price, sl_price = cls._barrier_prices(
+            prediction=prediction,
             entry_price=prediction.entry_price,
             direction=direction,
         )
@@ -359,11 +362,12 @@ class PredictionRepository:
     def _barrier_prices(
         cls,
         *,
+        prediction: PredictionRow,
         entry_price: Decimal,
         direction: PredictionDirection,
     ) -> tuple[Decimal, Decimal]:
-        tp_fraction = cls.TAKE_PROFIT_PCT / Decimal("100")
-        sl_fraction = cls.STOP_LOSS_PCT / Decimal("100")
+        tp_fraction = prediction.take_profit_pct / Decimal("100")
+        sl_fraction = prediction.stop_loss_pct / Decimal("100")
 
         if direction == PredictionDirection.LONG:
             return (
