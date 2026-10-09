@@ -39,6 +39,8 @@ class Prediction:
     entry_price: Decimal
     raw_score: Decimal
     data_quality: Decimal
+    take_profit_pct: Decimal = Decimal("0.60")
+    stop_loss_pct: Decimal = Decimal("0.30")
     model_name: str = "baseline_orderbook_v1"
     feature_contributions: dict[str, Decimal] | None = None
     reason: str | None = None
