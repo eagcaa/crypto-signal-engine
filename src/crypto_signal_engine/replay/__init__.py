@@ -1,3 +1,9 @@
+from crypto_signal_engine.replay.candidate_gates import (
+    CANDIDATE_GATES,
+    CandidateGate,
+    filter_replay_result,
+    prediction_passes_gate,
+)
 from crypto_signal_engine.replay.feature_edge import (
     AgreementEdgeStats,
     FeatureEdgeStats,
@@ -33,6 +39,8 @@ from crypto_signal_engine.replay.runner import ReplayRunner
 
 __all__ = [
     "AgreementEdgeStats",
+    "CANDIDATE_GATES",
+    "CandidateGate",
     "BarrierSweepRow",
     "FeatureEdgeStats",
     "ExcursionStats",
@@ -54,5 +62,7 @@ __all__ = [
     "build_score_excursion_stats",
     "build_replay_report",
     "compare_replay_reports",
+    "filter_replay_result",
+    "prediction_passes_gate",
     "top_barrier_sweep_rows",
 ]
