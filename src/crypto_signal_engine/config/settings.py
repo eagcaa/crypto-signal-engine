@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     paper_fee_pct_per_side: Decimal = Decimal("0.05")
     paper_slippage_pct_per_side: Decimal = Decimal("0.01")
 
+    candidate_paper_enabled: bool = False
+    candidate_paper_name: str = "15m_long_range_high"
+
     telegram_enabled: bool = False
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
