@@ -36,6 +36,7 @@ from crypto_signal_engine.replay import (
     build_score_excursion_stats,
     compare_replay_reports,
     filter_replay_result,
+    select_research_replay_inputs,
     top_barrier_sweep_rows,
 )
 from crypto_signal_engine.replay.report import build_replay_report
@@ -206,6 +207,7 @@ async def run(
         report = build_replay_report(result, features)
 
         comparison_rows = ()
+        exact_result = None
         if compare_price_sources:
             exact_result = runner.run(features, exact_prices or [])
             exact_report = build_replay_report(exact_result, features)
@@ -227,20 +229,23 @@ async def run(
             minimum_samples=minimum_calibration_samples
         ).build(report)
 
-        excursion_price_points = (
-            exact_prices
-            if exact_binance_trades
-            else prices
+        if exact_binance_trades and exact_result is None:
+            exact_result = result
+
+        research_inputs = select_research_replay_inputs(
+            primary_result=result,
+            primary_price_points=list(prices),
+            exact_result=exact_result,
+            exact_price_points=(
+                list(exact_prices or [])
+                if (exact_binance_trades or compare_price_sources)
+                else None
+            ),
+            exact_binance_trades=exact_binance_trades,
+            compare_price_sources=compare_price_sources,
         )
-        excursion_result = (
-            result
-            if exact_binance_trades
-            else (
-                runner.run(features, exact_prices or [])
-                if compare_price_sources
-                else result
-            )
-        )
+        excursion_result = research_inputs.result
+        excursion_price_points = research_inputs.price_points
         excursion_stats = build_excursion_stats(
             excursion_result,
             list(excursion_price_points or []),
@@ -405,6 +410,12 @@ async def run(
                     f"SL:{row.stop_loss_delta:+d}/"
                     f"NT:{row.no_touch_delta:+d}"
                 )
+
+        print()
+        print(
+            "RESEARCH PRICE SOURCE "
+            f"{research_inputs.price_source}"
+        )
 
         print()
         print("MFE/MAE (full prediction horizon; exact when available)")
