@@ -49,6 +49,37 @@ class BaselinePredictionEngine:
         if abs(raw_score) < self._minimum_abs_score:
             return None
 
+        barriers = self._barrier_percentages(
+            features,
+            horizon_seconds=horizon_seconds,
+        )
+        if barriers is None:
+            return self._no_trade(
+                features,
+                horizon_seconds,
+                reason="ATR is unavailable for dynamic risk barriers.",
+            )
+
+        take_profit_pct, stop_loss_pct = barriers
+        minimum_economic_move = (
+            self._round_trip_cost_pct + self._minimum_net_edge_pct
+        )
+        if take_profit_pct <= minimum_economic_move:
+            return PredictionDecision(
+                symbol=features.symbol,
+                timestamp=features.timestamp,
+                horizon_seconds=horizon_seconds,
+                direction=PredictionDecisionDirection.NO_TRADE,
+                raw_score=raw_score,
+                feature_contributions=contributions,
+                reason=(
+                    f"{reason}; no trade: target {take_profit_pct:.4f}% "
+                    f"does not clear cost+edge floor "
+                    f"{minimum_economic_move:.4f}%."
+                ),
+                prediction=None,
+            )
+
         direction = (
             PredictionDirection.LONG
             if raw_score > 0
@@ -135,14 +166,14 @@ class CompositePredictionEngine:
         profile = cls.PROFILES.get(horizon_seconds)
         if profile is None:
             return None
-        return f"composite_rules_v3_{profile.name}"
+        return f"composite_rules_v4_{profile.name}"
 
     @classmethod
     def current_model_names(cls) -> tuple[tuple[int, str], ...]:
         return tuple(
             (
                 horizon,
-                f"composite_rules_v3_{profile.name}",
+                f"composite_rules_v4_{profile.name}",
             )
             for horizon, profile in sorted(cls.PROFILES.items())
         )
@@ -152,9 +183,16 @@ class CompositePredictionEngine:
         *,
         minimum_data_quality: Decimal = Decimal("0.80"),
         minimum_abs_score: Decimal = Decimal("0.20"),
+        fee_pct_per_side: Decimal = Decimal("0.05"),
+        slippage_pct_per_side: Decimal = Decimal("0.01"),
+        minimum_net_edge_pct: Decimal = Decimal("0.08"),
     ) -> None:
         self._minimum_data_quality = minimum_data_quality
         self._minimum_abs_score = minimum_abs_score
+        self._round_trip_cost_pct = Decimal("2") * (
+            fee_pct_per_side + slippage_pct_per_side
+        )
+        self._minimum_net_edge_pct = minimum_net_edge_pct
 
     def decide(
         self,
@@ -291,8 +329,10 @@ class CompositePredictionEngine:
             entry_price=features.price,
             raw_score=raw_score,
             data_quality=features.market_data_quality,
+            take_profit_pct=take_profit_pct,
+            stop_loss_pct=stop_loss_pct,
             model_name=self.model_name_for_horizon(horizon_seconds)
-            or "composite_rules_v3_unknown",
+            or "composite_rules_v4_unknown",
             feature_contributions=contributions,
             reason=reason,
         )
@@ -307,6 +347,54 @@ class CompositePredictionEngine:
             reason=reason,
             prediction=prediction,
         )
+
+    def _barrier_percentages(
+        self,
+        features: ResearchFeatureSnapshot,
+        *,
+        horizon_seconds: int,
+    ) -> tuple[Decimal, Decimal] | None:
+        if horizon_seconds == 300:
+            atr_pct = features.atr_pct_5m
+            if atr_pct is None:
+                return None
+            take_profit_pct = self._clamp_range(
+                atr_pct * Decimal("1.25"),
+                Decimal("0.20"),
+                Decimal("0.45"),
+            )
+            stop_loss_pct = self._clamp_range(
+                atr_pct * Decimal("0.75"),
+                Decimal("0.12"),
+                Decimal("0.28"),
+            )
+            return take_profit_pct, stop_loss_pct
+
+        if horizon_seconds == 900:
+            atr_pct = features.atr_pct_15m
+            if atr_pct is None:
+                return None
+            take_profit_pct = self._clamp_range(
+                atr_pct * Decimal("1.10"),
+                Decimal("0.24"),
+                Decimal("0.55"),
+            )
+            stop_loss_pct = self._clamp_range(
+                atr_pct * Decimal("0.70"),
+                Decimal("0.15"),
+                Decimal("0.35"),
+            )
+            return take_profit_pct, stop_loss_pct
+
+        return None
+
+    @staticmethod
+    def _clamp_range(
+        value: Decimal,
+        minimum: Decimal,
+        maximum: Decimal,
+    ) -> Decimal:
+        return max(minimum, min(maximum, value))
 
     def _flow_values(
         self,
