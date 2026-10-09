@@ -17,6 +17,7 @@ from crypto_signal_engine.db import (
     initialize_database,
 )
 from crypto_signal_engine.db.replay_repository import ReplayDataRepository
+from crypto_signal_engine.predictions import CompositePredictionEngine
 from crypto_signal_engine.paper import (
     PaperRiskConfig,
     build_paper_performance_report,
@@ -114,9 +115,16 @@ async def run(
             end=end,
         )
 
+        runner = ReplayRunner(
+            prediction_engine=CompositePredictionEngine(
+                fee_pct_per_side=settings.paper_fee_pct_per_side,
+                slippage_pct_per_side=settings.paper_slippage_pct_per_side,
+            )
+        )
+
         exact_prices = None
         if exact_binance_trades or compare_price_sources:
-            discovery_result = ReplayRunner().run(features, [])
+            discovery_result = runner.run(features, [])
             prediction_windows = [
                 (prediction.created_at, prediction.expires_at)
                 for prediction in discovery_result.predictions
@@ -166,7 +174,6 @@ async def run(
             print("No market price snapshots found for the selected period.")
             return
 
-        runner = ReplayRunner()
         result = runner.run(features, prices)
         report = build_replay_report(result, features)
 
