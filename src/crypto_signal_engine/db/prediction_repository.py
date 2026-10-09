@@ -366,8 +366,10 @@ class PredictionRepository:
         entry_price: Decimal,
         direction: PredictionDirection,
     ) -> tuple[Decimal, Decimal]:
-        tp_fraction = prediction.take_profit_pct / Decimal("100")
-        sl_fraction = prediction.stop_loss_pct / Decimal("100")
+        take_profit_pct = prediction.take_profit_pct or Decimal("0.60")
+        stop_loss_pct = prediction.stop_loss_pct or Decimal("0.30")
+        tp_fraction = take_profit_pct / Decimal("100")
+        sl_fraction = stop_loss_pct / Decimal("100")
 
         if direction == PredictionDirection.LONG:
             return (
