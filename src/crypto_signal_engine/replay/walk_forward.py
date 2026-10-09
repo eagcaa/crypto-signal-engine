@@ -20,12 +20,14 @@ class CandidateWindowResult:
     result: ReplayResult
     price_points: tuple[ReplayPricePoint, ...]
     row: BarrierSweepRow | None
+    has_feature_data: bool = True
 
 
 @dataclass(frozen=True, slots=True)
 class CandidateLeaderboardRow:
     candidate_name: str
     windows_tested: int
+    data_windows: int
     active_windows: int
     positive_windows: int
     trades: int
@@ -64,10 +66,15 @@ def build_candidate_leaderboard(
         ):
             continue
 
+        data_windows = sum(1 for item in items if item.has_feature_data)
         active = [
             item
             for item in items
-            if item.row is not None and item.row.samples > 0
+            if (
+                item.has_feature_data
+                and item.row is not None
+                and item.row.samples > 0
+            )
         ]
         positive_windows = sum(
             1
@@ -187,6 +194,7 @@ def build_candidate_leaderboard(
             CandidateLeaderboardRow(
                 candidate_name=candidate_name,
                 windows_tested=len(items),
+                data_windows=data_windows,
                 active_windows=len(active),
                 positive_windows=positive_windows,
                 trades=trades,

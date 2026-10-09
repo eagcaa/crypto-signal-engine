@@ -97,6 +97,7 @@ def test_candidate_leaderboard_promotes_consistent_frozen_candidate() -> None:
     )[0]
 
     assert row.windows_tested == 20
+    assert row.data_windows == 20
     assert row.active_windows == 20
     assert row.positive_windows == 19
     assert row.trades == 20
@@ -126,8 +127,40 @@ def test_candidate_leaderboard_holds_under_sampled_candidate() -> None:
     row = build_candidate_leaderboard(windows)[0]
 
     assert row.promotion_ready is False
+    assert row.data_windows == 1
     assert "trades:1/30" in row.reasons
     assert "active_windows:1/3" in row.reasons
+
+
+def test_candidate_leaderboard_reports_windows_without_feature_data() -> None:
+    gate = CandidateGate(
+        name="candidate",
+        horizon_seconds=900,
+        direction=PredictionDirection.LONG,
+        frozen_take_profit_pct=Decimal("0.40"),
+        frozen_stop_loss_pct=Decimal("0.18"),
+    )
+    active = _window(index=1, gate=gate, outcome="tp")
+    empty = CandidateWindowResult(
+        window_index=2,
+        gate=gate,
+        result=ReplayResult(
+            decisions=(),
+            predictions=(),
+            evaluations=(),
+            open_predictions=(),
+        ),
+        price_points=(),
+        row=None,
+        has_feature_data=False,
+    )
+
+    row = build_candidate_leaderboard([active, empty])[0]
+
+    assert row.windows_tested == 2
+    assert row.data_windows == 1
+    assert row.active_windows == 1
+    assert row.positive_windows == 1
 
 
 def test_candidate_leaderboard_ignores_unfrozen_candidates() -> None:

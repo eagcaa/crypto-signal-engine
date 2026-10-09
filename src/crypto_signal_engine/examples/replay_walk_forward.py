@@ -175,6 +175,7 @@ async def run(
                         result=gated_result,
                         price_points=tuple(exact_prices),
                         row=row,
+                        has_feature_data=bool(features),
                     )
                 )
 
@@ -238,6 +239,7 @@ async def run(
             print(
                 f"{rank}. {row.candidate_name} "
                 f"windows={row.windows_tested} "
+                f"data_windows={row.data_windows} "
                 f"active={row.active_windows} "
                 f"positive={row.positive_windows} "
                 f"trades={row.trades} "
