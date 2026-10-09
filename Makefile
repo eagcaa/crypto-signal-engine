@@ -1,4 +1,4 @@
-.PHONY: help setup install test live live-log paper-live paper-report readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward calibrate db-up db-down db-logs db-shell clean
+.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report feature-coverage readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward calibrate db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
 PYTHONPATH_SRC := PYTHONPATH=src
@@ -15,7 +15,9 @@ help:
 	@echo "  make live         Run live market snapshot collector"
 	@echo "  make live-log     Run live collector and persist timestamped runtime log"
 	@echo "  make paper-live   Run live collector with local paper trading enabled"
+	@echo "  make candidate-paper-live Run only the frozen candidate paper tracker"
 	@echo "  make paper-report Show persisted paper performance and validation"
+	@echo "  make feature-coverage Show persisted research feature history coverage"
 	@echo "  make readiness    Check calibration and paper validation gates"
 	@echo "  make evaluation-report Show evaluation source/version breakdown"
 	@echo "  make replay       Replay persisted history (SYMBOL=BTCUSDT HOURS=6)"
@@ -57,9 +59,18 @@ paper-live:
 	@echo "Starting PAPER-ONLY live session; no exchange orders are sent."
 	PAPER_TRADING_ENABLED=true caffeinate -dimsu $(MAKE) live 2>&1 | tee -a runtime-logs/paper_$(date +%Y%m%d_%H%M%S).log
 
+candidate-paper-live:
+	@mkdir -p runtime-logs
+	@echo "Starting CANDIDATE PAPER-ONLY forward validation; no exchange orders are sent."
+	PAPER_TRADING_ENABLED=false CANDIDATE_PAPER_ENABLED=true caffeinate -dimsu $(MAKE) live 2>&1 | tee -a runtime-logs/candidate_paper_$(date +%Y%m%d_%H%M%S).log
+
 paper-report:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
 	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.paper_report
+
+feature-coverage:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.feature_coverage --symbol "$(SYMBOL)"
 
 readiness:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
