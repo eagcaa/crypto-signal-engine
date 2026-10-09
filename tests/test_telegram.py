@@ -15,7 +15,11 @@ from crypto_signal_engine.predictions import (
 )
 
 
-def make_prediction() -> Prediction:
+def make_prediction(
+    *,
+    take_profit_pct: Decimal = Decimal("0.40"),
+    stop_loss_pct: Decimal = Decimal("0.30"),
+) -> Prediction:
     created_at = datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
     return Prediction(
         id=uuid4(),
@@ -27,6 +31,8 @@ def make_prediction() -> Prediction:
         entry_price=Decimal("100"),
         raw_score=Decimal("0.31"),
         data_quality=Decimal("0.83"),
+        take_profit_pct=take_profit_pct,
+        stop_loss_pct=stop_loss_pct,
         model_name="composite_rules_v3_5m",
         reason="trend=+0.100",
     )
@@ -82,9 +88,10 @@ def test_evaluation_text_formats_measured_outcome() -> None:
 
 
 def test_candidate_open_text_is_clearly_paper_only() -> None:
-    prediction = make_prediction()
-    prediction.take_profit_pct = Decimal("0.40")
-    prediction.stop_loss_pct = Decimal("0.18")
+    prediction = make_prediction(
+        take_profit_pct=Decimal("0.40"),
+        stop_loss_pct=Decimal("0.18"),
+    )
 
     text = TelegramNotifier.candidate_open_text(
         prediction,
