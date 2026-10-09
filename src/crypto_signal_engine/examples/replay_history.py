@@ -27,8 +27,10 @@ from crypto_signal_engine.paper import (
 from crypto_signal_engine.predictions import CompositePredictionEngine
 from crypto_signal_engine.replay import (
     ReplayRunner,
+    build_agreement_edge_stats,
     build_barrier_sweep,
     build_excursion_stats,
+    build_feature_edge_stats,
     build_regime_excursion_stats,
     build_score_excursion_stats,
     compare_replay_reports,
@@ -256,6 +258,17 @@ async def run(
             per_group=5,
         )
 
+        feature_edge_stats = build_feature_edge_stats(
+            excursion_result,
+            list(excursion_price_points or []),
+            round_trip_cost_pct=round_trip_cost_pct,
+        )
+        agreement_edge_stats = build_agreement_edge_stats(
+            excursion_result,
+            list(excursion_price_points or []),
+            round_trip_cost_pct=round_trip_cost_pct,
+        )
+
         if write_calibration_path:
             artifact = CalibrationArtifact(
                 schema_version=1,
@@ -407,6 +420,35 @@ async def run(
                 f"NT={item.no_touch} "
                 f"expectancy={item.expectancy_pct:+.4f}% "
                 f"profit_factor={profit_factor}"
+            )
+
+        print()
+        print("FEATURE EDGE (full-horizon cost-clear research)")
+        for item in feature_edge_stats:
+            if item.samples < 3:
+                continue
+            print(
+                f"{item.horizon_seconds // 60}m "
+                f"{item.direction.upper()} "
+                f"{item.feature_name} "
+                f"{item.relation} "
+                f"n={item.samples} "
+                f"cost_clear={item.cost_clear_rate_pct:.2f}% "
+                f"median_mfe={item.median_mfe_pct:.4f}% "
+                f"median_mae={item.median_mae_pct:.4f}%"
+            )
+
+        print()
+        print("FEATURE AGREEMENT EDGE")
+        for item in agreement_edge_stats:
+            print(
+                f"{item.horizon_seconds // 60}m "
+                f"{item.direction.upper()} "
+                f"supporting={item.supporting_features} "
+                f"n={item.samples} "
+                f"cost_clear={item.cost_clear_rate_pct:.2f}% "
+                f"median_mfe={item.median_mfe_pct:.4f}% "
+                f"median_mae={item.median_mae_pct:.4f}%"
             )
 
         print()
