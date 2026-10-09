@@ -118,6 +118,24 @@ async def initialize_database(engine: AsyncEngine) -> None:
         await connection.execute(
             text(
                 """
+                ALTER TABLE predictions
+                ADD COLUMN IF NOT EXISTS take_profit_pct NUMERIC(20, 12)
+                NOT NULL DEFAULT 0.60
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE predictions
+                ADD COLUMN IF NOT EXISTS stop_loss_pct NUMERIC(20, 12)
+                NOT NULL DEFAULT 0.30
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
                 ALTER TABLE research_feature_snapshots
                 ADD COLUMN IF NOT EXISTS history_seconds INTEGER
                 NOT NULL DEFAULT 0
