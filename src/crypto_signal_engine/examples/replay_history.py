@@ -297,6 +297,7 @@ async def run(
             gated_result = filter_replay_result(
                 excursion_result,
                 gate,
+                features,
             )
             gated_rows = build_barrier_sweep(
                 gated_result,
