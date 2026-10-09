@@ -12,6 +12,8 @@ class CandidateGate:
     direction: PredictionDirection
     minimum_supporting_features: int = 0
     require_open_interest_support: bool = False
+    frozen_take_profit_pct: Decimal | None = None
+    frozen_stop_loss_pct: Decimal | None = None
 
 
 CANDIDATE_GATES = (
@@ -33,6 +35,8 @@ CANDIDATE_GATES = (
         direction=PredictionDirection.SHORT,
         minimum_supporting_features=6,
         require_open_interest_support=True,
+        frozen_take_profit_pct=Decimal("0.15"),
+        frozen_stop_loss_pct=Decimal("0.18"),
     ),
 )
 
