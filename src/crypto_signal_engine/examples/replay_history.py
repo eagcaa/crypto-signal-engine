@@ -28,6 +28,8 @@ from crypto_signal_engine.predictions import CompositePredictionEngine
 from crypto_signal_engine.replay import (
     ReplayRunner,
     build_excursion_stats,
+    build_regime_excursion_stats,
+    build_score_excursion_stats,
     compare_replay_reports,
 )
 from crypto_signal_engine.replay.report import build_replay_report
@@ -226,6 +228,22 @@ async def run(
             ),
         )
 
+        round_trip_cost_pct = Decimal("2") * (
+            settings.paper_fee_pct_per_side
+            + settings.paper_slippage_pct_per_side
+        )
+        score_excursion_stats = build_score_excursion_stats(
+            excursion_result,
+            list(excursion_price_points or []),
+            round_trip_cost_pct=round_trip_cost_pct,
+        )
+        regime_excursion_stats = build_regime_excursion_stats(
+            excursion_result,
+            features,
+            list(excursion_price_points or []),
+            round_trip_cost_pct=round_trip_cost_pct,
+        )
+
         if write_calibration_path:
             artifact = CalibrationArtifact(
                 schema_version=1,
@@ -310,6 +328,46 @@ async def run(
             print(
                 f"{item.horizon_seconds // 60}m "
                 f"{item.direction.upper()} "
+                f"n={item.samples} "
+                f"median_mfe={item.median_mfe_pct:.4f}% "
+                f"p75_mfe={item.p75_mfe_pct:.4f}% "
+                f"median_mae={item.median_mae_pct:.4f}% "
+                f"p90_mae={item.p90_mae_pct:.4f}% "
+                f"cost_clear={item.cost_clear_rate_pct:.2f}%"
+            )
+
+        print()
+        print("MFE/MAE BY SCORE")
+        for item in score_excursion_stats:
+            upper = (
+                f"{item.upper_bound:.2f}"
+                if item.upper_bound is not None
+                else "+"
+            )
+            label = (
+                f"{item.lower_bound:.2f}-{upper}"
+                if item.upper_bound is not None
+                else f"{item.lower_bound:.2f}+"
+            )
+            print(
+                f"{item.horizon_seconds // 60}m "
+                f"{item.direction.upper()} "
+                f"score={label} "
+                f"n={item.samples} "
+                f"median_mfe={item.median_mfe_pct:.4f}% "
+                f"p75_mfe={item.p75_mfe_pct:.4f}% "
+                f"median_mae={item.median_mae_pct:.4f}% "
+                f"p90_mae={item.p90_mae_pct:.4f}% "
+                f"cost_clear={item.cost_clear_rate_pct:.2f}%"
+            )
+
+        print()
+        print("MFE/MAE BY REGIME")
+        for item in regime_excursion_stats:
+            print(
+                f"{item.horizon_seconds // 60}m "
+                f"{item.direction.upper()} "
+                f"{item.trend_regime}+{item.volatility_regime} "
                 f"n={item.samples} "
                 f"median_mfe={item.median_mfe_pct:.4f}% "
                 f"p75_mfe={item.p75_mfe_pct:.4f}% "
