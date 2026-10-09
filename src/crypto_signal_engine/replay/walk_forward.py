@@ -9,7 +9,7 @@ from crypto_signal_engine.replay.candidate_gates import CandidateGate
 from crypto_signal_engine.replay.models import ReplayPricePoint, ReplayResult
 from crypto_signal_engine.replay.robustness import (
     bootstrap_candidate_robustness,
-    build_candidate_trade_returns,
+    build_candidate_independent_returns,
 )
 
 
@@ -34,6 +34,7 @@ class CandidateLeaderboardRow:
     robustness_passed: bool
     robustness_positive_expectancy_rate: Decimal | None
     robustness_p05_expectancy_pct: Decimal | None
+    robustness_independent_samples: int
     promotion_ready: bool
     reasons: tuple[str, ...]
 
@@ -124,7 +125,7 @@ def build_candidate_leaderboard(
             else None
         )
 
-        trade_returns = build_candidate_trade_returns(
+        independent_returns = build_candidate_independent_returns(
             aggregate_result
             if predictions and price_points
             else ReplayResult(
@@ -139,7 +140,7 @@ def build_candidate_leaderboard(
             round_trip_cost_pct=round_trip_cost_pct,
         )
         robustness = bootstrap_candidate_robustness(
-            trade_returns,
+            independent_returns,
             simulations=robustness_simulations,
             minimum_positive_expectancy_rate=(
                 minimum_robustness_positive_expectancy_rate
@@ -198,6 +199,7 @@ def build_candidate_leaderboard(
                 robustness_p05_expectancy_pct=(
                     robustness.p05_expectancy_pct
                 ),
+                robustness_independent_samples=robustness.samples,
                 promotion_ready=not reasons,
                 reasons=tuple(reasons),
             )
