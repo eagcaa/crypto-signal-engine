@@ -7,6 +7,10 @@ from crypto_signal_engine.replay.barrier_sweep import (
 )
 from crypto_signal_engine.replay.candidate_gates import CandidateGate
 from crypto_signal_engine.replay.models import ReplayPricePoint, ReplayResult
+from crypto_signal_engine.replay.robustness import (
+    bootstrap_candidate_robustness,
+    build_candidate_trade_returns,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +31,9 @@ class CandidateLeaderboardRow:
     trades: int
     expectancy_pct: Decimal | None
     profit_factor: Decimal | None
+    robustness_passed: bool
+    robustness_positive_expectancy_rate: Decimal | None
+    robustness_p05_expectancy_pct: Decimal | None
     promotion_ready: bool
     reasons: tuple[str, ...]
 
@@ -38,6 +45,9 @@ def build_candidate_leaderboard(
     minimum_active_windows: int = 3,
     minimum_positive_window_ratio: Decimal = Decimal("0.60"),
     minimum_profit_factor: Decimal = Decimal("1.10"),
+    minimum_robustness_positive_expectancy_rate: Decimal = Decimal("0.80"),
+    minimum_robustness_samples: int = 20,
+    robustness_simulations: int = 1000,
     round_trip_cost_pct: Decimal = Decimal("0.12"),
 ) -> tuple[CandidateLeaderboardRow, ...]:
     by_candidate: dict[str, list[CandidateWindowResult]] = {}
@@ -114,6 +124,29 @@ def build_candidate_leaderboard(
             else None
         )
 
+        trade_returns = build_candidate_trade_returns(
+            aggregate_result
+            if predictions and price_points
+            else ReplayResult(
+                decisions=(),
+                predictions=(),
+                evaluations=(),
+                open_predictions=(),
+            ),
+            price_points,
+            take_profit_pct=gate.frozen_take_profit_pct,
+            stop_loss_pct=gate.frozen_stop_loss_pct,
+            round_trip_cost_pct=round_trip_cost_pct,
+        )
+        robustness = bootstrap_candidate_robustness(
+            trade_returns,
+            simulations=robustness_simulations,
+            minimum_positive_expectancy_rate=(
+                minimum_robustness_positive_expectancy_rate
+            ),
+            minimum_samples=minimum_robustness_samples,
+        )
+
         reasons: list[str] = []
         if trades < minimum_trades:
             reasons.append(f"trades:{trades}/{minimum_trades}")
@@ -144,6 +177,10 @@ def build_candidate_leaderboard(
                 f"profit_factor:{profit_factor:.3f}/"
                 f"{minimum_profit_factor:.3f}"
             )
+        if not robustness.passed:
+            reasons.append(
+                "robustness:" + "|".join(robustness.reasons)
+            )
 
         rows.append(
             CandidateLeaderboardRow(
@@ -154,6 +191,13 @@ def build_candidate_leaderboard(
                 trades=trades,
                 expectancy_pct=expectancy,
                 profit_factor=profit_factor,
+                robustness_passed=robustness.passed,
+                robustness_positive_expectancy_rate=(
+                    robustness.positive_expectancy_rate
+                ),
+                robustness_p05_expectancy_pct=(
+                    robustness.p05_expectancy_pct
+                ),
                 promotion_ready=not reasons,
                 reasons=tuple(reasons),
             )
