@@ -48,6 +48,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--symbol", default="BTCUSDT")
     parser.add_argument("--hours", type=float, default=6.0)
     parser.add_argument(
+        "--end-offset-hours",
+        type=float,
+        default=0.0,
+        help=(
+            "End the replay this many hours before now. "
+            "Useful for non-overlapping holdout windows."
+        ),
+    )
+    parser.add_argument(
         "--min-calibration-samples",
         type=int,
         default=30,
@@ -94,6 +103,7 @@ async def run(
     symbol: str,
     hours: float,
     *,
+    end_offset_hours: float = 0.0,
     exact_binance_trades: bool = False,
     compare_price_sources: bool = False,
     minimum_calibration_samples: int = 30,
@@ -112,7 +122,12 @@ async def run(
         session_factory = create_session_factory(engine)
         repository = ReplayDataRepository(session_factory)
 
-        end = datetime.now(UTC)
+        if hours <= 0:
+            raise ValueError("hours must be positive")
+        if end_offset_hours < 0:
+            raise ValueError("end_offset_hours cannot be negative")
+
+        end = datetime.now(UTC) - timedelta(hours=end_offset_hours)
         start = end - timedelta(hours=hours)
 
         features = await repository.load_features(
@@ -163,7 +178,8 @@ async def run(
 
         print(
             f"REPLAY symbol={symbol.upper()} "
-            f"start={start.isoformat()} end={end.isoformat()}"
+            f"start={start.isoformat()} end={end.isoformat()} "
+            f"end_offset_hours={end_offset_hours:g}"
         )
         print(
             f"loaded features={len(features)} "
@@ -669,6 +685,7 @@ def main() -> None:
         run(
             args.symbol,
             args.hours,
+            end_offset_hours=args.end_offset_hours,
             exact_binance_trades=args.exact_binance_trades,
             compare_price_sources=args.compare_price_sources,
             minimum_calibration_samples=args.min_calibration_samples,
