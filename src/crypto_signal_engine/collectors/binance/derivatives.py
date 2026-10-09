@@ -155,7 +155,7 @@ class BinanceDerivativesClient:
 
 
 class BinanceLiquidationCollector:
-    BASE_URL = "wss://fstream.binance.com/public/ws"
+    BASE_URL = "wss://fstream.binance.com/market/ws"
 
     def __init__(self, symbols: list[str]) -> None:
         self._symbols = [symbol.lower() for symbol in symbols]

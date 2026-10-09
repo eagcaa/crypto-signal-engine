@@ -11,7 +11,7 @@ from crypto_signal_engine.domain.models import Exchange, MarketType, TradeSide, 
 
 logger = logging.getLogger(__name__)
 
-BINANCE_FUTURES_STREAM_URL = "wss://fstream.binance.com/public/ws"
+BINANCE_FUTURES_STREAM_URL = "wss://fstream.binance.com/market/ws"
 
 
 def parse_futures_agg_trade(payload: dict[str, object]) -> TradeTick:
