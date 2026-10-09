@@ -1,3 +1,7 @@
+from crypto_signal_engine.replay.research_inputs import (
+    ResearchReplayInputs,
+    select_research_replay_inputs,
+)
 from crypto_signal_engine.replay.candidate_gates import (
     CANDIDATE_GATES,
     CandidateGate,
@@ -51,6 +55,7 @@ __all__ = [
     "ReplayReport",
     "ReplayResult",
     "ReplayRunner",
+    "ResearchReplayInputs",
     "ReplayStats",
     "ScoreExcursionStats",
     "ScoreBinStats",
@@ -64,5 +69,6 @@ __all__ = [
     "compare_replay_reports",
     "filter_replay_result",
     "prediction_passes_gate",
+    "select_research_replay_inputs",
     "top_barrier_sweep_rows",
 ]
