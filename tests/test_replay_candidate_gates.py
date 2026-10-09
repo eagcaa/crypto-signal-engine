@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
+from types import SimpleNamespace
 
 from crypto_signal_engine.predictions import Prediction, PredictionDirection
 from crypto_signal_engine.replay import (
@@ -146,5 +147,58 @@ def test_wide_candidate_freezes_second_holdout_barriers() -> None:
         if item.name == "15m_short_support6_oi_wide"
     )
 
+    assert gate.frozen_take_profit_pct == Decimal("0.40")
+    assert gate.frozen_stop_loss_pct == Decimal("0.30")
+
+
+
+def test_regime_gate_requires_matching_15m_regime() -> None:
+    prediction = _prediction(
+        direction=PredictionDirection.SHORT,
+        horizon_seconds=900,
+        contributions={
+            "trend": Decimal("-0.10"),
+            "futures_cvd": Decimal("-0.10"),
+            "spot_cvd": Decimal("-0.05"),
+            "open_interest": Decimal("-0.08"),
+            "liquidations": Decimal("-0.03"),
+            "crowding": Decimal("-0.02"),
+        },
+    )
+    gate = CandidateGate(
+        name="test_regime",
+        horizon_seconds=900,
+        direction=PredictionDirection.SHORT,
+        minimum_supporting_features=6,
+        require_open_interest_support=True,
+        required_trend_regime="downtrend",
+        required_volatility_regime="high",
+    )
+
+    matching = SimpleNamespace(
+        trend_regime_15m="downtrend",
+        volatility_regime_15m="high",
+    )
+    wrong = SimpleNamespace(
+        trend_regime_15m="uptrend",
+        volatility_regime_15m="high",
+    )
+
+    assert prediction_passes_gate(prediction, gate, matching) is True
+    assert prediction_passes_gate(prediction, gate, wrong) is False
+    assert prediction_passes_gate(prediction, gate, None) is False
+
+
+def test_regime_candidate_freezes_wide_barriers() -> None:
+    from crypto_signal_engine.replay import CANDIDATE_GATES
+
+    gate = next(
+        item
+        for item in CANDIDATE_GATES
+        if item.name == "15m_short_support6_oi_wide_downtrend_high"
+    )
+
+    assert gate.required_trend_regime == "downtrend"
+    assert gate.required_volatility_regime == "high"
     assert gate.frozen_take_profit_pct == Decimal("0.40")
     assert gate.frozen_stop_loss_pct == Decimal("0.30")
