@@ -17,6 +17,21 @@ class CandidateGate:
     required_volatility_regime: str | None = None
     frozen_take_profit_pct: Decimal | None = None
     frozen_stop_loss_pct: Decimal | None = None
+    required_model_name: str | None = None
+
+
+HISTORICAL_CANDIDATE_GATES = (
+    CandidateGate(
+        name="15m_long_range_high_historical_compatible_v1",
+        horizon_seconds=900,
+        direction=PredictionDirection.LONG,
+        required_trend_regime="range",
+        required_volatility_regime="high",
+        frozen_take_profit_pct=Decimal("0.40"),
+        frozen_stop_loss_pct=Decimal("0.18"),
+        required_model_name="historical_compatible_v1_15m",
+    ),
+)
 
 
 CANDIDATE_GATES = (
@@ -134,6 +149,11 @@ def prediction_passes_gate(
     feature_snapshot: ResearchFeatureSnapshot | None = None,
 ) -> bool:
     if prediction.horizon_seconds != gate.horizon_seconds:
+        return False
+    if (
+        gate.required_model_name is not None
+        and prediction.model_name != gate.required_model_name
+    ):
         return False
     if prediction.direction != gate.direction:
         return False
