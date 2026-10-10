@@ -7,6 +7,7 @@ HOURS ?= 6
 OFFSET ?= 12
 WINDOWS ?= 6
 DAYS ?= 7
+END_DATE ?=
 
 help:
 	@echo "Available commands:"
@@ -27,7 +28,7 @@ help:
 	@echo "  make replay-compare Compare sampled versus exact first-touch outcomes"
 	@echo "  make replay-holdout Validate an earlier non-overlapping replay window"
 	@echo "  make replay-walk-forward Run exact sequential windows + candidate leaderboard"
-	@echo "  make backfill-history Download/validate Binance Vision history (DAYS=7)"
+	@echo "  make backfill-history Download/validate Binance Vision history (DAYS=7 END_DATE=YYYY-MM-DD)"
 	@echo "  make calibrate     Build exact replay calibration artifact"
 	@echo "  make db-up        Start TimescaleDB"
 	@echo "  make db-down      Stop TimescaleDB"
@@ -109,7 +110,7 @@ replay-walk-forward:
 
 backfill-history:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
-	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.backfill_history --symbol "$(SYMBOL)" --days "$(DAYS)"
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.backfill_history --symbol "$(SYMBOL)" --days "$(DAYS)" $(if $(END_DATE),--end-date "$(END_DATE)",)
 
 calibrate:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
