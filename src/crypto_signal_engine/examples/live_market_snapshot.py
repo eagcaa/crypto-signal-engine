@@ -363,7 +363,7 @@ async def persist_snapshots(
     prediction_interval_seconds: int = 60,
 ) -> None:
     last_prediction_at = None
-    horizons = (300, 900)
+    horizons = (300, 900, 3600)
 
     while True:
         await asyncio.sleep(interval_seconds)
