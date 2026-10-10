@@ -243,12 +243,20 @@ async def initialize_database(engine: AsyncEngine) -> None:
         for column_name, column_type in (
             ("trend_score_5m", "NUMERIC(20, 16)"),
             ("trend_score_15m", "NUMERIC(20, 16)"),
+            ("trend_score_1h", "NUMERIC(20, 16)"),
+            ("trend_score_4h", "NUMERIC(20, 16)"),
             ("atr_pct_5m", "NUMERIC(20, 12)"),
             ("atr_pct_15m", "NUMERIC(20, 12)"),
+            ("atr_pct_1h", "NUMERIC(20, 12)"),
+            ("atr_pct_4h", "NUMERIC(20, 12)"),
             ("trend_regime_5m", "VARCHAR(16)"),
             ("trend_regime_15m", "VARCHAR(16)"),
+            ("trend_regime_1h", "VARCHAR(16)"),
+            ("trend_regime_4h", "VARCHAR(16)"),
             ("volatility_regime_5m", "VARCHAR(16)"),
             ("volatility_regime_15m", "VARCHAR(16)"),
+            ("volatility_regime_1h", "VARCHAR(16)"),
+            ("volatility_regime_4h", "VARCHAR(16)"),
         ):
             await connection.execute(
                 text(
