@@ -277,6 +277,17 @@ class CompositePredictionEngine:
                 reason="No usable feature groups are available.",
             )
 
+        minimum_active_weight = self._minimum_active_weight(profile)
+        if active_weight < minimum_active_weight:
+            return self._no_trade(
+                features,
+                horizon_seconds,
+                reason=(
+                    f"Insufficient active feature weight: "
+                    f"{active_weight:.2f}/{minimum_active_weight:.2f}."
+                ),
+            )
+
         contributions: dict[str, Decimal] = {}
         raw_score = Decimal("0")
 
@@ -688,6 +699,12 @@ class CompositePredictionEngine:
             return None
         return sum(values, Decimal("0")) / Decimal(len(values))
 
+    def _minimum_active_weight(
+        self,
+        profile: _HorizonProfile,
+    ) -> Decimal:
+        return Decimal("0")
+
     def _finalize_raw_score(
         self,
         raw_score: Decimal,
@@ -769,6 +786,12 @@ class HistoricalCompatiblePredictionEngine(CompositePredictionEngine):
         profile: _HorizonProfile,
     ) -> Decimal | None:
         return None
+
+    def _minimum_active_weight(
+        self,
+        profile: _HorizonProfile,
+    ) -> Decimal:
+        return Decimal("0.50")
 
     def _finalize_raw_score(
         self,
