@@ -157,6 +157,29 @@ class TelegramNotifier:
         )
 
     @staticmethod
+    def source_freshness_text(
+        *,
+        symbol: str,
+        source: str,
+        kind: str,
+        age_ms: int | None,
+        bad_intervals: int,
+    ) -> str:
+        title = (
+            "Market source stale"
+            if kind == "stale"
+            else "Market source recovered"
+        )
+        age = "missing" if age_ms is None else f"{age_ms} ms"
+        return (
+            f"{title}\n"
+            f"{symbol}\n"
+            f"Source: {source.replace('_', ' ').title()}\n"
+            f"Age: {age}\n"
+            f"Consecutive bad intervals: {bad_intervals}"
+        )
+
+    @staticmethod
     def data_quality_text(
         *,
         symbol: str,
