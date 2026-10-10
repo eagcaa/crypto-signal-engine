@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 
 from crypto_signal_engine.replay.barrier_sweep import (
@@ -21,6 +22,8 @@ class CandidateWindowResult:
     price_points: tuple[ReplayPricePoint, ...]
     row: BarrierSweepRow | None
     has_feature_data: bool = True
+    window_start: datetime | None = None
+    window_end: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,4 +231,26 @@ def build_candidate_leaderboard(
             ),
             reverse=True,
         )
+    )
+
+
+def build_monthly_candidate_leaderboards(
+    windows: list[CandidateWindowResult],
+    **leaderboard_kwargs,
+) -> tuple[tuple[str, tuple[CandidateLeaderboardRow, ...]], ...]:
+    grouped: dict[str, list[CandidateWindowResult]] = {}
+    for item in windows:
+        if item.window_start is None:
+            continue
+        month = item.window_start.astimezone(
+            item.window_start.tzinfo
+        ).strftime("%Y-%m")
+        grouped.setdefault(month, []).append(item)
+
+    return tuple(
+        (
+            month,
+            build_candidate_leaderboard(items, **leaderboard_kwargs),
+        )
+        for month, items in sorted(grouped.items())
     )
