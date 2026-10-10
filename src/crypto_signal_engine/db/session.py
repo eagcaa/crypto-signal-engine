@@ -128,6 +128,22 @@ async def initialize_database(engine: AsyncEngine) -> None:
             text(
                 """
                 ALTER TABLE prediction_evaluations
+                ADD COLUMN IF NOT EXISTS gross_return_pct NUMERIC(20, 12)
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE prediction_evaluations
+                ADD COLUMN IF NOT EXISTS trading_cost_pct NUMERIC(20, 12)
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE prediction_evaluations
                 ADD COLUMN IF NOT EXISTS evaluation_source VARCHAR(32)
                 NOT NULL DEFAULT 'unknown'
                 """
