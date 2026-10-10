@@ -30,6 +30,7 @@ from crypto_signal_engine.predictions import (
 )
 from crypto_signal_engine.replay import (
     CANDIDATE_GATES,
+    HISTORICAL_CANDIDATE_GATES,
     ReplayRunner,
     build_agreement_edge_stats,
     build_barrier_sweep,
@@ -165,11 +166,19 @@ async def run(
             dataset_provenance=dataset_provenance or None,
         )
 
-        sampled_prices = await repository.load_price_points(
-            symbol=symbol,
-            start=start,
-            end=end,
-        )
+        if dataset_provenance:
+            sampled_prices = await repository.load_feature_price_points(
+                symbol=symbol,
+                start=start,
+                end=end,
+                dataset_provenance=dataset_provenance,
+            )
+        else:
+            sampled_prices = await repository.load_price_points(
+                symbol=symbol,
+                start=start,
+                end=end,
+            )
 
         prediction_engine_cls = (
             HistoricalCompatiblePredictionEngine
@@ -327,8 +336,14 @@ async def run(
             round_trip_cost_pct=round_trip_cost_pct,
         )
 
+        candidate_gates = (
+            HISTORICAL_CANDIDATE_GATES
+            if historical_compatible
+            else CANDIDATE_GATES
+        )
+
         candidate_gate_results = []
-        for gate in CANDIDATE_GATES:
+        for gate in candidate_gates:
             gated_result = filter_replay_result(
                 excursion_result,
                 gate,
@@ -348,7 +363,7 @@ async def run(
             )
 
         frozen_candidate_results = []
-        for gate in CANDIDATE_GATES:
+        for gate in candidate_gates:
             if (
                 gate.frozen_take_profit_pct is None
                 or gate.frozen_stop_loss_pct is None
