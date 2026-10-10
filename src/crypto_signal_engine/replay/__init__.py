@@ -68,6 +68,8 @@ __all__ = [
     "bootstrap_candidate_robustness",
     "build_barrier_sweep",
     "build_candidate_leaderboard",
+    "build_monthly_candidate_leaderboards",
+    "LocalBinanceSpotAggTradePriceSource",
     "build_candidate_independent_returns",
     "build_candidate_trade_returns",
     "build_feature_edge_stats",
@@ -86,6 +88,10 @@ from crypto_signal_engine.replay.walk_forward import (
     CandidateLeaderboardRow,
     CandidateWindowResult,
     build_candidate_leaderboard,
+    build_monthly_candidate_leaderboards,
+)
+from crypto_signal_engine.replay.local_price_source import (
+    LocalBinanceSpotAggTradePriceSource,
 )
 
 from crypto_signal_engine.replay.robustness import (
