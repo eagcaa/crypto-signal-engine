@@ -49,6 +49,8 @@ def test_readiness_passes_when_all_calibration_and_paper_gates_pass() -> None:
             bucket(300, "short"),
             bucket(900, "long"),
             bucket(900, "short"),
+            bucket(3600, "long"),
+            bucket(3600, "short"),
         )
     result = evaluate_readiness(
         buckets,
