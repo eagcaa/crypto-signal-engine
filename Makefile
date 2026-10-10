@@ -1,4 +1,4 @@
-.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward backfill-history backfill-materialize backfill-load calibrate db-up db-down db-logs db-shell clean
+.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical backfill-history backfill-materialize backfill-load calibrate db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
 PYTHONPATH_SRC := PYTHONPATH=src
@@ -8,6 +8,8 @@ OFFSET ?= 12
 WINDOWS ?= 6
 DAYS ?= 7
 END_DATE ?=
+END_AT ?=
+PROVENANCE ?= binance_vision_historical_compatible_v1
 
 help:
 	@echo "Available commands:"
@@ -28,6 +30,8 @@ help:
 	@echo "  make replay-compare Compare sampled versus exact first-touch outcomes"
 	@echo "  make replay-holdout Validate an earlier non-overlapping replay window"
 	@echo "  make replay-walk-forward Run exact sequential windows + candidate leaderboard"
+	@echo "  make replay-historical Replay historical-compatible DB rows (END_AT required)"
+	@echo "  make replay-walk-forward-historical Historical-compatible walk forward"
 	@echo "  make backfill-history Download/validate Binance Vision history (DAYS=7 END_DATE=YYYY-MM-DD)"
 	@echo "  make backfill-materialize Convert downloaded history to 60s features"
 	@echo "  make backfill-load Load materialized historical features into PostgreSQL"
@@ -109,6 +113,14 @@ replay-holdout:
 replay-walk-forward:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
 	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.replay_walk_forward --symbol "$(SYMBOL)" --window-hours "$(HOURS)" --windows "$(WINDOWS)" --end-offset-hours "$(OFFSET)"
+
+replay-historical:
+	@if [ -z "$(END_AT)" ]; then echo "END_AT is required, e.g. END_AT=2026-09-01T00:00:00+00:00"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.replay_history --symbol "$(SYMBOL)" --hours "$(HOURS)" --end-at "$(END_AT)" --dataset-provenance "$(PROVENANCE)" --historical-compatible --exact-binance-trades
+
+replay-walk-forward-historical:
+	@if [ -z "$(END_AT)" ]; then echo "END_AT is required, e.g. END_AT=2026-09-01T00:00:00+00:00"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.replay_walk_forward --symbol "$(SYMBOL)" --window-hours "$(HOURS)" --windows "$(WINDOWS)" --end-at "$(END_AT)" --dataset-provenance "$(PROVENANCE)" --historical-compatible
 
 backfill-history:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
