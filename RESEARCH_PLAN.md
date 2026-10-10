@@ -138,3 +138,16 @@ A candidate that is positive only in one month but weak/negative across the othe
 The historical-compatible model should also run in live shadow mode, but only after live feature snapshots expose **Binance-only** spot/futures CVD ratios and the same Binance-only derivative inputs used by backfill.
 
 Do not run the historical-compatible shadow model on the current aggregate Binance+Bybit CVD ratios and call it equivalent. The live shadow and backfill model definitions must be feature-for-feature identical before their results are compared.
+
+
+### Historical materialization invariants
+
+Historical-compatible materialization must reproduce the live feature semantics as closely as the available source data allows.
+
+- Technical features require **100 closed candles** before they are emitted. Download **18 calendar days** of kline warmup before the requested research period so the 4h timeline has at least 100 closed candles at the first research timestamp.
+- The warmup applies only to klines. Spot/futures `aggTrades` are downloaded for the actual research period only.
+- Binance-only historical data quality is based on **recent activity**, not file existence. At each 60-second snapshot, Binance spot and Binance futures each count as available only if their latest trade is no older than 60 seconds.
+- Historical-compatible v1 requires `market_data_quality == 1.0`; if either expected Binance trade stream is stale/missing, return `no_trade`.
+- Aggregate trades are reduced online into one-minute signed-volume/absolute-volume buckets. The 1m/5m/15m CVD and CVD-ratio calculations use those rolling buckets, preserving the 60-second snapshot semantics without rescanning every individual trade for every feature calculation.
+- Materialized JSONL must be loaded with its original `dataset_provenance`. A database row with the same symbol/timestamp but a different provenance is a hard conflict and must never be silently overwritten.
+- Historical replay must filter features by provenance and use only `HISTORICAL_CANDIDATE_GATES` with `HistoricalCompatiblePredictionEngine`. Do not report historical-compatible predictions under the live candidate names.
