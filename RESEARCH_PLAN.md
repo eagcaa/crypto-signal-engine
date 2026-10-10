@@ -179,7 +179,7 @@ Historical walk-forward first-touch evaluation must use the locally downloaded B
 If a materialization bug is fixed and the same provenance must be reloaded, use the provenance-safe loader replace mode. Replacement only affects the matching `(timestamp, symbol, dataset_provenance)` row; other provenances at the same timestamp remain untouched.
 
 
-## H4 — Historical-compatible v2 derivatives confirmation
+## H4 — V2 selection protocol after v1 rejection
 
 ### V1 disposition
 
@@ -198,55 +198,63 @@ Observed on the frozen 2026-07-01 through 2026-08-31 research window:
 
 Monthly results were negative in both July and August. Do not retune or reuse `historical_compatible_v1` as though it were still an open research candidate. The September holdout remains untouched.
 
-### V2 pre-registered hypothesis
+The 2026-04-01 through 2026-06-30 period is reserved as a secondary backup holdout. Do not inspect or optimize against it during V2 research.
 
-`historical_compatible_v2` tests whether Binance derivatives participation/crowding data can distinguish meaningful order-flow moves from the weak/noisy flow seen in v1.
+### Research-only feature diagnostics before freezing V2
 
-The 15m v2 feature groups are frozen before outcome inspection as:
+Before freezing a V2 strategy, use the July-August development data to diagnose whether the existing feature families contain directional information at 15m, 1h or 4h.
 
-- Binance spot CVD: weight `0.18`,
-- Binance futures CVD: weight `0.18`,
-- Binance open-interest confirmation: weight `0.15`,
-- Binance crowding (global long/short plus top-trader long/short): weight `0.09`,
-- Binance taker buy/sell flow: weight `0.05`,
-- 15m trend: weight `0.15`.
+The diagnostics are exploratory and may inspect only the July-August research window. They must refuse any input containing rows at or after 2026-09-01.
 
-Total expected active weight is `0.80`. V2 must require all six groups to be available and therefore uses a minimum active weight of `0.80` before score normalization.
+For each feature/horizon pair report at minimum:
 
-To isolate the feature-set hypothesis, keep the v1 candidate structure unchanged for the first v2 experiment:
+- Spearman rank correlation with forward return,
+- top-decile mean forward return,
+- bottom-decile mean forward return,
+- top-minus-bottom spread,
+- first-half spread,
+- second-half spread,
+- whether the spread sign is stable across halves,
+- whether the implied one-sided spread is large enough to clear the frozen round-trip research cost.
 
-- horizon: 15 minutes,
-- direction: LONG,
-- required 15m trend regime: `range`,
-- required 15m volatility regime: `high`,
-- score threshold: `0.20`,
-- take profit: `+0.40%`,
-- stop loss: `-0.18%`,
-- round-trip research cost: `0.12%`.
+A feature/horizon relationship is not treated as useful merely because the full-period spread is large. The sign must also be stable across the two development halves.
 
-Do not change TP/SL, score threshold, regime gates, or costs in the first v2 run. A horizon change or different barrier design is a separate hypothesis/version.
+If the existing spot/futures CVD or trend features show a stable cost-clearing relationship at a longer horizon, the first V2 hypothesis may be a horizon change rather than a larger feature set.
 
-Funding is deliberately excluded from the first v2 metrics experiment because the Binance Vision USD-M `metrics` archive does not establish the same funding-rate timestamp semantics used by the live collector. Funding may be added only as a separately sourced and timestamp-validated later version.
+If none of the existing feature families show a stable relationship at any tested horizon, V2 research moves to new derivative inputs.
 
-Order book and liquidations remain excluded from historical-compatible v2.
+### Metrics timestamp / observability gate
 
-### Metrics timestamp gate
+Before Binance Vision USD-M `metrics` fields are eligible for feature diagnostics or strategy evaluation, their observable-time semantics must be validated against already-persisted live Binance derivatives snapshots.
 
-V2 is blocked until the metrics alignment validator returns `PASS`.
+Run two complementary checks:
 
-The validator must:
+1. Open-interest shift scan over a bounded set of minute shifts.
+2. Ratio first-seen analysis that compares every archived ratio column against the persisted live long/short, top-trader and taker-ratio fields.
 
-- use only archived Binance Vision USD-M `metrics` values and already-persisted live Binance OI,
-- test `-5`, `0`, and `+5` minute timestamp shifts,
-- compare OI values without consulting prediction outcomes,
-- fail on duplicate/boundary archive timestamps,
-- require a unique low-error alignment rather than choosing a shift when multiple shifts fit similarly,
-- persist the selected observable-time shift as an artifact.
+The ratio analysis must infer the archive-to-live mapping from observed values rather than assuming it in advance.
 
-If validation is `AMBIGUOUS` or `FAIL`, do not materialize metrics into strategy features and do not run v2.
+Report duplicate archive timestamps explicitly. A metrics row labelled T may be exposed to historical features only at or after the conservatively inferred observable time.
+
+If alignment is ambiguous, insufficiently matched, or otherwise fails validation, metrics remain excluded.
+
+### V2 freeze rule
+
+Do not select V2 features, horizon, score threshold, regime gates or barriers by looking at September.
+
+V2 is frozen only after:
+
+1. July-August diagnostics for the existing feature set are complete.
+2. Metrics observability validation is complete if metrics are being considered.
+3. Any newly validated metrics fields are run through the same July-August feature diagnostics.
+4. The V2 hypothesis is written here before any September result is inspected.
+
+The existing `HistoricalCompatibleV2PredictionEngine` implementation is provisional research scaffolding only until this freeze step is completed. It must not be treated as the final V2 hypothesis merely because the code exists.
 
 ### V2 evaluation protocol
 
-After timestamp validation passes, materialize a new provenance (never overwrite v1), run only on the July-August research period, and report aggregate plus monthly stability.
+After the V2 hypothesis is frozen, evaluate it on July-August and report aggregate plus monthly stability.
 
-Do not inspect September until the v2 definition and July-August research decision are frozen. If v2 passes the research thresholds, September is opened once as the final historical holdout; otherwise v2 is rejected without consuming September.
+Only if it passes the research thresholds should September be opened once as the primary final historical holdout. If V2 is changed after viewing September, September is consumed and cannot be reused as unbiased evidence; use the untouched April-June backup holdout for a later version instead.
+
+October live-forward data remains separate from all historical holdouts.
