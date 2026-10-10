@@ -581,7 +581,12 @@ def test_v4_supports_one_hour_horizon_with_one_hour_atr_and_trend() -> None:
     )
 
     assert decision.prediction is not None
-    assert decision.prediction.model_name == "composite_rules_v4_1h"
+    assert decision.prediction.model_name == "shadow_composite_rules_v4_1h"
+    assert CompositePredictionEngine.is_shadow_horizon(3600) is True
+    assert all(
+        horizon != 3600
+        for horizon, _ in CompositePredictionEngine.current_model_names()
+    )
     assert decision.prediction.take_profit_pct == Decimal("0.8800")
     assert decision.prediction.stop_loss_pct == Decimal("0.5600")
     assert decision.feature_contributions["trend"] > 0
