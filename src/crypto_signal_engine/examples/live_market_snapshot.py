@@ -530,7 +530,11 @@ async def persist_snapshots(
                     await prediction_repository.add(prediction)
                     await live_evaluator.register(prediction)
 
-                    if paper_broker is not None:
+                    is_shadow = prediction_engine.is_shadow_horizon(
+                        prediction.horizon_seconds
+                    )
+
+                    if paper_broker is not None and not is_shadow:
                         paper_position = paper_broker.open_from_prediction(
                             prediction
                         )
@@ -556,7 +560,7 @@ async def persist_snapshots(
                                 f"reason={reason}"
                             )
 
-                    if candidate_paper_tracker is not None:
+                    if candidate_paper_tracker is not None and not is_shadow:
                         candidate_prediction = (
                             candidate_paper_tracker.candidate_prediction(
                                 prediction,
@@ -610,6 +614,21 @@ async def persist_snapshots(
                                     f"prediction_id={candidate_prediction.id} "
                                     f"reason={reason}"
                                 )
+
+                    if is_shadow:
+                        print(
+                            "SHADOW_PREDICTION "
+                            f"id={prediction.id} "
+                            f"horizon={prediction.horizon_seconds}s "
+                            f"direction={prediction.direction.value} "
+                            f"raw_score={prediction.raw_score:+.4f} "
+                            f"entry={prediction.entry_price} "
+                            f"tp={prediction.take_profit_pct:.4f}% "
+                            f"sl={prediction.stop_loss_pct:.4f}% "
+                            f"{contribution_text} "
+                            f"reason={prediction.reason}"
+                        )
+                        continue
 
                     calibrated_confidence = (
                         ReplayCalibrator().confidence_for_prediction(
