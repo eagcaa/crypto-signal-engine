@@ -10,6 +10,7 @@ import aiohttp
 
 
 BASE_URL = "https://data.binance.vision/data"
+TECHNICAL_WARMUP_DAYS = 18
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +26,28 @@ class DownloadResult:
     path: str
     bytes: int
     status: str
+
+
+def kline_archive_specs(
+    *,
+    symbol: str,
+    day: date,
+) -> tuple[ArchiveSpec, ...]:
+    symbol = symbol.upper()
+    stamp = day.isoformat()
+    return tuple(
+        ArchiveSpec(
+            dataset=f"spot_klines_{interval}",
+            url=(
+                f"{BASE_URL}/spot/daily/klines/{symbol}/{interval}/"
+                f"{symbol}-{interval}-{stamp}.zip"
+            ),
+            relative_path=(
+                f"spot/klines/{interval}/{symbol}-{interval}-{stamp}.zip"
+            ),
+        )
+        for interval in ("5m", "15m", "1h", "4h")
+    )
 
 
 def daily_archive_specs(
@@ -62,19 +85,7 @@ def daily_archive_specs(
             relative_path=f"futures/um/metrics/{symbol}-metrics-{stamp}.zip",
         ),
     ]
-    for interval in ("5m", "15m", "1h", "4h"):
-        specs.append(
-            ArchiveSpec(
-                dataset=f"spot_klines_{interval}",
-                url=(
-                    f"{BASE_URL}/spot/daily/klines/{symbol}/{interval}/"
-                    f"{symbol}-{interval}-{stamp}.zip"
-                ),
-                relative_path=(
-                    f"spot/klines/{interval}/{symbol}-{interval}-{stamp}.zip"
-                ),
-            )
-        )
+    specs.extend(kline_archive_specs(symbol=symbol, day=day))
     return tuple(specs)
 
 
@@ -173,7 +184,31 @@ async def run(
     timeout = aiohttp.ClientTimeout(total=None, connect=30, sock_read=120)
     results: list[DownloadResult] = []
 
+    warmup_end = days_to_fetch[0] - timedelta(days=1)
+    warmup_days = requested_days(
+        days=TECHNICAL_WARMUP_DAYS,
+        end_day=warmup_end,
+    )
+
     async with aiohttp.ClientSession(timeout=timeout) as session:
+        for current_day in warmup_days:
+            print(f"BACKFILL_WARMUP_KLINES day={current_day.isoformat()}")
+            for spec in kline_archive_specs(
+                symbol=symbol,
+                day=current_day,
+            ):
+                result = await download_archive(
+                    session,
+                    spec,
+                    root=root,
+                )
+                results.append(result)
+                print(
+                    f"  dataset={result.dataset} "
+                    f"status={result.status} "
+                    f"bytes={result.bytes}"
+                )
+
         for current_day in days_to_fetch:
             print(f"BACKFILL_DOWNLOAD day={current_day.isoformat()}")
             for spec in daily_archive_specs(
@@ -200,6 +235,7 @@ async def run(
         "end_day": days_to_fetch[-1].isoformat(),
         "days": len(days_to_fetch),
         "feature_snapshot_cadence_seconds": 60,
+        "technical_warmup_days": TECHNICAL_WARMUP_DAYS,
         "dataset_provenance": "binance_vision_historical_compatible_v1",
         "files": [asdict(item) for item in results],
     }
