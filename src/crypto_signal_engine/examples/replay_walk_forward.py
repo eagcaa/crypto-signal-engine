@@ -11,9 +11,13 @@ from crypto_signal_engine.db import (
     initialize_database,
 )
 from crypto_signal_engine.db.replay_repository import ReplayDataRepository
-from crypto_signal_engine.predictions import CompositePredictionEngine
+from crypto_signal_engine.predictions import (
+    CompositePredictionEngine,
+    HistoricalCompatiblePredictionEngine,
+)
 from crypto_signal_engine.replay import (
     CANDIDATE_GATES,
+    HISTORICAL_CANDIDATE_GATES,
     CandidateWindowResult,
     ReplayResult,
     ReplayRunner,
@@ -34,6 +38,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--window-hours", type=float, default=12.0)
     parser.add_argument("--windows", type=int, default=6)
     parser.add_argument("--end-offset-hours", type=float, default=0.0)
+    parser.add_argument(
+        "--end-at",
+        default="",
+        help="Optional absolute UTC/offset-aware ISO end timestamp.",
+    )
+    parser.add_argument("--dataset-provenance", default="")
+    parser.add_argument("--historical-compatible", action="store_true")
     parser.add_argument("--minimum-trades", type=int, default=30)
     parser.add_argument("--minimum-active-windows", type=int, default=3)
     parser.add_argument(
@@ -59,6 +70,9 @@ async def run(
     minimum_active_windows: int,
     minimum_positive_window_ratio: Decimal,
     minimum_profit_factor: Decimal,
+    end_at: str = "",
+    dataset_provenance: str = "",
+    historical_compatible: bool = False,
 ) -> None:
     if window_hours <= 0:
         raise ValueError("window_hours must be positive")
@@ -67,9 +81,14 @@ async def run(
     if end_offset_hours < 0:
         raise ValueError("end_offset_hours cannot be negative")
 
+    candidate_gates = (
+        HISTORICAL_CANDIDATE_GATES
+        if historical_compatible
+        else CANDIDATE_GATES
+    )
     frozen_gates = tuple(
         gate
-        for gate in CANDIDATE_GATES
+        for gate in candidate_gates
         if (
             gate.frozen_take_profit_pct is not None
             and gate.frozen_stop_loss_pct is not None
@@ -86,8 +105,13 @@ async def run(
     try:
         session_factory = create_session_factory(engine)
         repository = ReplayDataRepository(session_factory)
+        prediction_engine_cls = (
+            HistoricalCompatiblePredictionEngine
+            if historical_compatible
+            else CompositePredictionEngine
+        )
         runner = ReplayRunner(
-            prediction_engine=CompositePredictionEngine(
+            prediction_engine=prediction_engine_cls(
                 fee_pct_per_side=settings.paper_fee_pct_per_side,
                 slippage_pct_per_side=settings.paper_slippage_pct_per_side,
             )
@@ -99,7 +123,13 @@ async def run(
             + settings.paper_slippage_pct_per_side
         )
 
-        anchor_end = datetime.now(UTC) - timedelta(hours=end_offset_hours)
+        if end_at:
+            parsed_end = datetime.fromisoformat(end_at)
+            if parsed_end.tzinfo is None:
+                raise ValueError("--end-at must include a timezone/UTC offset")
+            anchor_end = parsed_end.astimezone(UTC)
+        else:
+            anchor_end = datetime.now(UTC) - timedelta(hours=end_offset_hours)
         window_delta = timedelta(hours=window_hours)
         candidate_windows: list[CandidateWindowResult] = []
 
@@ -109,7 +139,9 @@ async def run(
             f"window_hours={window_hours:g} "
             f"windows={windows} "
             f"end_offset_hours={end_offset_hours:g} "
-            "price_source=binance_spot_aggTrades"
+            "price_source=binance_spot_aggTrades "
+            f"provenance={dataset_provenance or 'any'} "
+            f"engine={'historical_compatible' if historical_compatible else 'live_v4'}"
         )
 
         for offset_index in range(windows):
@@ -119,6 +151,7 @@ async def run(
                 symbol=symbol,
                 start=window_start,
                 end=window_end,
+                dataset_provenance=dataset_provenance or None,
             )
 
             if features:
@@ -270,6 +303,9 @@ def main() -> None:
             minimum_active_windows=args.minimum_active_windows,
             minimum_positive_window_ratio=args.minimum_positive_window_ratio,
             minimum_profit_factor=args.minimum_profit_factor,
+            end_at=args.end_at,
+            dataset_provenance=args.dataset_provenance,
+            historical_compatible=args.historical_compatible,
         )
     )
 
