@@ -188,8 +188,8 @@ def parse_args() -> argparse.Namespace:
         "--replace",
         action="store_true",
         help=(
-            "Replace rows only when the existing row has the same provenance; "
-            "different-provenance conflicts remain fatal."
+            "Replace only rows with the same symbol/timestamp/provenance. "
+            "Other provenances at the same timestamp are preserved."
         ),
     )
     return parser.parse_args()
