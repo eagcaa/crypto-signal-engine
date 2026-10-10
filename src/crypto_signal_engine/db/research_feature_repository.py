@@ -93,6 +93,8 @@ class ResearchFeatureRepository:
                     binance_book_imbalance=snapshot.binance_book_imbalance,
                     bybit_book_imbalance=snapshot.bybit_book_imbalance,
                     market_data_quality=snapshot.market_data_quality,
+                    liquidation_data_available=snapshot.liquidation_data_available,
+                    dataset_provenance=snapshot.dataset_provenance,
                 )
             )
             await session.commit()
