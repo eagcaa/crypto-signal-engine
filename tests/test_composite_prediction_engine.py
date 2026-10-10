@@ -769,3 +769,46 @@ def test_historical_profile_does_not_half_single_source_cvd() -> None:
     assert historical.feature_contributions["futures_cvd"] == (
         live.feature_contributions["futures_cvd"] * Decimal("2")
     )
+
+
+def test_historical_profile_normalizes_score_by_active_weight() -> None:
+    features = replace(
+        make_features(
+            binance_book="0",
+            bybit_book="0",
+            spot_cvd_1m="5",
+            spot_cvd_5m="5",
+            futures_cvd_1m="5",
+            futures_cvd_5m="5",
+            binance_oi_5m="0",
+            bybit_oi_5m="0",
+            funding_binance="0",
+            funding_bybit="0",
+            binance_long_short="1",
+            bybit_long_short="1",
+            top_trader="1",
+            taker_ratio="1",
+            liq_imbalance="0",
+            spot_sources=1,
+            futures_sources=1,
+            data_quality="0.33",
+        ),
+        spot_cvd_ratio_15m=Decimal("0.80"),
+        futures_cvd_ratio_15m=Decimal("0.80"),
+        dataset_provenance="binance_vision_historical_compatible_v1",
+        liquidation_data_available=False,
+        binance_book_imbalance=None,
+        bybit_book_imbalance=None,
+    )
+
+    engine = HistoricalCompatiblePredictionEngine(
+        minimum_abs_score=Decimal("0"),
+    )
+    decision = engine.decide(features, horizon_seconds=900)
+
+    contribution_sum = sum(
+        decision.feature_contributions.values(),
+        Decimal("0"),
+    )
+    expected_active_weight = Decimal("0.85")
+    assert decision.raw_score == contribution_sum / expected_active_weight
