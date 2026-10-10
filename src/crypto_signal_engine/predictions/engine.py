@@ -827,3 +827,52 @@ class HistoricalCompatiblePredictionEngine(CompositePredictionEngine):
         if active_weight <= 0:
             return Decimal("0")
         return self._clamp(raw_score / active_weight)
+
+
+
+class HistoricalCompatibleV2PredictionEngine(
+    HistoricalCompatiblePredictionEngine
+):
+    """Historical v2: v1 flow/trend plus validated Binance metrics.
+
+    Funding, order book and liquidations remain excluded. This class must
+    only be used with v2 materialized rows produced from a PASS metrics
+    alignment artifact.
+    """
+
+    MODEL_PREFIX = "historical_compatible_v2"
+
+    def _open_interest_score(
+        self,
+        features: ResearchFeatureSnapshot,
+        profile: _HorizonProfile,
+    ) -> Decimal | None:
+        return CompositePredictionEngine._open_interest_score(
+            self,
+            features,
+            profile,
+        )
+
+    def _crowding_score(
+        self,
+        features: ResearchFeatureSnapshot,
+    ) -> Decimal | None:
+        return CompositePredictionEngine._crowding_score(
+            self,
+            features,
+        )
+
+    def _ratio_direction_score(
+        self,
+        ratio: Decimal | None,
+    ) -> Decimal | None:
+        return CompositePredictionEngine._ratio_direction_score(
+            self,
+            ratio,
+        )
+
+    def _minimum_active_weight(
+        self,
+        profile: _HorizonProfile,
+    ) -> Decimal:
+        return Decimal("0.80")
