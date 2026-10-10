@@ -1,4 +1,4 @@
-.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward calibrate db-up db-down db-logs db-shell clean
+.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward backfill-history calibrate db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
 PYTHONPATH_SRC := PYTHONPATH=src
@@ -6,6 +6,7 @@ SYMBOL ?= BTCUSDT
 HOURS ?= 6
 OFFSET ?= 12
 WINDOWS ?= 6
+DAYS ?= 7
 
 help:
 	@echo "Available commands:"
@@ -26,6 +27,7 @@ help:
 	@echo "  make replay-compare Compare sampled versus exact first-touch outcomes"
 	@echo "  make replay-holdout Validate an earlier non-overlapping replay window"
 	@echo "  make replay-walk-forward Run exact sequential windows + candidate leaderboard"
+	@echo "  make backfill-history Download/validate Binance Vision history (DAYS=7)"
 	@echo "  make calibrate     Build exact replay calibration artifact"
 	@echo "  make db-up        Start TimescaleDB"
 	@echo "  make db-down      Stop TimescaleDB"
@@ -104,6 +106,10 @@ replay-holdout:
 replay-walk-forward:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
 	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.replay_walk_forward --symbol "$(SYMBOL)" --window-hours "$(HOURS)" --windows "$(WINDOWS)" --end-offset-hours "$(OFFSET)"
+
+backfill-history:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.backfill_history --symbol "$(SYMBOL)" --days "$(DAYS)"
 
 calibrate:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
