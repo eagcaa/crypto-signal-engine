@@ -3,7 +3,7 @@ import csv
 import json
 import zipfile
 from collections import deque
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from io import TextIOWrapper
@@ -12,6 +12,7 @@ from typing import Iterator
 
 from crypto_signal_engine.domain.candles import Candle
 from crypto_signal_engine.examples.backfill_history import (
+    TECHNICAL_WARMUP_DAYS,
     archive_timestamp_to_datetime,
     requested_days,
 )
@@ -24,6 +25,8 @@ from crypto_signal_engine.features.technical import (
 
 PROVENANCE = "binance_vision_historical_compatible_v1"
 INTERVALS = ("5m", "15m", "1h", "4h")
+TECHNICAL_CANDLE_COUNT = 100
+SOURCE_FRESHNESS_SECONDS = 60
 
 
 class HistoricalTrade:
@@ -41,6 +44,21 @@ class HistoricalTrade:
         self.absolute_quantity = abs(signed_quantity)
 
 
+@dataclass(slots=True)
+class MinuteTradeBucket:
+    minute: datetime
+    signed_quantity: Decimal = Decimal("0")
+    absolute_quantity: Decimal = Decimal("0")
+    last_price: Decimal | None = None
+    last_trade_at: datetime | None = None
+
+    def add(self, trade: HistoricalTrade) -> None:
+        self.signed_quantity += trade.signed_quantity
+        self.absolute_quantity += trade.absolute_quantity
+        self.last_price = trade.price
+        self.last_trade_at = trade.timestamp
+
+
 class PeekableTrades:
     def __init__(self, iterator: Iterator[HistoricalTrade]) -> None:
         self._iterator = iterator
@@ -55,39 +73,66 @@ class PeekableTrades:
 
 
 class RollingTradeWindow:
+    """Minute-bucketed rolling flow for 60-second historical snapshots."""
+
     def __init__(self) -> None:
-        self._items: deque[HistoricalTrade] = deque()
+        self._buckets: deque[MinuteTradeBucket] = deque()
         self.latest_price: Decimal | None = None
+        self.last_trade_at: datetime | None = None
+
+    @staticmethod
+    def _minute_floor(timestamp: datetime) -> datetime:
+        return timestamp.replace(second=0, microsecond=0)
 
     def add_many(self, trades: list[HistoricalTrade]) -> None:
         for trade in trades:
-            self._items.append(trade)
+            minute = self._minute_floor(trade.timestamp)
+            if not self._buckets or self._buckets[-1].minute != minute:
+                self._buckets.append(MinuteTradeBucket(minute=minute))
+            self._buckets[-1].add(trade)
             self.latest_price = trade.price
+            self.last_trade_at = trade.timestamp
 
     def trim(self, now: datetime) -> None:
         cutoff = now - timedelta(minutes=15)
-        while self._items and self._items[0].timestamp < cutoff:
-            self._items.popleft()
+        cutoff_minute = self._minute_floor(cutoff)
+        while self._buckets and self._buckets[0].minute < cutoff_minute:
+            self._buckets.popleft()
+
+    def is_fresh(
+        self,
+        now: datetime,
+        *,
+        freshness_seconds: int = SOURCE_FRESHNESS_SECONDS,
+    ) -> bool:
+        if self.last_trade_at is None:
+            return False
+        age = (now - self.last_trade_at).total_seconds()
+        return 0 <= age <= freshness_seconds
+
+    def _window_buckets(
+        self,
+        now: datetime,
+        minutes: int,
+    ) -> Iterator[MinuteTradeBucket]:
+        cutoff = now - timedelta(minutes=minutes)
+        cutoff_minute = self._minute_floor(cutoff)
+        for bucket in self._buckets:
+            if cutoff_minute <= bucket.minute <= now:
+                yield bucket
 
     def cvd(self, now: datetime, minutes: int) -> Decimal:
-        cutoff = now - timedelta(minutes=minutes)
         return sum(
-            (
-                item.signed_quantity
-                for item in self._items
-                if cutoff <= item.timestamp <= now
-            ),
+            (bucket.signed_quantity for bucket in self._window_buckets(now, minutes)),
             Decimal("0"),
         )
 
     def ratio(self, now: datetime, minutes: int) -> Decimal:
-        cutoff = now - timedelta(minutes=minutes)
         signed = Decimal("0")
         absolute = Decimal("0")
-        for item in self._items:
-            if cutoff <= item.timestamp <= now:
-                signed += item.signed_quantity
-                absolute += item.absolute_quantity
+        for bucket in self._window_buckets(now, minutes):
+            signed += bucket.signed_quantity
+            absolute += bucket.absolute_quantity
         if absolute == 0:
             return Decimal("0")
         return signed / absolute
@@ -97,7 +142,7 @@ class TechnicalTimeline:
     def __init__(self, candles: list[Candle]) -> None:
         self._candles = sorted(candles, key=lambda item: item.close_time)
         self._cursor = 0
-        self._history: deque[Candle] = deque(maxlen=100)
+        self._history: deque[Candle] = deque(maxlen=TECHNICAL_CANDLE_COUNT)
 
     def at(self, timestamp: datetime) -> TechnicalFeatureSnapshot | None:
         while (
@@ -107,10 +152,12 @@ class TechnicalTimeline:
             self._history.append(self._candles[self._cursor])
             self._cursor += 1
 
-        try:
-            return build_technical_features(list(self._history))
-        except ValueError:
+        # Live technical polling supplies the most recent 100 closed candles.
+        # Do not calculate a historical feature from a shorter warmup.
+        if len(self._history) < TECHNICAL_CANDLE_COUNT:
             return None
+
+        return build_technical_features(list(self._history))
 
 
 def _open_csv_rows(path: Path) -> Iterator[list[str]]:
@@ -256,16 +303,15 @@ def build_historical_snapshot(
     start_timestamp: datetime,
     spot_window: RollingTradeWindow,
     futures_window: RollingTradeWindow,
-    spot_source_available: bool,
-    futures_source_available: bool,
     technicals: dict[str, TechnicalFeatureSnapshot | None],
 ) -> ResearchFeatureSnapshot:
     spot_window.trim(timestamp)
     futures_window.trim(timestamp)
 
-    expected_sources = 2
-    available_sources = int(spot_source_available) + int(futures_source_available)
-    quality = Decimal(available_sources) / Decimal(expected_sources)
+    spot_fresh = spot_window.is_fresh(timestamp)
+    futures_fresh = futures_window.is_fresh(timestamp)
+    available_sources = int(spot_fresh) + int(futures_fresh)
+    quality = Decimal(available_sources) / Decimal("2")
 
     trend_5m, atr_5m, regime_5m, vol_5m = _technical_fields(technicals.get("5m"))
     trend_15m, atr_15m, regime_15m, vol_15m = _technical_fields(
@@ -290,8 +336,8 @@ def build_historical_snapshot(
         futures_cvd_ratio_1m=futures_window.ratio(timestamp, 1),
         futures_cvd_ratio_5m=futures_window.ratio(timestamp, 5),
         futures_cvd_ratio_15m=futures_window.ratio(timestamp, 15),
-        spot_trade_sources=1 if spot_source_available else 0,
-        futures_trade_sources=1 if futures_source_available else 0,
+        spot_trade_sources=1 if spot_fresh else 0,
+        futures_trade_sources=1 if futures_fresh else 0,
         history_seconds=max(
             0,
             int((timestamp - start_timestamp).total_seconds()),
@@ -380,6 +426,13 @@ def materialize(
         for day in days_to_process
     ]
 
+    warmup_start = days_to_process[0] - timedelta(days=TECHNICAL_WARMUP_DAYS)
+    kline_days = requested_days(
+        days=days + TECHNICAL_WARMUP_DAYS,
+        end_day=end_day,
+    )
+    assert kline_days[0] == warmup_start
+
     timelines: dict[str, TechnicalTimeline] = {}
     for interval in INTERVALS:
         kline_paths = [
@@ -391,7 +444,7 @@ def materialize(
                 dataset="klines",
                 interval=interval,
             )
-            for day in days_to_process
+            for day in kline_days
         ]
         timelines[interval] = TechnicalTimeline(
             load_klines(kline_paths, symbol=symbol, interval=interval)
@@ -402,9 +455,17 @@ def materialize(
     spot_window = RollingTradeWindow()
     futures_window = RollingTradeWindow()
 
-    start_timestamp = datetime.combine(days_to_process[0], datetime.min.time(), tzinfo=UTC)
+    start_timestamp = datetime.combine(
+        days_to_process[0],
+        datetime.min.time(),
+        tzinfo=UTC,
+    )
     end_timestamp = (
-        datetime.combine(days_to_process[-1], datetime.min.time(), tzinfo=UTC)
+        datetime.combine(
+            days_to_process[-1],
+            datetime.min.time(),
+            tzinfo=UTC,
+        )
         + timedelta(days=1)
         - timedelta(minutes=1)
     )
@@ -421,28 +482,13 @@ def materialize(
 
     row_count = 0
     usable_count = 0
+    full_quality_count = 0
     current = start_timestamp
 
     with output_path.open("w", encoding="utf-8") as handle:
         while current <= end_timestamp:
             spot_window.add_many(spot_stream.consume_through(current))
             futures_window.add_many(futures_stream.consume_through(current))
-
-            current_day = current.date()
-            spot_available = _archive_path(
-                input_root,
-                symbol=symbol,
-                day=current_day,
-                market="spot",
-                dataset="aggTrades",
-            ).exists()
-            futures_available = _archive_path(
-                input_root,
-                symbol=symbol,
-                day=current_day,
-                market="futures",
-                dataset="aggTrades",
-            ).exists()
 
             technicals = {
                 interval: timeline.at(current)
@@ -455,8 +501,6 @@ def materialize(
                 start_timestamp=start_timestamp,
                 spot_window=spot_window,
                 futures_window=futures_window,
-                spot_source_available=spot_available,
-                futures_source_available=futures_available,
                 technicals=technicals,
             )
             handle.write(
@@ -468,8 +512,11 @@ def materialize(
             )
 
             row_count += 1
+            if snapshot.market_data_quality == Decimal("1"):
+                full_quality_count += 1
             if (
                 snapshot.price is not None
+                and snapshot.market_data_quality == Decimal("1")
                 and snapshot.history_seconds >= 900
                 and snapshot.trend_regime_15m is not None
                 and snapshot.volatility_regime_15m is not None
@@ -482,7 +529,9 @@ def materialize(
         "BACKFILL_MATERIALIZED "
         f"symbol={symbol} "
         f"rows={row_count} "
+        f"full_quality={full_quality_count} "
         f"usable={usable_count} "
+        f"technical_warmup_days={TECHNICAL_WARMUP_DAYS} "
         f"metrics_enabled=false "
         f"output={output_path}"
     )
