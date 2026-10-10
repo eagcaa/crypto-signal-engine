@@ -812,3 +812,99 @@ def test_historical_profile_normalizes_score_by_active_weight() -> None:
     )
     expected_active_weight = Decimal("0.85")
     assert decision.raw_score == contribution_sum / expected_active_weight
+
+
+def test_historical_profile_rejects_low_active_weight_before_normalization() -> None:
+    features = replace(
+        make_features(
+            binance_book="0",
+            bybit_book="0",
+            spot_cvd_1m="0",
+            spot_cvd_5m="0",
+            futures_cvd_1m="0",
+            futures_cvd_5m="0",
+            binance_oi_5m="0",
+            bybit_oi_5m="0",
+            funding_binance="0",
+            funding_bybit="0",
+            binance_long_short="1",
+            bybit_long_short="1",
+            top_trader="1",
+            taker_ratio="1",
+            liq_imbalance="0",
+            spot_sources=0,
+            futures_sources=0,
+            data_quality="0.10",
+        ),
+        trend_score_15m=Decimal("0.40"),
+        binance_oi_change_15m_pct=None,
+        bybit_oi_change_15m_pct=None,
+        binance_funding_rate=None,
+        bybit_funding_rate=None,
+        binance_long_short_ratio=None,
+        bybit_long_short_ratio=None,
+        binance_top_trader_long_short_ratio=None,
+        binance_taker_buy_sell_ratio=None,
+        liquidation_data_available=False,
+        binance_book_imbalance=None,
+        bybit_book_imbalance=None,
+        dataset_provenance="binance_vision_historical_compatible_v1",
+    )
+
+    decision = HistoricalCompatiblePredictionEngine().decide(
+        features,
+        horizon_seconds=900,
+    )
+
+    assert decision.prediction is None
+    assert decision.direction == PredictionDecisionDirection.NO_TRADE
+    assert "Insufficient active feature weight: 0.15/0.50" in decision.reason
+
+
+def test_historical_profile_accepts_active_weight_at_minimum_boundary() -> None:
+    features = replace(
+        make_features(
+            binance_book="0",
+            bybit_book="0",
+            spot_cvd_1m="5",
+            spot_cvd_5m="5",
+            futures_cvd_1m="5",
+            futures_cvd_5m="5",
+            binance_oi_5m="0",
+            bybit_oi_5m="0",
+            funding_binance="0",
+            funding_bybit="0",
+            binance_long_short="1",
+            bybit_long_short="1",
+            top_trader="1",
+            taker_ratio="1",
+            liq_imbalance="0",
+            spot_sources=1,
+            futures_sources=1,
+            data_quality="0.33",
+        ),
+        binance_oi_change_15m_pct=None,
+        bybit_oi_change_15m_pct=None,
+        binance_funding_rate=None,
+        bybit_funding_rate=None,
+        binance_long_short_ratio=None,
+        bybit_long_short_ratio=None,
+        binance_top_trader_long_short_ratio=None,
+        binance_taker_buy_sell_ratio=None,
+        liquidation_data_available=False,
+        binance_book_imbalance=None,
+        bybit_book_imbalance=None,
+        dataset_provenance="binance_vision_historical_compatible_v1",
+    )
+
+    decision = HistoricalCompatiblePredictionEngine(
+        minimum_abs_score=Decimal("0"),
+    ).decide(features, horizon_seconds=900)
+
+    # 15m spot CVD (0.18) + futures CVD (0.18) + trend (0.15) = 0.51.
+    assert set(decision.feature_contributions) == {
+        "spot_cvd",
+        "futures_cvd",
+        "trend",
+    }
+    assert decision.prediction is not None
