@@ -156,6 +156,8 @@ class CompositePredictionEngine:
             return None
         return f"composite_rules_v4_{profile.name}"
 
+    SHADOW_HORIZONS = frozenset({3600})
+
     @classmethod
     def current_model_names(cls) -> tuple[tuple[int, str], ...]:
         return tuple(
@@ -164,7 +166,12 @@ class CompositePredictionEngine:
                 f"composite_rules_v4_{profile.name}",
             )
             for horizon, profile in sorted(cls.PROFILES.items())
+            if horizon not in cls.SHADOW_HORIZONS
         )
+
+    @classmethod
+    def is_shadow_horizon(cls, horizon_seconds: int) -> bool:
+        return horizon_seconds in cls.SHADOW_HORIZONS
 
     def __init__(
         self,
@@ -350,7 +357,11 @@ class CompositePredictionEngine:
             data_quality=features.market_data_quality,
             take_profit_pct=take_profit_pct,
             stop_loss_pct=stop_loss_pct,
-            model_name=self.model_name_for_horizon(horizon_seconds)
+            model_name=(
+                f"shadow_{self.model_name_for_horizon(horizon_seconds)}"
+                if self.is_shadow_horizon(horizon_seconds)
+                else self.model_name_for_horizon(horizon_seconds)
+            )
             or "composite_rules_v4_unknown",
             feature_contributions=contributions,
             reason=reason,
