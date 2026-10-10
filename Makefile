@@ -1,4 +1,4 @@
-.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward backfill-history calibrate db-up db-down db-logs db-shell clean
+.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward backfill-history backfill-materialize calibrate db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
 PYTHONPATH_SRC := PYTHONPATH=src
@@ -29,6 +29,7 @@ help:
 	@echo "  make replay-holdout Validate an earlier non-overlapping replay window"
 	@echo "  make replay-walk-forward Run exact sequential windows + candidate leaderboard"
 	@echo "  make backfill-history Download/validate Binance Vision history (DAYS=7 END_DATE=YYYY-MM-DD)"
+	@echo "  make backfill-materialize Convert downloaded history to 60s features"
 	@echo "  make calibrate     Build exact replay calibration artifact"
 	@echo "  make db-up        Start TimescaleDB"
 	@echo "  make db-down      Stop TimescaleDB"
@@ -111,6 +112,11 @@ replay-walk-forward:
 backfill-history:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
 	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.backfill_history --symbol "$(SYMBOL)" --days "$(DAYS)" $(if $(END_DATE),--end-date "$(END_DATE)",)
+
+backfill-materialize:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	@if [ -z "$(END_DATE)" ]; then echo "END_DATE is required, e.g. END_DATE=2026-09-30"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.materialize_history --symbol "$(SYMBOL)" --days "$(DAYS)" --end-date "$(END_DATE)"
 
 calibrate:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
