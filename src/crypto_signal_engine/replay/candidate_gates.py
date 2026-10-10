@@ -34,6 +34,20 @@ HISTORICAL_CANDIDATE_GATES = (
 )
 
 
+HISTORICAL_V2_CANDIDATE_GATES = (
+    CandidateGate(
+        name="15m_long_range_high_historical_compatible_v2",
+        horizon_seconds=900,
+        direction=PredictionDirection.LONG,
+        required_trend_regime="range",
+        required_volatility_regime="high",
+        frozen_take_profit_pct=Decimal("0.40"),
+        frozen_stop_loss_pct=Decimal("0.18"),
+        required_model_name="historical_compatible_v2_15m",
+    ),
+)
+
+
 CANDIDATE_GATES = (
     CandidateGate(
         name="5m_long_support6",
