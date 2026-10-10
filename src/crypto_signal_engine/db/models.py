@@ -291,6 +291,16 @@ class ResearchFeatureSnapshotRow(Base):
     binance_book_imbalance: Mapped[Decimal | None] = mapped_column(Numeric(20, 16))
     bybit_book_imbalance: Mapped[Decimal | None] = mapped_column(Numeric(20, 16))
     market_data_quality: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    liquidation_data_available: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+    dataset_provenance: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="live_full",
+    )
 
 
 
