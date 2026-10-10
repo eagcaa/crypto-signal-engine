@@ -1,8 +1,10 @@
 from datetime import date
 
 from crypto_signal_engine.examples.backfill_history import (
+    TECHNICAL_WARMUP_DAYS,
     archive_timestamp_to_datetime,
     daily_archive_specs,
+    kline_archive_specs,
     requested_days,
 )
 
@@ -56,3 +58,18 @@ def test_archive_timestamp_rejects_impossible_values() -> None:
         assert "supported range" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_backfill_downloads_eighteen_days_of_technical_warmup() -> None:
+    assert TECHNICAL_WARMUP_DAYS == 18
+    specs = kline_archive_specs(
+        symbol="BTCUSDT",
+        day=date(2026, 9, 21),
+    )
+    assert len(specs) == 4
+    assert {item.dataset for item in specs} == {
+        "spot_klines_5m",
+        "spot_klines_15m",
+        "spot_klines_1h",
+        "spot_klines_4h",
+    }
