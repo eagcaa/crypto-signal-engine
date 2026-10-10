@@ -151,3 +151,29 @@ Historical-compatible materialization must reproduce the live feature semantics 
 - Aggregate trades are reduced online into one-minute signed-volume/absolute-volume buckets. The 1m/5m/15m CVD and CVD-ratio calculations use those rolling buckets, preserving the 60-second snapshot semantics without rescanning every individual trade for every feature calculation.
 - Materialized JSONL must be loaded with its original `dataset_provenance`. A database row with the same symbol/timestamp but a different provenance is a hard conflict and must never be silently overwritten.
 - Historical replay must filter features by provenance and use only `HISTORICAL_CANDIDATE_GATES` with `HistoricalCompatiblePredictionEngine`. Do not report historical-compatible predictions under the live candidate names.
+
+
+### Historical-compatible v1 freeze
+
+`historical_compatible_v1` is frozen before the July-August evaluation.
+
+Its strategy score uses only:
+- Binance spot CVD,
+- Binance futures CVD,
+- matching-horizon trend.
+
+For the 15m profile the active weight is therefore `0.18 + 0.18 + 0.15 = 0.51`, just above the frozen `0.50` minimum-active-weight gate.
+
+The following groups are deliberately excluded from v1 even if those fields later become available in a materialized dataset:
+- open interest,
+- funding,
+- long/short or top-trader crowding,
+- taker buy/sell ratio,
+- order book,
+- liquidations.
+
+Any historical model that adds validated Binance Vision metrics is a separate `historical_compatible_v2` hypothesis and must be defined before inspecting its results. Do not retrofit v1 after seeing July-August or September outcomes.
+
+Historical walk-forward first-touch evaluation must use the locally downloaded Binance Vision spot `aggTrades` archives, not the Binance HTTP API. Monthly stability is attributed by prediction creation month and reported separately from the aggregate leaderboard.
+
+If a materialization bug is fixed and the same provenance must be reloaded, use the provenance-safe loader replace mode. Replacement is allowed only when the existing row has the same `dataset_provenance`; a different provenance at the same symbol/timestamp remains a fatal conflict.
