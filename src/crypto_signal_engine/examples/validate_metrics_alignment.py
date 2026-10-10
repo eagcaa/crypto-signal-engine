@@ -21,6 +21,13 @@ from crypto_signal_engine.features.historical_metrics import (
     count_duplicate_timestamps,
     load_metrics_range,
 )
+from crypto_signal_engine.examples.metrics_alignment import (
+    ArchiveRow,
+    LiveRow,
+    RatioLagResult,
+    ratio_lag_results,
+    read_metrics_archive,
+)
 
 
 SHIFT_CANDIDATES_MINUTES = (-5, 0, 5)
@@ -28,6 +35,8 @@ MAX_NEAREST_LIVE_SECONDS = 90
 MAX_PASS_MEDIAN_RELATIVE_ERROR = Decimal("0.005")
 MIN_MATCHES = 10
 CLEAR_WIN_RATIO = Decimal("0.75")
+MIN_RATIO_MATCH_RATE = 0.80
+MIN_RATIO_MAPPING_MARGIN = 0.10
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +61,8 @@ class AlignmentResult:
     live_points: int
     duplicate_timestamps: int
     scores: tuple[AlignmentScore, ...]
+    ratio_delay_minutes: int | None
+    ratio_mappings: tuple[RatioLagResult, ...]
     reason: str
 
 
@@ -135,11 +146,84 @@ def score_shift(
     )
 
 
+
+def _best_ratio_mappings(
+    results: list[RatioLagResult],
+) -> tuple[tuple[RatioLagResult, ...], str | None]:
+    selected: list[RatioLagResult] = []
+
+    for live_field in (
+        "long_short_ratio",
+        "top_trader_long_short_ratio",
+        "taker_buy_sell_ratio",
+    ):
+        candidates = sorted(
+            (
+                item
+                for item in results
+                if item.live_field == live_field
+                and item.p90_lag_seconds is not None
+            ),
+            key=lambda item: (
+                -item.match_rate,
+                item.p90_lag_seconds
+                if item.p90_lag_seconds is not None
+                else float("inf"),
+            ),
+        )
+        if not candidates:
+            return (), f"ratio_mapping_missing:{live_field}"
+
+        best = candidates[0]
+        if best.match_rate < MIN_RATIO_MATCH_RATE:
+            return (), f"ratio_match_rate_low:{live_field}"
+
+        if len(candidates) > 1:
+            second = candidates[1]
+            if (
+                second.match_rate >= MIN_RATIO_MATCH_RATE
+                and best.match_rate - second.match_rate
+                < MIN_RATIO_MAPPING_MARGIN
+            ):
+                return (), f"ratio_mapping_ambiguous:{live_field}"
+
+        selected.append(best)
+
+    return tuple(selected), None
+
+
+def _ratio_delay_minutes(
+    mappings: tuple[RatioLagResult, ...],
+) -> int:
+    delays = [
+        max(
+            0,
+            int(
+                -(
+                    -float(item.p90_lag_seconds)
+                    // 60
+                )
+            ),
+        )
+        for item in mappings
+        if item.p90_lag_seconds is not None
+    ]
+    return max(delays, default=0)
+
+
 def evaluate_alignment(
     archive_points: list[ArchivedMetricPoint],
     live_points: list[LiveOiPoint],
+    ratio_results: list[RatioLagResult] | None = None,
 ) -> AlignmentResult:
     duplicate_count = count_duplicate_timestamps(archive_points)
+    ratio_results = ratio_results or []
+    ratio_mappings, ratio_error = _best_ratio_mappings(ratio_results)
+    ratio_delay = (
+        _ratio_delay_minutes(ratio_mappings)
+        if ratio_error is None
+        else None
+    )
     scores = tuple(
         score_shift(
             archive_points,
@@ -164,6 +248,8 @@ def evaluate_alignment(
             live_points=len(live_points),
             duplicate_timestamps=duplicate_count,
             scores=scores,
+            ratio_delay_minutes=ratio_delay,
+            ratio_mappings=ratio_mappings,
             reason="duplicate_or_boundary_metric_timestamps",
         )
 
@@ -175,6 +261,8 @@ def evaluate_alignment(
             live_points=len(live_points),
             duplicate_timestamps=0,
             scores=scores,
+            ratio_delay_minutes=ratio_delay,
+            ratio_mappings=ratio_mappings,
             reason="insufficient_live_archive_matches",
         )
 
@@ -198,6 +286,8 @@ def evaluate_alignment(
             live_points=len(live_points),
             duplicate_timestamps=0,
             scores=scores,
+            ratio_delay_minutes=ratio_delay,
+            ratio_mappings=ratio_mappings,
             reason="archive_oi_does_not_match_live_oi",
         )
 
@@ -225,15 +315,125 @@ def evaluate_alignment(
                 reason="multiple_timestamp_shifts_fit_similarly",
             )
 
+    if ratio_error is not None:
+        return AlignmentResult(
+            status="FAIL",
+            selected_shift_minutes=None,
+            archive_points=len(archive_points),
+            live_points=len(live_points),
+            duplicate_timestamps=0,
+            scores=scores,
+            ratio_delay_minutes=None,
+            ratio_mappings=(),
+            reason=ratio_error,
+        )
+
+    assert ratio_delay is not None
+    observable_delay = max(
+        0,
+        best.shift_minutes,
+        ratio_delay,
+    )
+
     return AlignmentResult(
         status="PASS",
-        selected_shift_minutes=best.shift_minutes,
+        selected_shift_minutes=observable_delay,
         archive_points=len(archive_points),
         live_points=len(live_points),
         duplicate_timestamps=0,
         scores=scores,
-        reason="unique_low_error_alignment",
+        ratio_delay_minutes=ratio_delay,
+        ratio_mappings=ratio_mappings,
+        reason="unique_oi_alignment_and_ratio_observability",
     )
+
+
+
+def load_ratio_archive_rows(
+    *,
+    input_root: Path,
+    symbol: str,
+    start_day: date,
+    end_day: date,
+) -> list[ArchiveRow]:
+    rows: list[ArchiveRow] = []
+    current = start_day
+    symbol = symbol.upper()
+
+    while current <= end_day:
+        stamp = current.isoformat()
+        path = (
+            input_root
+            / symbol
+            / "futures"
+            / "um"
+            / "metrics"
+            / f"{symbol}-metrics-{stamp}.zip"
+        )
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Missing Binance Vision metrics archive: {path}"
+            )
+        rows.extend(read_metrics_archive(path))
+        current += timedelta(days=1)
+
+    rows.sort(key=lambda item: item.create_time)
+    return rows
+
+
+async def load_live_metrics(
+    *,
+    symbol: str,
+    start_day: date,
+    end_day: date,
+) -> list[LiveRow]:
+    settings = get_settings()
+    engine = create_database_engine(settings.database_url)
+    session_factory = create_session_factory(engine)
+
+    start = datetime.combine(
+        start_day,
+        time.min,
+        tzinfo=UTC,
+    ) - timedelta(minutes=30)
+    end = datetime.combine(
+        end_day + timedelta(days=1),
+        time.min,
+        tzinfo=UTC,
+    ) + timedelta(minutes=30)
+
+    try:
+        async with session_factory() as session:
+            statement = (
+                select(ExchangeDerivativesSnapshotRow)
+                .where(
+                    ExchangeDerivativesSnapshotRow.exchange == "binance",
+                    ExchangeDerivativesSnapshotRow.symbol == symbol.upper(),
+                    ExchangeDerivativesSnapshotRow.timestamp >= start,
+                    ExchangeDerivativesSnapshotRow.timestamp < end,
+                )
+                .order_by(ExchangeDerivativesSnapshotRow.timestamp)
+            )
+            rows = list((await session.scalars(statement)).all())
+    finally:
+        await engine.dispose()
+
+    return [
+        LiveRow(
+            timestamp=row.timestamp,
+            values={
+                name: getattr(row, name)
+                for name in (
+                    "open_interest",
+                    "long_short_ratio",
+                    "top_trader_long_short_ratio",
+                    "taker_buy_sell_ratio",
+                )
+                if getattr(row, name) is not None
+            },
+        )
+        for row in rows
+    ]
 
 
 async def load_live_oi(
@@ -327,9 +527,25 @@ async def run(
         start_day=start_day,
         end_day=end_day,
     )
+    ratio_archive_rows = load_ratio_archive_rows(
+        input_root=input_root,
+        symbol=symbol,
+        start_day=start_day,
+        end_day=end_day,
+    )
+    live_metric_rows = await load_live_metrics(
+        symbol=symbol,
+        start_day=start_day,
+        end_day=end_day,
+    )
+    ratio_results = ratio_lag_results(
+        ratio_archive_rows,
+        live_metric_rows,
+    )
     result = evaluate_alignment(
         archive_points,
         live_points,
+        ratio_results,
     )
 
     print(
@@ -342,6 +558,21 @@ async def run(
         f"{result.selected_shift_minutes} "
         f"reason={result.reason}"
     )
+    print(
+        "METRICS_RATIO_ALIGNMENT "
+        f"delay_minutes={result.ratio_delay_minutes} "
+        f"mappings={len(result.ratio_mappings)}"
+    )
+    for mapping in result.ratio_mappings:
+        print(
+            "METRICS_RATIO_MAPPING "
+            f"archive={mapping.archive_column} "
+            f"live={mapping.live_field} "
+            f"match_rate={mapping.match_rate:.3f} "
+            f"median_lag_seconds={mapping.median_lag_seconds} "
+            f"p90_lag_seconds={mapping.p90_lag_seconds}"
+        )
+
     for score in result.scores:
         median = (
             "n/a"
@@ -397,6 +628,8 @@ async def run(
             ),
             "minimum_matches": MIN_MATCHES,
             "clear_win_ratio": str(CLEAR_WIN_RATIO),
+            "minimum_ratio_match_rate": MIN_RATIO_MATCH_RATE,
+            "minimum_ratio_mapping_margin": MIN_RATIO_MAPPING_MARGIN,
         },
     }
     output_path.write_text(
