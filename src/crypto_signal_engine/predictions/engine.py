@@ -742,7 +742,7 @@ class HistoricalCompatiblePredictionEngine(CompositePredictionEngine):
         minimum_net_edge_pct: Decimal = Decimal("0.08"),
     ) -> None:
         super().__init__(
-            minimum_data_quality=Decimal("0"),
+            minimum_data_quality=Decimal("1.0"),
             minimum_abs_score=minimum_abs_score,
             fee_pct_per_side=fee_pct_per_side,
             slippage_pct_per_side=slippage_pct_per_side,
