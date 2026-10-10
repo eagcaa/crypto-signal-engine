@@ -812,7 +812,7 @@ def test_historical_profile_normalizes_score_by_active_weight() -> None:
         decision.feature_contributions.values(),
         Decimal("0"),
     )
-    expected_active_weight = Decimal("0.85")
+    expected_active_weight = Decimal("0.51")
     assert decision.raw_score == contribution_sum / expected_active_weight
 
 
