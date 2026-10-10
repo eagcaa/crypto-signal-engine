@@ -24,7 +24,10 @@ from crypto_signal_engine.paper import (
     simulate_replay_broker,
     validate_paper_performance,
 )
-from crypto_signal_engine.predictions import CompositePredictionEngine
+from crypto_signal_engine.predictions import (
+    CompositePredictionEngine,
+    HistoricalCompatiblePredictionEngine,
+)
 from crypto_signal_engine.replay import (
     CANDIDATE_GATES,
     ReplayRunner,
@@ -56,6 +59,21 @@ def parse_args() -> argparse.Namespace:
             "End the replay this many hours before now. "
             "Useful for non-overlapping holdout windows."
         ),
+    )
+    parser.add_argument(
+        "--end-at",
+        default="",
+        help="Optional absolute UTC/offset-aware ISO end timestamp.",
+    )
+    parser.add_argument(
+        "--dataset-provenance",
+        default="",
+        help="Only load research features with this provenance.",
+    )
+    parser.add_argument(
+        "--historical-compatible",
+        action="store_true",
+        help="Use HistoricalCompatiblePredictionEngine for Binance-only backfill.",
     )
     parser.add_argument(
         "--min-calibration-samples",
@@ -109,6 +127,9 @@ async def run(
     compare_price_sources: bool = False,
     minimum_calibration_samples: int = 30,
     write_calibration_path: str = "",
+    end_at: str = "",
+    dataset_provenance: str = "",
+    historical_compatible: bool = False,
 ) -> None:
     validate_options(
         exact_binance_trades=exact_binance_trades,
@@ -128,13 +149,20 @@ async def run(
         if end_offset_hours < 0:
             raise ValueError("end_offset_hours cannot be negative")
 
-        end = datetime.now(UTC) - timedelta(hours=end_offset_hours)
+        if end_at:
+            parsed_end = datetime.fromisoformat(end_at)
+            if parsed_end.tzinfo is None:
+                raise ValueError("--end-at must include a timezone/UTC offset")
+            end = parsed_end.astimezone(UTC)
+        else:
+            end = datetime.now(UTC) - timedelta(hours=end_offset_hours)
         start = end - timedelta(hours=hours)
 
         features = await repository.load_features(
             symbol=symbol,
             start=start,
             end=end,
+            dataset_provenance=dataset_provenance or None,
         )
 
         sampled_prices = await repository.load_price_points(
@@ -143,8 +171,13 @@ async def run(
             end=end,
         )
 
+        prediction_engine_cls = (
+            HistoricalCompatiblePredictionEngine
+            if historical_compatible
+            else CompositePredictionEngine
+        )
         runner = ReplayRunner(
-            prediction_engine=CompositePredictionEngine(
+            prediction_engine=prediction_engine_cls(
                 fee_pct_per_side=settings.paper_fee_pct_per_side,
                 slippage_pct_per_side=settings.paper_slippage_pct_per_side,
             )
@@ -180,7 +213,9 @@ async def run(
         print(
             f"REPLAY symbol={symbol.upper()} "
             f"start={start.isoformat()} end={end.isoformat()} "
-            f"end_offset_hours={end_offset_hours:g}"
+            f"end_offset_hours={end_offset_hours:g} "
+            f"provenance={dataset_provenance or 'any'} "
+            f"engine={'historical_compatible' if historical_compatible else 'live_v4'}"
         )
         print(
             f"loaded features={len(features)} "
@@ -753,6 +788,9 @@ def main() -> None:
             compare_price_sources=args.compare_price_sources,
             minimum_calibration_samples=args.min_calibration_samples,
             write_calibration_path=args.write_calibration,
+            end_at=args.end_at,
+            dataset_provenance=args.dataset_provenance,
+            historical_compatible=args.historical_compatible,
         )
     )
 
