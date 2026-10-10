@@ -673,6 +673,7 @@ def test_historical_compatible_profile_excludes_order_book_and_liquidations() ->
         top_trader="0.9",
         taker_ratio="1.5",
         liq_imbalance="0.5",
+        data_quality="1.0",
     )
 
     decision = HistoricalCompatiblePredictionEngine().decide(
