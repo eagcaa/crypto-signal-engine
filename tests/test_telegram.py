@@ -134,3 +134,18 @@ def test_candidate_close_text_formats_result() -> None:
     assert "Result: take_profit" in text
     assert "Return: +0.2800%" in text
     assert "PnL: +2.80" in text
+
+
+
+def test_source_freshness_text_names_stale_source() -> None:
+    text = TelegramNotifier.source_freshness_text(
+        symbol="BTCUSDT",
+        source="binance_futures",
+        kind="stale",
+        age_ms=45000,
+        bad_intervals=3,
+    )
+
+    assert "Market source stale" in text
+    assert "Binance Futures" in text
+    assert "45000 ms" in text
