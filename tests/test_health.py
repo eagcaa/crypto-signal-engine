@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from crypto_signal_engine.health import DataQualityMonitor
+from crypto_signal_engine.health import DataQualityMonitor, SourceFreshnessMonitor
 from crypto_signal_engine.market.snapshot import MarketSnapshot
 
 
@@ -74,3 +74,26 @@ def test_monitor_validates_configuration() -> None:
 
     with pytest.raises(ValueError):
         DataQualityMonitor(bad_intervals_before_alert=0)
+
+
+
+def test_source_freshness_monitor_alerts_and_recovers_per_source() -> None:
+    monitor = SourceFreshnessMonitor(
+        stale_after_ms=30000,
+        bad_intervals_before_alert=2,
+    )
+
+    stale = make_snapshot("0.83")
+    object.__setattr__(stale, "binance_futures_age_ms", 45000)
+    assert monitor.observe(stale) == ()
+
+    events = monitor.observe(stale)
+    assert len(events) == 1
+    assert events[0].source == "binance_futures"
+    assert events[0].kind == "stale"
+
+    recovered = make_snapshot("1.00")
+    events = monitor.observe(recovered)
+    assert len(events) == 1
+    assert events[0].source == "binance_futures"
+    assert events[0].kind == "recovered"
