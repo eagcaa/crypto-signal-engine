@@ -1,7 +1,7 @@
 import argparse
 import asyncio
 import json
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -131,20 +131,54 @@ async def load_file(
         await engine.dispose()
 
 
+def default_materialized_path(
+    *,
+    symbol: str,
+    days: int,
+    end_day: date,
+    input_root: Path,
+) -> Path:
+    if days <= 0:
+        raise ValueError("days must be positive")
+    start_day = end_day.fromordinal(end_day.toordinal() - days + 1)
+    return (
+        input_root
+        / symbol.upper()
+        / "materialized"
+        / f"features-{start_day.isoformat()}-{end_day.isoformat()}.jsonl"
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Load materialized historical feature JSONL into PostgreSQL."
     )
-    parser.add_argument("--path", required=True)
+    parser.add_argument("--path", default="")
+    parser.add_argument("--symbol", default="BTCUSDT")
+    parser.add_argument("--days", type=int, default=7)
+    parser.add_argument("--end-date", default="")
+    parser.add_argument("--input-root", default="runtime-data/backfill")
     parser.add_argument("--batch-size", type=int, default=1000)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.path:
+        path = Path(args.path)
+    else:
+        if not args.end_date:
+            raise ValueError("--end-date is required when --path is omitted")
+        path = default_materialized_path(
+            symbol=args.symbol,
+            days=args.days,
+            end_day=date.fromisoformat(args.end_date),
+            input_root=Path(args.input_root),
+        )
+
     asyncio.run(
         load_file(
-            path=Path(args.path),
+            path=path,
             batch_size=args.batch_size,
         )
     )
