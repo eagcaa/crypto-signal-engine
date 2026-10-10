@@ -546,3 +546,75 @@ def test_v4_rejects_low_volatility_target_that_cannot_clear_cost_floor() -> None
     assert decision.prediction is None
     assert decision.direction == PredictionDecisionDirection.NO_TRADE
     assert "cost+edge floor" in decision.reason
+
+
+
+def test_v4_supports_one_hour_horizon_with_one_hour_atr_and_trend() -> None:
+    features = replace(
+        make_features(
+            binance_book="0.8",
+            bybit_book="0.6",
+            spot_cvd_1m="3",
+            spot_cvd_5m="5",
+            futures_cvd_1m="4",
+            futures_cvd_5m="7",
+            binance_oi_5m="0.4",
+            bybit_oi_5m="0.3",
+            funding_binance="-0.0001",
+            funding_bybit="-0.0001",
+            binance_long_short="0.9",
+            bybit_long_short="0.9",
+            top_trader="0.9",
+            taker_ratio="1.5",
+            liq_imbalance="0.5",
+            history_seconds=3600,
+        ),
+        trend_score_1h=Decimal("0.60"),
+        trend_regime_1h="uptrend",
+        volatility_regime_1h="normal",
+        atr_pct_1h=Decimal("0.80"),
+    )
+
+    decision = CompositePredictionEngine().decide(
+        features,
+        horizon_seconds=3600,
+    )
+
+    assert decision.prediction is not None
+    assert decision.prediction.model_name == "composite_rules_v4_1h"
+    assert decision.prediction.take_profit_pct == Decimal("0.8800")
+    assert decision.prediction.stop_loss_pct == Decimal("0.5600")
+    assert decision.feature_contributions["trend"] > 0
+
+
+def test_v4_waits_for_one_hour_warmup() -> None:
+    features = replace(
+        make_features(
+            binance_book="0.8",
+            bybit_book="0.6",
+            spot_cvd_1m="3",
+            spot_cvd_5m="5",
+            futures_cvd_1m="4",
+            futures_cvd_5m="7",
+            binance_oi_5m="0.4",
+            bybit_oi_5m="0.3",
+            funding_binance="-0.0001",
+            funding_bybit="-0.0001",
+            binance_long_short="0.9",
+            bybit_long_short="0.9",
+            top_trader="0.9",
+            taker_ratio="1.5",
+            liq_imbalance="0.5",
+            history_seconds=3599,
+        ),
+        trend_score_1h=Decimal("0.60"),
+        atr_pct_1h=Decimal("0.80"),
+    )
+
+    decision = CompositePredictionEngine().decide(
+        features,
+        horizon_seconds=3600,
+    )
+
+    assert decision.prediction is None
+    assert "Warmup: 3599s/3600s" in decision.reason
