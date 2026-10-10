@@ -89,6 +89,7 @@ async def load_file(
     *,
     path: Path,
     batch_size: int = 1000,
+    replace: bool = False,
 ) -> tuple[int, int]:
     settings = get_settings()
     engine = create_database_engine(settings.database_url)
@@ -104,19 +105,31 @@ async def load_file(
         for snapshot in iter_snapshots(path):
             batch.append(snapshot)
             if len(batch) >= batch_size:
-                added, ignored = await repository.add_many(
-                    batch,
-                    batch_size=batch_size,
-                )
+                if replace:
+                    added, ignored = await repository.replace_many(
+                        batch,
+                        batch_size=batch_size,
+                    )
+                else:
+                    added, ignored = await repository.add_many(
+                        batch,
+                        batch_size=batch_size,
+                    )
                 inserted += added
                 skipped += ignored
                 batch.clear()
 
         if batch:
-            added, ignored = await repository.add_many(
-                batch,
-                batch_size=batch_size,
-            )
+            if replace:
+                added, ignored = await repository.replace_many(
+                    batch,
+                    batch_size=batch_size,
+                )
+            else:
+                added, ignored = await repository.add_many(
+                    batch,
+                    batch_size=batch_size,
+                )
             inserted += added
             skipped += ignored
 
@@ -124,7 +137,8 @@ async def load_file(
             "BACKFILL_LOADED "
             f"path={path} "
             f"inserted={inserted} "
-            f"skipped_same_provenance={skipped}"
+            f"mode={'replace' if replace else 'insert'} "
+            f"{'replaced_or_existing' if replace else 'skipped_same_provenance'}={skipped}"
         )
         return inserted, skipped
     finally:
@@ -159,6 +173,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--end-date", default="")
     parser.add_argument("--input-root", default="runtime-data/backfill")
     parser.add_argument("--batch-size", type=int, default=1000)
+    parser.add_argument(
+        "--replace",
+        action="store_true",
+        help=(
+            "Replace rows only when the existing row has the same provenance; "
+            "different-provenance conflicts remain fatal."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -180,6 +202,7 @@ def main() -> None:
         load_file(
             path=path,
             batch_size=args.batch_size,
+            replace=args.replace,
         )
     )
 
