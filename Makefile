@@ -1,4 +1,4 @@
-.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report feature-coverage readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward calibrate db-up db-down db-logs db-shell clean
+.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward calibrate db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
 PYTHONPATH_SRC := PYTHONPATH=src
@@ -17,6 +17,7 @@ help:
 	@echo "  make paper-live   Run live collector with local paper trading enabled"
 	@echo "  make candidate-paper-live Run only the frozen candidate paper tracker"
 	@echo "  make paper-report Show persisted paper performance and validation"
+	@echo "  make shadow-report Show 1h shadow gross/cost/net economics"
 	@echo "  make feature-coverage Show persisted research feature history coverage"
 	@echo "  make readiness    Check calibration and paper validation gates"
 	@echo "  make evaluation-report Show evaluation source/version breakdown"
@@ -67,6 +68,10 @@ candidate-paper-live:
 paper-report:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
 	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.paper_report
+
+shadow-report:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.shadow_report --symbol "$(SYMBOL)" --hours "$(HOURS)"
 
 feature-coverage:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
