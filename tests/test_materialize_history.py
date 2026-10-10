@@ -4,7 +4,9 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+from crypto_signal_engine.domain.candles import Candle
 from crypto_signal_engine.examples.materialize_history import (
+    TechnicalTimeline,
     HistoricalTrade,
     RollingTradeWindow,
     build_historical_snapshot,
@@ -179,3 +181,31 @@ def test_materializer_emits_one_row_per_minute(tmp_path: Path) -> None:
     assert second["dataset_provenance"] == (
         "binance_vision_historical_compatible_v1"
     )
+
+
+def test_technical_timeline_requires_full_one_hundred_closed_candles() -> None:
+    start = datetime(2026, 9, 1, 0, 0, tzinfo=UTC)
+    candles = []
+    for index in range(100):
+        open_time = start + timedelta(minutes=15 * index)
+        close_time = open_time + timedelta(minutes=15) - timedelta(milliseconds=1)
+        price = Decimal("100") + Decimal(index) / Decimal("100")
+        candles.append(
+            Candle(
+                symbol="BTCUSDT",
+                interval="15m",
+                open_time=open_time,
+                close_time=close_time,
+                open=price,
+                high=price + Decimal("1"),
+                low=price - Decimal("1"),
+                close=price,
+                volume=Decimal("10"),
+                closed=True,
+            )
+        )
+
+    timeline = TechnicalTimeline(candles)
+
+    assert timeline.at(candles[98].close_time) is None
+    assert timeline.at(candles[99].close_time) is not None
