@@ -278,7 +278,7 @@ async def initialize_database(engine: AsyncEngine) -> None:
         await connection.execute(
             text(
                 """
-                DO $
+                DO $$
                 DECLARE
                     current_pk_name text;
                     current_pk_columns text[];
@@ -321,7 +321,7 @@ async def initialize_database(engine: AsyncEngine) -> None:
                         );
                     END IF;
                 END
-                $;
+                $$;
                 """
             )
         )
