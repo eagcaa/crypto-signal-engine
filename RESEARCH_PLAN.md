@@ -47,15 +47,16 @@ Do not promote the 1h model until it independently satisfies the normal validati
 
 Historical data is used to accelerate research, but it does **not** replace live forward validation.
 
-### Frozen six-month split
+### Frozen 90-day split
 
 Use complete calendar months so the historical holdout remains separate from the current October 2026 live-forward stream:
 
-- **Research/development window:** 2026-04-01 00:00 UTC through 2026-07-31 23:59:59 UTC.
-- **Final historical holdout:** 2026-08-01 00:00 UTC through 2026-09-30 23:59:59 UTC.
+- **Pipeline smoke test:** a 7-day slice only for download/runtime/size validation; it is not evidence.
+- **Research/development window:** 2026-07-01 00:00 UTC through 2026-08-31 23:59:59 UTC.
+- **Final historical holdout:** 2026-09-01 00:00 UTC through 2026-09-30 23:59:59 UTC.
 - **Live forward validation:** October 2026 onward; never merge this with historical holdout statistics.
 
-The August-September holdout must be inspected **once**, after all research choices based on April-July are frozen. If a rule is changed after seeing the holdout, that holdout is considered consumed and cannot be reused as unbiased evidence.
+The September holdout must be inspected **once**, after all research choices based on July-August are frozen. If a rule is changed after seeing the holdout, that holdout is considered consumed and cannot be reused as unbiased evidence. The October 8-9 observations that originally highlighted `15m_long_range_high` are discovery data and are not counted as independent validation evidence.
 
 ### Primary free sources
 
@@ -91,13 +92,13 @@ For the frozen April-July research window:
 
 ### Candidate research protocol
 
-First evaluate `15m_long_range_high` on April-July using a historical-compatible feature profile that excludes incompatible live-only features.
+First evaluate `15m_long_range_high_historical_compatible_v1` on July-August using the historical-compatible model `historical_compatible_v1_15m`, which deliberately excludes exact live order-book imbalance and liquidation flow.
 
 Do **not** alter the frozen live candidate based on historical results. Any modified historical hypothesis becomes a new candidate/version.
 
-Only after the April-July research choices are frozen:
+Only after the July-August research choices are frozen:
 
-1. Run the untouched rules once on August-September.
+1. Run the untouched rules once on September.
 2. Report gross expectancy, execution cost, net expectancy, profit factor, trade count, active windows and robustness.
 3. Reject apparent improvements that depend on a very small surviving sample.
 4. Continue October live-forward validation regardless of the historical result.
@@ -108,3 +109,11 @@ Do not pay for full-depth historical order book or liquidation feeds initially.
 
 Consider Tardis or another tick/L2 vendor only if the free-data experiment shows a stable gross edge and there is a concrete hypothesis that exact L2/liquidation history would materially change the decision.
 
+
+### Sampling rule
+
+Backfilled research feature snapshots are generated at **60-second cadence**, matching the prediction decision cadence. Do not create 5-second historical feature rows.
+
+Exact first-touch outcome evaluation may still use tick-level aggregate trades. This keeps feature storage manageable without degrading barrier evaluation.
+
+The H1/H2 pre-registered decision thresholds, including the minimum independent-time requirements, apply to historical backfill results as well as forward results.
