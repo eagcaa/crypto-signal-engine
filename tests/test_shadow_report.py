@@ -42,7 +42,7 @@ def test_shadow_report_separates_gross_cost_and_net() -> None:
     assert report.net_expectancy_pct == Decimal("0.01333333333333333333333333333")
     assert report.execution_cost_pct == Decimal("0.12")
     assert report.independent_samples == 2
-    assert report.profit_factor == Decimal("0.38") / Decimal("0.22")
+    assert report.profit_factor == Decimal("0.38") / Decimal("0.34")
 
 
 def test_shadow_report_excludes_no_data_from_expectancy() -> None:
