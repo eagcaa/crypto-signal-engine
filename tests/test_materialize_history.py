@@ -1,10 +1,11 @@
 import json
 import zipfile
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
 from crypto_signal_engine.examples.materialize_history import (
+    HistoricalTrade,
     RollingTradeWindow,
     build_historical_snapshot,
     iter_agg_trades,
@@ -36,10 +37,25 @@ def test_agg_trade_parser_handles_microseconds_and_taker_side(tmp_path: Path) ->
     assert rows[1].signed_quantity == Decimal("-3")
 
 
-def test_historical_quality_uses_expected_two_binance_streams() -> None:
+def test_historical_quality_uses_recent_trade_freshness() -> None:
     now = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
     spot = RollingTradeWindow()
     futures = RollingTradeWindow()
+
+    spot.add_many([
+        HistoricalTrade(
+            now.replace(second=30) - timedelta(minutes=1),
+            Decimal("100"),
+            Decimal("1"),
+        )
+    ])
+    futures.add_many([
+        HistoricalTrade(
+            now.replace(second=40) - timedelta(minutes=1),
+            Decimal("100"),
+            Decimal("1"),
+        )
+    ])
 
     both = build_historical_snapshot(
         symbol="BTCUSDT",
@@ -47,18 +63,23 @@ def test_historical_quality_uses_expected_two_binance_streams() -> None:
         start_timestamp=now,
         spot_window=spot,
         futures_window=futures,
-        spot_source_available=True,
-        futures_source_available=True,
         technicals={},
     )
+
+    stale_futures = RollingTradeWindow()
+    stale_futures.add_many([
+        HistoricalTrade(
+            now - timedelta(seconds=61),
+            Decimal("100"),
+            Decimal("1"),
+        )
+    ])
     one = build_historical_snapshot(
         symbol="BTCUSDT",
         timestamp=now,
         start_timestamp=now,
         spot_window=spot,
-        futures_window=futures,
-        spot_source_available=True,
-        futures_source_available=False,
+        futures_window=stale_futures,
         technicals={},
     )
 
@@ -70,6 +91,30 @@ def test_historical_quality_uses_expected_two_binance_streams() -> None:
     assert one.futures_trade_sources == 0
     assert both.liquidation_data_available is False
 
+
+def test_minute_buckets_preserve_cvd_and_ratio() -> None:
+    now = datetime(2026, 10, 9, 12, 5, tzinfo=UTC)
+    window = RollingTradeWindow()
+    window.add_many([
+        HistoricalTrade(
+            datetime(2026, 10, 9, 12, 4, 10, tzinfo=UTC),
+            Decimal("100"),
+            Decimal("2"),
+        ),
+        HistoricalTrade(
+            datetime(2026, 10, 9, 12, 4, 40, tzinfo=UTC),
+            Decimal("101"),
+            Decimal("-1"),
+        ),
+        HistoricalTrade(
+            datetime(2026, 10, 9, 12, 5, 0, tzinfo=UTC),
+            Decimal("102"),
+            Decimal("3"),
+        ),
+    ])
+
+    assert window.cvd(now, 1) == Decimal("4")
+    assert window.ratio(now, 1) == Decimal("4") / Decimal("6")
 
 def test_materializer_emits_one_row_per_minute(tmp_path: Path) -> None:
     symbol = "BTCUSDT"
