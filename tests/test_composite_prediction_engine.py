@@ -910,3 +910,42 @@ def test_historical_profile_accepts_active_weight_at_minimum_boundary() -> None:
         "trend",
     }
     assert decision.prediction is not None
+
+
+def test_historical_v1_ignores_metrics_even_when_present() -> None:
+    features = replace(
+        make_features(
+            binance_book="0",
+            bybit_book="0",
+            spot_cvd_1m="5",
+            spot_cvd_5m="5",
+            futures_cvd_1m="5",
+            futures_cvd_5m="5",
+            binance_oi_5m="0.8",
+            bybit_oi_5m="0.8",
+            funding_binance="-0.0005",
+            funding_bybit="-0.0005",
+            binance_long_short="0.6",
+            bybit_long_short="0.6",
+            top_trader="0.6",
+            taker_ratio="2.0",
+            liq_imbalance="0",
+            spot_sources=1,
+            futures_sources=1,
+            data_quality="1.0",
+        ),
+        dataset_provenance="binance_vision_historical_compatible_v1",
+        liquidation_data_available=False,
+        binance_book_imbalance=None,
+        bybit_book_imbalance=None,
+    )
+
+    decision = HistoricalCompatiblePredictionEngine(
+        minimum_abs_score=Decimal("0"),
+    ).decide(features, horizon_seconds=900)
+
+    assert set(decision.feature_contributions) == {
+        "spot_cvd",
+        "futures_cvd",
+        "trend",
+    }
