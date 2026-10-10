@@ -275,6 +275,57 @@ async def initialize_database(engine: AsyncEngine) -> None:
             )
         )
 
+        await connection.execute(
+            text(
+                """
+                DO $
+                DECLARE
+                    current_pk_name text;
+                    current_pk_columns text[];
+                BEGIN
+                    SELECT
+                        constraint_row.conname,
+                        array_agg(attribute_row.attname ORDER BY key_row.ordinality)
+                    INTO
+                        current_pk_name,
+                        current_pk_columns
+                    FROM pg_constraint AS constraint_row
+                    JOIN LATERAL unnest(constraint_row.conkey)
+                        WITH ORDINALITY AS key_row(attnum, ordinality)
+                        ON TRUE
+                    JOIN pg_attribute AS attribute_row
+                        ON attribute_row.attrelid = constraint_row.conrelid
+                        AND attribute_row.attnum = key_row.attnum
+                    WHERE constraint_row.conrelid =
+                        'research_feature_snapshots'::regclass
+                      AND constraint_row.contype = 'p'
+                    GROUP BY constraint_row.conname;
+
+                    IF current_pk_columns IS DISTINCT FROM
+                        ARRAY['timestamp', 'symbol', 'dataset_provenance']::text[]
+                    THEN
+                        IF current_pk_name IS NOT NULL THEN
+                            EXECUTE format(
+                                'ALTER TABLE research_feature_snapshots '
+                                'DROP CONSTRAINT %I',
+                                current_pk_name
+                            );
+                        END IF;
+
+                        ALTER TABLE research_feature_snapshots
+                        ADD CONSTRAINT research_feature_snapshots_pkey
+                        PRIMARY KEY (
+                            timestamp,
+                            symbol,
+                            dataset_provenance
+                        );
+                    END IF;
+                END
+                $;
+                """
+            )
+        )
+
         for column_name, column_type in (
             ("trend_score_5m", "NUMERIC(20, 16)"),
             ("trend_score_15m", "NUMERIC(20, 16)"),
