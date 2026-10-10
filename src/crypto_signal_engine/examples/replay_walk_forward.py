@@ -198,7 +198,9 @@ async def run(
                     f"TP={row.take_profit} "
                     f"SL={row.stop_loss} "
                     f"NT={row.no_touch} "
-                    f"expectancy={row.expectancy_pct:+.4f}% "
+                    f"gross_expectancy={row.pre_cost_expectancy_pct:+.4f}% "
+                    f"cost={row.execution_cost_pct:.4f}% "
+                    f"net_expectancy={row.expectancy_pct:+.4f}% "
                     f"profit_factor={profit_factor}"
                 )
 
@@ -243,7 +245,7 @@ async def run(
                 f"active={row.active_windows} "
                 f"positive={row.positive_windows} "
                 f"trades={row.trades} "
-                f"expectancy={expectancy} "
+                f"net_expectancy={expectancy} "
                 f"profit_factor={profit_factor} "
                 f"robust={row.robustness_passed} "
                 f"independent_samples={row.robustness_independent_samples} "
