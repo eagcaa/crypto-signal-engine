@@ -177,3 +177,76 @@ Any historical model that adds validated Binance Vision metrics is a separate `h
 Historical walk-forward first-touch evaluation must use the locally downloaded Binance Vision spot `aggTrades` archives, not the Binance HTTP API. Monthly stability is attributed by prediction creation month and reported separately from the aggregate leaderboard.
 
 If a materialization bug is fixed and the same provenance must be reloaded, use the provenance-safe loader replace mode. Replacement is allowed only when the existing row has the same `dataset_provenance`; a different provenance at the same symbol/timestamp remains a fatal conflict.
+
+
+## H4 — Historical-compatible v2 derivatives confirmation
+
+### V1 disposition
+
+The July-August research evaluation of `historical_compatible_v1` is complete and rejected as a promotion candidate.
+
+Observed on the frozen 2026-07-01 through 2026-08-31 research window:
+
+- 62 daily windows,
+- 24 active windows,
+- 174 trades,
+- 3 positive active windows,
+- net expectancy `-0.1257%`,
+- profit factor `0.157`,
+- 38 independent samples,
+- bootstrap positive-expectancy rate `0.0%`.
+
+Monthly results were negative in both July and August. Do not retune or reuse `historical_compatible_v1` as though it were still an open research candidate. The September holdout remains untouched.
+
+### V2 pre-registered hypothesis
+
+`historical_compatible_v2` tests whether Binance derivatives participation/crowding data can distinguish meaningful order-flow moves from the weak/noisy flow seen in v1.
+
+The 15m v2 feature groups are frozen before outcome inspection as:
+
+- Binance spot CVD: weight `0.18`,
+- Binance futures CVD: weight `0.18`,
+- Binance open-interest confirmation: weight `0.15`,
+- Binance crowding (global long/short plus top-trader long/short): weight `0.09`,
+- Binance taker buy/sell flow: weight `0.05`,
+- 15m trend: weight `0.15`.
+
+Total expected active weight is `0.80`. V2 must require all six groups to be available and therefore uses a minimum active weight of `0.80` before score normalization.
+
+To isolate the feature-set hypothesis, keep the v1 candidate structure unchanged for the first v2 experiment:
+
+- horizon: 15 minutes,
+- direction: LONG,
+- required 15m trend regime: `range`,
+- required 15m volatility regime: `high`,
+- score threshold: `0.20`,
+- take profit: `+0.40%`,
+- stop loss: `-0.18%`,
+- round-trip research cost: `0.12%`.
+
+Do not change TP/SL, score threshold, regime gates, or costs in the first v2 run. A horizon change or different barrier design is a separate hypothesis/version.
+
+Funding is deliberately excluded from the first v2 metrics experiment because the Binance Vision USD-M `metrics` archive does not establish the same funding-rate timestamp semantics used by the live collector. Funding may be added only as a separately sourced and timestamp-validated later version.
+
+Order book and liquidations remain excluded from historical-compatible v2.
+
+### Metrics timestamp gate
+
+V2 is blocked until the metrics alignment validator returns `PASS`.
+
+The validator must:
+
+- use only archived Binance Vision USD-M `metrics` values and already-persisted live Binance OI,
+- test `-5`, `0`, and `+5` minute timestamp shifts,
+- compare OI values without consulting prediction outcomes,
+- fail on duplicate/boundary archive timestamps,
+- require a unique low-error alignment rather than choosing a shift when multiple shifts fit similarly,
+- persist the selected observable-time shift as an artifact.
+
+If validation is `AMBIGUOUS` or `FAIL`, do not materialize metrics into strategy features and do not run v2.
+
+### V2 evaluation protocol
+
+After timestamp validation passes, materialize a new provenance (never overwrite v1), run only on the July-August research period, and report aggregate plus monthly stability.
+
+Do not inspect September until the v2 definition and July-August research decision are frozen. If v2 passes the research thresholds, September is opened once as the final historical holdout; otherwise v2 is rejected without consuming September.
