@@ -74,6 +74,8 @@ class ResearchFeatureSnapshot:
     binance_book_imbalance: Decimal | None
     bybit_book_imbalance: Decimal | None
     market_data_quality: Decimal
+    liquidation_data_available: bool = True
+    dataset_provenance: str = "live_full"
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,6 +251,8 @@ class ResearchFeatureAggregator:
                 binance_book_imbalance=market_snapshot.binance_book_imbalance,
                 bybit_book_imbalance=market_snapshot.bybit_book_imbalance,
                 market_data_quality=market_snapshot.data_quality,
+                liquidation_data_available=True,
+                dataset_provenance="live_full",
             )
 
     def _history_seconds(self, now: datetime) -> int:
