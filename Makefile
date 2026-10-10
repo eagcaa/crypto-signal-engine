@@ -10,6 +10,7 @@ DAYS ?= 7
 END_DATE ?=
 END_AT ?=
 PROVENANCE ?= binance_vision_historical_compatible_v1
+REPLACE ?= 0
 
 help:
 	@echo "Available commands:"
@@ -134,7 +135,7 @@ backfill-materialize:
 backfill-load:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
 	@if [ -z "$(END_DATE)" ]; then echo "END_DATE is required, e.g. END_DATE=2026-09-30"; exit 1; fi
-	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.load_materialized_history --symbol "$(SYMBOL)" --days "$(DAYS)" --end-date "$(END_DATE)"
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.load_materialized_history --symbol "$(SYMBOL)" --days "$(DAYS)" --end-date "$(END_DATE)" $(if $(filter 1 true yes,$(REPLACE)),--replace,)
 
 calibrate:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
