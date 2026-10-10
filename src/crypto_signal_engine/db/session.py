@@ -240,6 +240,25 @@ async def initialize_database(engine: AsyncEngine) -> None:
                 )
             )
 
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE research_feature_snapshots
+                ADD COLUMN IF NOT EXISTS liquidation_data_available BOOLEAN
+                NOT NULL DEFAULT TRUE
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE research_feature_snapshots
+                ADD COLUMN IF NOT EXISTS dataset_provenance VARCHAR(64)
+                NOT NULL DEFAULT 'live_full'
+                """
+            )
+        )
+
         for column_name, column_type in (
             ("trend_score_5m", "NUMERIC(20, 16)"),
             ("trend_score_15m", "NUMERIC(20, 16)"),
