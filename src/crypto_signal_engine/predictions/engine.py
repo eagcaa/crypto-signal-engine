@@ -780,6 +780,31 @@ class HistoricalCompatiblePredictionEngine(CompositePredictionEngine):
             + self._clamp(long_window) * Decimal("0.40")
         )
 
+    def _open_interest_score(
+        self,
+        features: ResearchFeatureSnapshot,
+        profile: _HorizonProfile,
+    ) -> Decimal | None:
+        return None
+
+    def _funding_score(
+        self,
+        features: ResearchFeatureSnapshot,
+    ) -> Decimal | None:
+        return None
+
+    def _crowding_score(
+        self,
+        features: ResearchFeatureSnapshot,
+    ) -> Decimal | None:
+        return None
+
+    def _ratio_direction_score(
+        self,
+        ratio: Decimal | None,
+    ) -> Decimal | None:
+        return None
+
     def _liquidation_score(
         self,
         features: ResearchFeatureSnapshot,
