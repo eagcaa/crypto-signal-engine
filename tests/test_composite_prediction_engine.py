@@ -5,6 +5,7 @@ from decimal import Decimal
 from crypto_signal_engine.features.research import ResearchFeatureSnapshot
 from crypto_signal_engine.predictions import (
     CompositePredictionEngine,
+    HistoricalCompatiblePredictionEngine,
     PredictionDecisionDirection,
 )
 
@@ -623,3 +624,63 @@ def test_v4_waits_for_one_hour_warmup() -> None:
 
     assert decision.prediction is None
     assert "Warmup: 3599s/3600s" in decision.reason
+
+
+def test_missing_liquidation_data_is_not_treated_as_neutral_zero() -> None:
+    features = replace(
+        make_features(
+            binance_book="0.8",
+            bybit_book="0.6",
+            spot_cvd_1m="3",
+            spot_cvd_5m="5",
+            futures_cvd_1m="4",
+            futures_cvd_5m="7",
+            binance_oi_5m="0.4",
+            bybit_oi_5m="0.3",
+            funding_binance="-0.0001",
+            funding_bybit="-0.0001",
+            binance_long_short="0.9",
+            bybit_long_short="0.9",
+            top_trader="0.9",
+            taker_ratio="1.5",
+            liq_imbalance="0.5",
+        ),
+        liquidation_data_available=False,
+    )
+
+    decision = CompositePredictionEngine().decide(
+        features,
+        horizon_seconds=900,
+    )
+
+    assert "liquidations" not in decision.feature_contributions
+
+
+def test_historical_compatible_profile_excludes_order_book_and_liquidations() -> None:
+    features = make_features(
+        binance_book="0.8",
+        bybit_book="0.6",
+        spot_cvd_1m="3",
+        spot_cvd_5m="5",
+        futures_cvd_1m="4",
+        futures_cvd_5m="7",
+        binance_oi_5m="0.4",
+        bybit_oi_5m="0.3",
+        funding_binance="-0.0001",
+        funding_bybit="-0.0001",
+        binance_long_short="0.9",
+        bybit_long_short="0.9",
+        top_trader="0.9",
+        taker_ratio="1.5",
+        liq_imbalance="0.5",
+    )
+
+    decision = HistoricalCompatiblePredictionEngine().decide(
+        features,
+        horizon_seconds=900,
+    )
+
+    assert "order_book" not in decision.feature_contributions
+    assert "liquidations" not in decision.feature_contributions
+    assert decision.prediction is not None
+    assert decision.prediction.model_name == "historical_compatible_v1_15m"
