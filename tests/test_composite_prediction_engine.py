@@ -686,7 +686,7 @@ def test_historical_compatible_profile_excludes_order_book_and_liquidations() ->
     assert decision.prediction.model_name == "historical_compatible_v1_15m"
 
 
-def test_historical_profile_does_not_reject_binance_only_quality() -> None:
+def test_historical_profile_requires_full_binance_stream_quality() -> None:
     features = replace(
         make_features(
             binance_book="0",
@@ -706,7 +706,7 @@ def test_historical_profile_does_not_reject_binance_only_quality() -> None:
             liq_imbalance="0",
             spot_sources=1,
             futures_sources=1,
-            data_quality="0.33",
+            data_quality="0.50",
         ),
         dataset_provenance="binance_vision_historical_compatible_v1",
         liquidation_data_available=False,
@@ -719,8 +719,9 @@ def test_historical_profile_does_not_reject_binance_only_quality() -> None:
         horizon_seconds=900,
     )
 
-    assert decision.prediction is not None
-    assert decision.prediction.model_name == "historical_compatible_v1_15m"
+    assert decision.prediction is None
+    assert decision.direction == PredictionDecisionDirection.NO_TRADE
+    assert "data quality" in decision.reason.lower()
 
 
 def test_historical_profile_does_not_half_single_source_cvd() -> None:
@@ -743,7 +744,7 @@ def test_historical_profile_does_not_half_single_source_cvd() -> None:
             liq_imbalance="0",
             spot_sources=1,
             futures_sources=1,
-            data_quality="0.33",
+            data_quality="1.0",
         ),
         spot_cvd_ratio_15m=Decimal("0.80"),
         futures_cvd_ratio_15m=Decimal("0.80"),
@@ -791,7 +792,7 @@ def test_historical_profile_normalizes_score_by_active_weight() -> None:
             liq_imbalance="0",
             spot_sources=1,
             futures_sources=1,
-            data_quality="0.33",
+            data_quality="1.0",
         ),
         spot_cvd_ratio_15m=Decimal("0.80"),
         futures_cvd_ratio_15m=Decimal("0.80"),
@@ -834,7 +835,7 @@ def test_historical_profile_rejects_low_active_weight_before_normalization() -> 
             liq_imbalance="0",
             spot_sources=0,
             futures_sources=0,
-            data_quality="0.10",
+            data_quality="1.0",
         ),
         trend_score_15m=Decimal("0.40"),
         binance_oi_change_15m_pct=None,
@@ -881,7 +882,7 @@ def test_historical_profile_accepts_active_weight_at_minimum_boundary() -> None:
             liq_imbalance="0",
             spot_sources=1,
             futures_sources=1,
-            data_quality="0.33",
+            data_quality="1.0",
         ),
         binance_oi_change_15m_pct=None,
         bybit_oi_change_15m_pct=None,
