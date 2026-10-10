@@ -246,3 +246,47 @@ def test_long_range_high_candidate_freezes_barriers() -> None:
 
     assert gate.frozen_take_profit_pct == Decimal("0.40")
     assert gate.frozen_stop_loss_pct == Decimal("0.18")
+
+
+def test_historical_candidate_requires_historical_compatible_model() -> None:
+    from crypto_signal_engine.replay import HISTORICAL_CANDIDATE_GATES
+
+    gate = HISTORICAL_CANDIDATE_GATES[0]
+    accepted = _prediction(
+        direction=PredictionDirection.LONG,
+        horizon_seconds=900,
+        contributions={"trend": Decimal("0.10")},
+    )
+    accepted = Prediction(
+        id=accepted.id,
+        symbol=accepted.symbol,
+        created_at=accepted.created_at,
+        expires_at=accepted.expires_at,
+        horizon_seconds=accepted.horizon_seconds,
+        direction=accepted.direction,
+        entry_price=accepted.entry_price,
+        raw_score=accepted.raw_score,
+        data_quality=accepted.data_quality,
+        model_name="historical_compatible_v1_15m",
+        feature_contributions=accepted.feature_contributions,
+    )
+    live_model = Prediction(
+        id=uuid4(),
+        symbol=accepted.symbol,
+        created_at=accepted.created_at,
+        expires_at=accepted.expires_at,
+        horizon_seconds=accepted.horizon_seconds,
+        direction=accepted.direction,
+        entry_price=accepted.entry_price,
+        raw_score=accepted.raw_score,
+        data_quality=accepted.data_quality,
+        model_name="composite_rules_v4_15m",
+        feature_contributions=accepted.feature_contributions,
+    )
+    feature = SimpleNamespace(
+        trend_regime_15m="range",
+        volatility_regime_15m="high",
+    )
+
+    assert prediction_passes_gate(accepted, gate, feature) is True
+    assert prediction_passes_gate(live_model, gate, feature) is False
