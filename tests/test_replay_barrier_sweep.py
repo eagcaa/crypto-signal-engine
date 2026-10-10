@@ -62,6 +62,8 @@ def test_barrier_sweep_uses_first_touch_and_execution_costs() -> None:
     assert row.stop_loss == 0
     assert row.no_touch == 0
     assert row.expectancy_pct == Decimal("0.03")
+    assert row.pre_cost_expectancy_pct == Decimal("0.15")
+    assert row.execution_cost_pct == Decimal("0.12")
 
 
 def test_barrier_sweep_closes_no_touch_at_last_price() -> None:
@@ -90,6 +92,7 @@ def test_barrier_sweep_closes_no_touch_at_last_price() -> None:
 
     assert row.no_touch == 1
     assert row.expectancy_pct == Decimal("-0.07")
+    assert row.pre_cost_expectancy_pct == Decimal("0.05")
 
 
 def test_top_barrier_rows_rank_by_expectancy() -> None:
