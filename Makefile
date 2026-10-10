@@ -1,4 +1,4 @@
-.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical backfill-history backfill-metrics validate-metrics-alignment backfill-materialize backfill-load calibrate db-up db-down db-logs db-shell clean
+.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical replay-walk-forward-historical-v2 backfill-history backfill-metrics validate-metrics-alignment backfill-materialize backfill-materialize-v2 backfill-load backfill-load-v2 calibrate db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
 PYTHONPATH_SRC := PYTHONPATH=src
@@ -11,6 +11,8 @@ START_DATE ?=
 END_DATE ?=
 END_AT ?=
 PROVENANCE ?= binance_vision_historical_compatible_v1
+PROVENANCE_V2 ?= binance_vision_historical_compatible_v2
+METRICS_ARTIFACT ?=
 REPLACE ?= 0
 
 help:
@@ -33,12 +35,15 @@ help:
 	@echo "  make replay-holdout Validate an earlier non-overlapping replay window"
 	@echo "  make replay-walk-forward Run exact sequential windows + candidate leaderboard"
 	@echo "  make replay-historical Replay historical-compatible DB rows (END_AT required)"
-	@echo "  make replay-walk-forward-historical Historical-compatible walk forward"
+	@echo "  make replay-walk-forward-historical Historical-compatible v1 walk forward"
+	@echo "  make replay-walk-forward-historical-v2 Historical-compatible v2 walk forward"
 	@echo "  make backfill-history Download/validate Binance Vision history (DAYS=7 END_DATE=YYYY-MM-DD)"
 	@echo "  make backfill-metrics Download only Binance Vision USD-M metrics (START_DATE/END_DATE)"
 	@echo "  make validate-metrics-alignment Compare archived metrics OI against persisted live Binance OI"
-	@echo "  make backfill-materialize Convert downloaded history to 60s features"
-	@echo "  make backfill-load Load materialized historical features into PostgreSQL"
+	@echo "  make backfill-materialize Convert downloaded v1 history to 60s features"
+	@echo "  make backfill-materialize-v2 Convert history + validated metrics to v2 features"
+	@echo "  make backfill-load Load materialized historical v1 features into PostgreSQL"
+	@echo "  make backfill-load-v2 Load materialized historical v2 features into PostgreSQL"
 	@echo "  make calibrate     Build exact replay calibration artifact"
 	@echo "  make db-up        Start TimescaleDB"
 	@echo "  make db-down      Stop TimescaleDB"
@@ -126,6 +131,10 @@ replay-walk-forward-historical:
 	@if [ -z "$(END_AT)" ]; then echo "END_AT is required, e.g. END_AT=2026-09-01T00:00:00+00:00"; exit 1; fi
 	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.replay_walk_forward --symbol "$(SYMBOL)" --window-hours "$(HOURS)" --windows "$(WINDOWS)" --end-at "$(END_AT)" --dataset-provenance "$(PROVENANCE)" --historical-compatible
 
+replay-walk-forward-historical-v2:
+	@if [ -z "$(END_AT)" ]; then echo "END_AT is required, e.g. END_AT=2026-09-01T00:00:00+00:00"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.replay_walk_forward --symbol "$(SYMBOL)" --window-hours "$(HOURS)" --windows "$(WINDOWS)" --end-at "$(END_AT)" --dataset-provenance "$(PROVENANCE_V2)" --historical-v2
+
 backfill-history:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
 	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.backfill_history --symbol "$(SYMBOL)" --days "$(DAYS)" $(if $(END_DATE),--end-date "$(END_DATE)",)
@@ -144,6 +153,17 @@ backfill-materialize:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
 	@if [ -z "$(END_DATE)" ]; then echo "END_DATE is required, e.g. END_DATE=2026-09-30"; exit 1; fi
 	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.materialize_history --symbol "$(SYMBOL)" --days "$(DAYS)" --end-date "$(END_DATE)"
+
+backfill-materialize-v2:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	@if [ -z "$(END_DATE)" ]; then echo "END_DATE is required, e.g. END_DATE=2026-08-31"; exit 1; fi
+	@if [ -z "$(METRICS_ARTIFACT)" ]; then echo "METRICS_ARTIFACT is required and must point to a PASS alignment artifact"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.materialize_history_v2 --symbol "$(SYMBOL)" --days "$(DAYS)" --end-date "$(END_DATE)" --metrics-alignment-artifact "$(METRICS_ARTIFACT)"
+
+backfill-load-v2:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	@if [ -z "$(END_DATE)" ]; then echo "END_DATE is required, e.g. END_DATE=2026-08-31"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.load_materialized_history --symbol "$(SYMBOL)" --days "$(DAYS)" --end-date "$(END_DATE)" --historical-version v2 $(if $(filter 1 true yes,$(REPLACE)),--replace,)
 
 backfill-load:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
