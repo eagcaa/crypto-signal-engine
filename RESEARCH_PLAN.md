@@ -79,6 +79,7 @@ Historical proxies must never be silently mixed with live features that have a d
 - A Binance-only historical model is a separate research profile from the full live Binance+Bybit model.
 - The Binance-only profile must also use its own data-quality and source-coverage semantics: one expected Binance spot stream and one expected Binance futures stream count as full historical coverage; they must not inherit the live 6-source quality denominator or the live 2-exchange CVD coverage penalty.
 - Historical-compatible v1 removes the single-source CVD coverage penalty and normalizes the final composite score by the sum of active feature weights. This preserves the meaning of the frozen 0.20 score threshold when unavailable live-only feature groups are excluded.
+- Historical-compatible v1 requires at least **0.50 active feature weight** before normalization. If active weight is below 0.50, return `no_trade`; do not let a small number of available features become artificially overconfident after normalization.
 - Backfilled rows must carry a distinct dataset/model provenance so historical and live results can be separated in reports.
 
 ### Metrics timestamp / lookahead rule
