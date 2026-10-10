@@ -160,6 +160,69 @@ class ResearchFeatureRepository:
         return inserted, skipped
 
 
+    async def replace_many(
+        self,
+        snapshots: list[ResearchFeatureSnapshot],
+        *,
+        batch_size: int = 1000,
+    ) -> tuple[int, int]:
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+
+        written = 0
+        replaced = 0
+
+        for offset in range(0, len(snapshots), batch_size):
+            batch = snapshots[offset : offset + batch_size]
+            if not batch:
+                continue
+
+            symbol = batch[0].symbol.upper()
+            if any(item.symbol.upper() != symbol for item in batch):
+                raise ValueError("A batch cannot mix symbols")
+
+            timestamps = [item.timestamp for item in batch]
+            async with self._session_factory() as session:
+                existing_rows = list(
+                    (
+                        await session.scalars(
+                            select(ResearchFeatureSnapshotRow).where(
+                                ResearchFeatureSnapshotRow.symbol == symbol,
+                                ResearchFeatureSnapshotRow.timestamp.in_(timestamps),
+                            )
+                        )
+                    ).all()
+                )
+                existing_by_timestamp = {
+                    row.timestamp: row
+                    for row in existing_rows
+                }
+
+                for snapshot in batch:
+                    existing = existing_by_timestamp.get(snapshot.timestamp)
+                    if existing is not None:
+                        if (
+                            existing.dataset_provenance
+                            != snapshot.dataset_provenance
+                        ):
+                            raise ValueError(
+                                "Research feature provenance conflict at "
+                                f"{snapshot.symbol} "
+                                f"{snapshot.timestamp.isoformat()}: "
+                                f"existing={existing.dataset_provenance} "
+                                f"incoming={snapshot.dataset_provenance}"
+                            )
+                        await session.delete(existing)
+                        replaced += 1
+
+                    session.add(self._to_row(snapshot))
+                    written += 1
+
+                await session.commit()
+
+        return written, replaced
+
+
     async def coverage(
         self,
         symbol: str,
