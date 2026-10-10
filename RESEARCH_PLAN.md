@@ -78,6 +78,7 @@ Historical proxies must never be silently mixed with live features that have a d
 - Missing historical liquidation data must remain unavailable/explicitly missing; do not replace it with zero as though zero liquidations were observed.
 - A Binance-only historical model is a separate research profile from the full live Binance+Bybit model.
 - The Binance-only profile must also use its own data-quality and source-coverage semantics: one expected Binance spot stream and one expected Binance futures stream count as full historical coverage; they must not inherit the live 6-source quality denominator or the live 2-exchange CVD coverage penalty.
+- Historical-compatible v1 removes the single-source CVD coverage penalty and normalizes the final composite score by the sum of active feature weights. This preserves the meaning of the frozen 0.20 score threshold when unavailable live-only feature groups are excluded.
 - Backfilled rows must carry a distinct dataset/model provenance so historical and live results can be separated in reports.
 
 ### Metrics timestamp / lookahead rule
@@ -129,3 +130,10 @@ The H1/H2 pre-registered decision thresholds, including the minimum independent-
 Historical results must be reported both in aggregate and **month by month**. At minimum, print trade count, gross expectancy, execution cost, net expectancy, profit factor, active windows and robustness for each calendar month.
 
 A candidate that is positive only in one month but weak/negative across the other months is not treated as stable evidence of edge.
+
+
+### Live historical-compatible shadow parity
+
+The historical-compatible model should also run in live shadow mode, but only after live feature snapshots expose **Binance-only** spot/futures CVD ratios and the same Binance-only derivative inputs used by backfill.
+
+Do not run the historical-compatible shadow model on the current aggregate Binance+Bybit CVD ratios and call it equivalent. The live shadow and backfill model definitions must be feature-for-feature identical before their results are compared.
