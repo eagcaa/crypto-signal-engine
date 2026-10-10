@@ -42,6 +42,39 @@ class ReplayDataRepository:
             rows = list((await session.scalars(query)).all())
             return [self._to_feature_snapshot(row) for row in rows]
 
+
+    async def load_feature_price_points(
+        self,
+        *,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+        dataset_provenance: str,
+    ) -> list[ReplayPricePoint]:
+        async with self._session_factory() as session:
+            query = (
+                select(ResearchFeatureSnapshotRow)
+                .where(
+                    ResearchFeatureSnapshotRow.symbol == symbol.upper(),
+                    ResearchFeatureSnapshotRow.timestamp >= start,
+                    ResearchFeatureSnapshotRow.timestamp <= end,
+                    ResearchFeatureSnapshotRow.dataset_provenance
+                    == dataset_provenance,
+                    ResearchFeatureSnapshotRow.price.is_not(None),
+                )
+                .order_by(ResearchFeatureSnapshotRow.timestamp.asc())
+            )
+            rows = list((await session.scalars(query)).all())
+            return [
+                ReplayPricePoint(
+                    symbol=row.symbol,
+                    timestamp=row.timestamp,
+                    price=row.price,
+                )
+                for row in rows
+                if row.price is not None
+            ]
+
     async def load_price_points(
         self,
         *,
