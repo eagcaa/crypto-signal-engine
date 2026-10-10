@@ -23,16 +23,21 @@ class ReplayDataRepository:
         symbol: str,
         start: datetime,
         end: datetime,
+        dataset_provenance: str | None = None,
     ) -> list[ResearchFeatureSnapshot]:
         async with self._session_factory() as session:
-            query = (
-                select(ResearchFeatureSnapshotRow)
-                .where(
-                    ResearchFeatureSnapshotRow.symbol == symbol.upper(),
-                    ResearchFeatureSnapshotRow.timestamp >= start,
-                    ResearchFeatureSnapshotRow.timestamp <= end,
+            query = select(ResearchFeatureSnapshotRow).where(
+                ResearchFeatureSnapshotRow.symbol == symbol.upper(),
+                ResearchFeatureSnapshotRow.timestamp >= start,
+                ResearchFeatureSnapshotRow.timestamp <= end,
+            )
+            if dataset_provenance is not None:
+                query = query.where(
+                    ResearchFeatureSnapshotRow.dataset_provenance
+                    == dataset_provenance
                 )
-                .order_by(ResearchFeatureSnapshotRow.timestamp.asc())
+            query = query.order_by(
+                ResearchFeatureSnapshotRow.timestamp.asc()
             )
             rows = list((await session.scalars(query)).all())
             return [self._to_feature_snapshot(row) for row in rows]
