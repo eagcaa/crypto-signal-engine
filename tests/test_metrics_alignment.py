@@ -9,10 +9,13 @@ from crypto_signal_engine.examples.backfill_metrics import (
     metrics_archive_spec,
 )
 from crypto_signal_engine.examples.validate_metrics_alignment import (
-    ArchivedMetricPoint,
     LiveOiPoint,
-    count_duplicate_timestamps,
     evaluate_alignment,
+)
+from crypto_signal_engine.features.historical_metrics import (
+    ArchivedMetricPoint,
+    HistoricalMetricsTimeline,
+    count_duplicate_timestamps,
     load_metrics_archive,
 )
 
@@ -144,3 +147,65 @@ def test_alignment_is_ambiguous_when_all_shifts_fit_equally() -> None:
 
     assert result.status == "AMBIGUOUS"
     assert result.selected_shift_minutes is None
+
+
+def test_metrics_timeline_never_exposes_point_before_observable_time() -> None:
+    raw_timestamp = datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
+    points = [
+        ArchivedMetricPoint(
+            timestamp=raw_timestamp - timedelta(minutes=15),
+            open_interest=Decimal("100"),
+            open_interest_value=Decimal("1000"),
+            long_short_ratio=Decimal("1.0"),
+            top_trader_long_short_ratio=Decimal("1.0"),
+            taker_buy_sell_ratio=Decimal("1.0"),
+        ),
+        ArchivedMetricPoint(
+            timestamp=raw_timestamp - timedelta(minutes=10),
+            open_interest=Decimal("101"),
+            open_interest_value=Decimal("1010"),
+            long_short_ratio=Decimal("1.0"),
+            top_trader_long_short_ratio=Decimal("1.0"),
+            taker_buy_sell_ratio=Decimal("1.0"),
+        ),
+        ArchivedMetricPoint(
+            timestamp=raw_timestamp - timedelta(minutes=5),
+            open_interest=Decimal("102"),
+            open_interest_value=Decimal("1020"),
+            long_short_ratio=Decimal("1.0"),
+            top_trader_long_short_ratio=Decimal("1.0"),
+            taker_buy_sell_ratio=Decimal("1.0"),
+        ),
+        ArchivedMetricPoint(
+            timestamp=raw_timestamp,
+            open_interest=Decimal("103"),
+            open_interest_value=Decimal("1030"),
+            long_short_ratio=Decimal("1.1"),
+            top_trader_long_short_ratio=Decimal("1.2"),
+            taker_buy_sell_ratio=Decimal("1.3"),
+        ),
+    ]
+    timeline = HistoricalMetricsTimeline(
+        points,
+        observable_shift_minutes=5,
+    )
+
+    before = timeline.at(raw_timestamp + timedelta(minutes=4, seconds=59))
+    assert before is not None
+    assert before.long_short_ratio == Decimal("1.0")
+
+    visible = timeline.at(raw_timestamp + timedelta(minutes=5))
+    assert visible is not None
+    assert visible.long_short_ratio == Decimal("1.1")
+    assert visible.top_trader_long_short_ratio == Decimal("1.2")
+    assert visible.taker_buy_sell_ratio == Decimal("1.3")
+    assert visible.oi_change_5m_pct == (
+        (Decimal("1030") - Decimal("1020"))
+        / Decimal("1020")
+        * Decimal("100")
+    )
+    assert visible.oi_change_15m_pct == (
+        (Decimal("1030") - Decimal("1000"))
+        / Decimal("1000")
+        * Decimal("100")
+    )
