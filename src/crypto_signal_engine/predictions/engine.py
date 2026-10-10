@@ -542,7 +542,9 @@ class CompositePredictionEngine:
         self,
         features: ResearchFeatureSnapshot,
         profile: _HorizonProfile,
-    ) -> Decimal:
+    ) -> Decimal | None:
+        if not features.liquidation_data_available:
+            return None
         if profile.liquidation_window == "15m":
             return features.liquidation_imbalance_15m
         return features.liquidation_imbalance_5m
@@ -689,3 +691,39 @@ class CompositePredictionEngine:
             Decimal("-1"),
             min(Decimal("1"), value),
         )
+
+
+
+class HistoricalCompatiblePredictionEngine(CompositePredictionEngine):
+    """Backfill/replay profile using only historically compatible signals.
+
+    Exact live first-20-level order-book imbalance and liquidation flow are
+    deliberately excluded. This keeps historical tests comparable with a
+    corresponding live-compatible subset instead of silently substituting
+    proxies or zeroes.
+    """
+
+    MODEL_PREFIX = "historical_compatible_v1"
+
+    @classmethod
+    def model_name_for_horizon(
+        cls,
+        horizon_seconds: int,
+    ) -> str | None:
+        profile = cls.PROFILES.get(horizon_seconds)
+        if profile is None:
+            return None
+        return f"{cls.MODEL_PREFIX}_{profile.name}"
+
+    def _order_book_score(
+        self,
+        features: ResearchFeatureSnapshot,
+    ) -> Decimal | None:
+        return None
+
+    def _liquidation_score(
+        self,
+        features: ResearchFeatureSnapshot,
+        profile: _HorizonProfile,
+    ) -> Decimal | None:
+        return None
