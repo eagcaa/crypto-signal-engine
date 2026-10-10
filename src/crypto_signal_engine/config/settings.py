@@ -39,6 +39,8 @@ class Settings(BaseSettings):
 
     data_quality_alert_threshold: Decimal = Decimal("0.67")
     data_quality_bad_intervals: int = 3
+    source_stale_after_ms: int = 30000
+    source_stale_bad_intervals: int = 3
 
     binance_api_key: str = ""
     binance_api_secret: str = ""
