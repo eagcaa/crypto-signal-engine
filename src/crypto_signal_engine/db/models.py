@@ -298,6 +298,7 @@ class ResearchFeatureSnapshotRow(Base):
     )
     dataset_provenance: Mapped[str] = mapped_column(
         String(64),
+        primary_key=True,
         nullable=False,
         default="live_full",
     )
