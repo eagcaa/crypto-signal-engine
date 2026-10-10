@@ -38,12 +38,20 @@ class ResearchFeatureSnapshot:
 
     trend_score_5m: Decimal | None
     trend_score_15m: Decimal | None
+    trend_score_1h: Decimal | None
+    trend_score_4h: Decimal | None
     atr_pct_5m: Decimal | None
     atr_pct_15m: Decimal | None
+    atr_pct_1h: Decimal | None
+    atr_pct_4h: Decimal | None
     trend_regime_5m: str | None
     trend_regime_15m: str | None
+    trend_regime_1h: str | None
+    trend_regime_4h: str | None
     volatility_regime_5m: str | None
     volatility_regime_15m: str | None
+    volatility_regime_1h: str | None
+    volatility_regime_4h: str | None
 
     binance_oi_change_5m_pct: Decimal | None
     binance_oi_change_15m_pct: Decimal | None
@@ -121,7 +129,7 @@ class ResearchFeatureAggregator:
         self,
         snapshot: TechnicalFeatureSnapshot,
     ) -> None:
-        if snapshot.interval not in {"5m", "15m"}:
+        if snapshot.interval not in {"5m", "15m", "1h", "4h"}:
             return
         async with self._lock:
             self._technicals[snapshot.interval] = snapshot
@@ -150,6 +158,8 @@ class ResearchFeatureAggregator:
                 bybit = None
             technical_5m = self._technicals.get("5m")
             technical_15m = self._technicals.get("15m")
+            technical_1h = self._technicals.get("1h")
+            technical_4h = self._technicals.get("4h")
             long_5m, short_5m = self._liquidation_totals(now, timedelta(minutes=5))
             long_15m, short_15m = self._liquidation_totals(now, timedelta(minutes=15))
 
@@ -190,19 +200,31 @@ class ResearchFeatureAggregator:
                 trend_score_15m=(
                     technical_15m.trend_score if technical_15m else None
                 ),
+                trend_score_1h=technical_1h.trend_score if technical_1h else None,
+                trend_score_4h=technical_4h.trend_score if technical_4h else None,
                 atr_pct_5m=technical_5m.atr_pct if technical_5m else None,
                 atr_pct_15m=technical_15m.atr_pct if technical_15m else None,
+                atr_pct_1h=technical_1h.atr_pct if technical_1h else None,
+                atr_pct_4h=technical_4h.atr_pct if technical_4h else None,
                 trend_regime_5m=(
                     technical_5m.trend_regime if technical_5m else None
                 ),
                 trend_regime_15m=(
                     technical_15m.trend_regime if technical_15m else None
                 ),
+                trend_regime_1h=technical_1h.trend_regime if technical_1h else None,
+                trend_regime_4h=technical_4h.trend_regime if technical_4h else None,
                 volatility_regime_5m=(
                     technical_5m.volatility_regime if technical_5m else None
                 ),
                 volatility_regime_15m=(
                     technical_15m.volatility_regime if technical_15m else None
+                ),
+                volatility_regime_1h=(
+                    technical_1h.volatility_regime if technical_1h else None
+                ),
+                volatility_regime_4h=(
+                    technical_4h.volatility_regime if technical_4h else None
                 ),
                 binance_oi_change_5m_pct=binance.oi_change_5m_pct if binance else None,
                 binance_oi_change_15m_pct=binance.oi_change_15m_pct if binance else None,
