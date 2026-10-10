@@ -698,12 +698,28 @@ class HistoricalCompatiblePredictionEngine(CompositePredictionEngine):
     """Backfill/replay profile using only historically compatible signals.
 
     Exact live first-20-level order-book imbalance and liquidation flow are
-    deliberately excluded. This keeps historical tests comparable with a
-    corresponding live-compatible subset instead of silently substituting
-    proxies or zeroes.
+    deliberately excluded. Binance-only backfill also uses its own quality
+    and source-coverage semantics, so one available Binance stream is treated
+    as full expected coverage rather than half of a two-exchange live feed.
     """
 
     MODEL_PREFIX = "historical_compatible_v1"
+
+    def __init__(
+        self,
+        *,
+        minimum_abs_score: Decimal = Decimal("0.20"),
+        fee_pct_per_side: Decimal = Decimal("0.05"),
+        slippage_pct_per_side: Decimal = Decimal("0.01"),
+        minimum_net_edge_pct: Decimal = Decimal("0.08"),
+    ) -> None:
+        super().__init__(
+            minimum_data_quality=Decimal("0"),
+            minimum_abs_score=minimum_abs_score,
+            fee_pct_per_side=fee_pct_per_side,
+            slippage_pct_per_side=slippage_pct_per_side,
+            minimum_net_edge_pct=minimum_net_edge_pct,
+        )
 
     @classmethod
     def model_name_for_horizon(
@@ -720,6 +736,21 @@ class HistoricalCompatiblePredictionEngine(CompositePredictionEngine):
         features: ResearchFeatureSnapshot,
     ) -> Decimal | None:
         return None
+
+    def _flow_score(
+        self,
+        short_window: Decimal,
+        long_window: Decimal,
+        *,
+        source_count: int,
+    ) -> Decimal | None:
+        if source_count <= 0:
+            return None
+
+        return (
+            self._clamp(short_window) * Decimal("0.60")
+            + self._clamp(long_window) * Decimal("0.40")
+        )
 
     def _liquidation_score(
         self,
