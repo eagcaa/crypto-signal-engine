@@ -17,6 +17,8 @@ class BarrierSweepRow:
     stop_loss: int
     no_touch: int
     expectancy_pct: Decimal
+    pre_cost_expectancy_pct: Decimal
+    execution_cost_pct: Decimal
     profit_factor: Decimal | None
 
 
@@ -74,6 +76,10 @@ def build_barrier_sweep(
                     continue
 
                 returns = [outcome[1] for outcome in valid]
+                pre_cost_returns = [
+                    value + round_trip_cost_pct
+                    for value in returns
+                ]
                 gross_profit = sum(
                     (value for value in returns if value > 0),
                     Decimal("0"),
@@ -102,6 +108,11 @@ def build_barrier_sweep(
                             sum(returns, Decimal("0"))
                             / Decimal(len(returns))
                         ),
+                        pre_cost_expectancy_pct=(
+                            sum(pre_cost_returns, Decimal("0"))
+                            / Decimal(len(pre_cost_returns))
+                        ),
+                        execution_cost_pct=round_trip_cost_pct,
                         profit_factor=profit_factor,
                     )
                 )
