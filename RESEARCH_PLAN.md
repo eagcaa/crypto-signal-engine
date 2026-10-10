@@ -77,18 +77,23 @@ Historical proxies must never be silently mixed with live features that have a d
 - Binance `bookDepth` is **not** equivalent to the live first-20-level order-book imbalance. If used, store it under a separate feature/model version.
 - Missing historical liquidation data must remain unavailable/explicitly missing; do not replace it with zero as though zero liquidations were observed.
 - A Binance-only historical model is a separate research profile from the full live Binance+Bybit model.
+- The Binance-only profile must also use its own data-quality and source-coverage semantics: one expected Binance spot stream and one expected Binance futures stream count as full historical coverage; they must not inherit the live 6-source quality denominator or the live 2-exchange CVD coverage penalty.
 - Backfilled rows must carry a distinct dataset/model provenance so historical and live results can be separated in reports.
 
 ### Metrics timestamp / lookahead rule
 
-Binance USD-M `metrics` archive timestamps changed convention on **2026-06-25**. Historical ingestion must normalize each row to the time at which its information was actually observable.
+Do not assume the Binance USD-M `metrics` timestamp convention from documentation or memory alone.
 
-For the frozen April-July research window:
+Before metrics are allowed into strategy evaluation:
 
-- Before 2026-06-25, treat the archive timestamp according to the earlier end-of-period convention.
-- From 2026-06-25 onward, account for the changed labeling convention and never expose a metric value to a feature timestamp earlier than the underlying five-minute period was complete.
-- Duplicate boundary timestamps must be detected and resolved explicitly rather than silently de-duplicated.
-- Add a regression/lookahead test for this boundary before historical metrics are allowed into strategy evaluation.
+- Download the Binance Vision `metrics` files covering **2026-10-08 through 2026-10-10**.
+- Align archived Binance OI values against the already persisted live Binance OI series from the same dates.
+- Test both zero-shift and five-minute-shift alignment and determine which convention matches the observable live values.
+- Normalize historical metric timestamps to the earliest time the value was actually observable.
+- Detect duplicate/boundary timestamps explicitly rather than silently de-duplicating them.
+- Lock the inferred alignment rule in a regression/lookahead test before running the research or holdout windows.
+
+If the live-vs-archive comparison is ambiguous, exclude `metrics` from strategy evaluation until the timestamp semantics are resolved.
 
 ### Candidate research protocol
 
@@ -117,3 +122,10 @@ Backfilled research feature snapshots are generated at **60-second cadence**, ma
 Exact first-touch outcome evaluation may still use tick-level aggregate trades. This keeps feature storage manageable without degrading barrier evaluation.
 
 The H1/H2 pre-registered decision thresholds, including the minimum independent-time requirements, apply to historical backfill results as well as forward results.
+
+
+### Monthly stability reporting
+
+Historical results must be reported both in aggregate and **month by month**. At minimum, print trade count, gross expectancy, execution cost, net expectancy, profit factor, active windows and robustness for each calendar month.
+
+A candidate that is positive only in one month but weak/negative across the other months is not treated as stable evidence of edge.
