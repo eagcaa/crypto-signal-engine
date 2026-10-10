@@ -4,6 +4,7 @@ from crypto_signal_engine.replay.research_inputs import (
 )
 from crypto_signal_engine.replay.candidate_gates import (
     CANDIDATE_GATES,
+    HISTORICAL_CANDIDATE_GATES,
     CandidateGate,
     filter_replay_result,
     prediction_passes_gate,
@@ -44,6 +45,7 @@ from crypto_signal_engine.replay.runner import ReplayRunner
 __all__ = [
     "AgreementEdgeStats",
     "CANDIDATE_GATES",
+    "HISTORICAL_CANDIDATE_GATES",
     "CandidateGate",
     "CandidateLeaderboardRow",
     "CandidateRobustnessResult",
