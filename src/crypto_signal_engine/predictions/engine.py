@@ -125,6 +125,25 @@ class CompositePredictionEngine:
             liquidation_window="15m",
             required_history_seconds=900,
         ),
+        3600: _HorizonProfile(
+            name="1h",
+            weights={
+                "order_book": Decimal("0.10"),
+                "spot_cvd": Decimal("0.18"),
+                "futures_cvd": Decimal("0.18"),
+                "open_interest": Decimal("0.15"),
+                "funding": Decimal("0.05"),
+                "crowding": Decimal("0.09"),
+                "taker_flow": Decimal("0.05"),
+                "liquidations": Decimal("0.05"),
+                "trend": Decimal("0.15"),
+            },
+            short_flow_window="5m",
+            long_flow_window="15m",
+            oi_window="15m",
+            liquidation_window="15m",
+            required_history_seconds=3600,
+        ),
     }
 
     @classmethod
@@ -386,6 +405,22 @@ class CompositePredictionEngine:
             )
             return take_profit_pct, stop_loss_pct
 
+        if horizon_seconds == 3600:
+            atr_pct = features.atr_pct_1h
+            if atr_pct is None:
+                return None
+            take_profit_pct = self._clamp_range(
+                atr_pct * Decimal("1.10"),
+                Decimal("0.35"),
+                Decimal("1.20"),
+            )
+            stop_loss_pct = self._clamp_range(
+                atr_pct * Decimal("0.70"),
+                Decimal("0.20"),
+                Decimal("0.70"),
+            )
+            return take_profit_pct, stop_loss_pct
+
         return None
 
     @staticmethod
@@ -506,11 +541,12 @@ class CompositePredictionEngine:
         features: ResearchFeatureSnapshot,
         profile: _HorizonProfile,
     ) -> Decimal | None:
-        value = (
-            features.trend_score_15m
-            if profile.name == "15m"
-            else features.trend_score_5m
-        )
+        if profile.name == "1h":
+            value = features.trend_score_1h
+        elif profile.name == "15m":
+            value = features.trend_score_15m
+        else:
+            value = features.trend_score_5m
         return self._clamp(value) if value is not None else None
 
     def _funding_score(
