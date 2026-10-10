@@ -78,6 +78,22 @@ def daily_archive_specs(
     return tuple(specs)
 
 
+def archive_timestamp_to_datetime(value: int | str) -> datetime:
+    raw = int(value)
+    if raw <= 0:
+        raise ValueError("archive timestamp must be positive")
+
+    # Binance spot archives may use microseconds while futures archives use
+    # milliseconds. Infer the unit by magnitude, then sanity-check the result.
+    divisor = 1_000_000 if raw >= 100_000_000_000_000 else 1_000
+    parsed = datetime.fromtimestamp(raw / divisor, tz=UTC)
+    if parsed.year < 2017 or parsed.year > 2100:
+        raise ValueError(
+            f"archive timestamp out of supported range: {raw}"
+        )
+    return parsed
+
+
 def requested_days(
     *,
     days: int,
