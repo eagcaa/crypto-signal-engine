@@ -92,17 +92,17 @@ class LocalBinanceSpotAggTradePriceSource:
             return []
 
         symbol = symbol.upper()
-        first_day = merged[0][0].date()
-        last_day = merged[-1][1].date()
-        days = (
-            first_day + timedelta(days=offset)
-            for offset in range((last_day - first_day).days + 1)
-        )
+        required_days: set[date] = set()
+        for start, end in merged:
+            current_day = start.date()
+            while current_day <= end.date():
+                required_days.add(current_day)
+                current_day += timedelta(days=1)
 
         points: list[ReplayPricePoint] = []
         window_index = 0
 
-        for day in days:
+        for day in sorted(required_days):
             path = _spot_aggtrade_path(
                 self._root,
                 symbol=symbol,
