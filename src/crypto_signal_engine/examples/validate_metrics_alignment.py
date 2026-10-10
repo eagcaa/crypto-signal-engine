@@ -312,6 +312,8 @@ def evaluate_alignment(
                 live_points=len(live_points),
                 duplicate_timestamps=0,
                 scores=scores,
+                ratio_delay_minutes=ratio_delay,
+                ratio_mappings=ratio_mappings,
                 reason="multiple_timestamp_shifts_fit_similarly",
             )
 
