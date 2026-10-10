@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from crypto_signal_engine.calibration import CalibrationArtifact, CalibrationBucket
 from crypto_signal_engine.paper.validation import PaperValidationResult
+from crypto_signal_engine.predictions import CompositePredictionEngine
 from crypto_signal_engine.readiness import evaluate_readiness
 
 
@@ -30,9 +31,8 @@ def bucket(horizon: int, direction: str) -> CalibrationBucket:
         horizon_seconds=horizon,
         direction=direction,
         model_name=(
-            "composite_rules_v4_5m"
-            if horizon == 300
-            else "composite_rules_v4_15m"
+            CompositePredictionEngine.model_name_for_horizon(horizon)
+            or f"unknown_{horizon}"
         ),
         lower_bound=Decimal("0.30"),
         upper_bound=Decimal("0.40"),
@@ -49,8 +49,6 @@ def test_readiness_passes_when_all_calibration_and_paper_gates_pass() -> None:
             bucket(300, "short"),
             bucket(900, "long"),
             bucket(900, "short"),
-            bucket(3600, "long"),
-            bucket(3600, "short"),
         )
     result = evaluate_readiness(
         buckets,
