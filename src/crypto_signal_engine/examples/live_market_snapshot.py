@@ -37,7 +37,7 @@ from crypto_signal_engine.domain.models import Exchange
 from crypto_signal_engine.features.orderbook import calculate_order_book_metrics
 from crypto_signal_engine.features.research import ResearchFeatureAggregator
 from crypto_signal_engine.features.technical import build_technical_features
-from crypto_signal_engine.health import DataQualityMonitor
+from crypto_signal_engine.health import DataQualityMonitor, SourceFreshnessMonitor
 from crypto_signal_engine.integrations import (
     CoinGlassClient,
     TelegramDispatcher,
@@ -221,17 +221,26 @@ async def poll_technicals(
 ) -> None:
     while True:
         try:
-            candles_5m, candles_15m = await asyncio.gather(
+            candles_5m, candles_15m, candles_1h, candles_4h = await asyncio.gather(
                 client.fetch_closed(symbol, interval="5m", limit=100),
                 client.fetch_closed(symbol, interval="15m", limit=100),
+                client.fetch_closed(symbol, interval="1h", limit=100),
+                client.fetch_closed(symbol, interval="4h", limit=100),
             )
             features_5m = build_technical_features(candles_5m)
             features_15m = build_technical_features(candles_15m)
+            features_1h = build_technical_features(candles_1h)
+            features_4h = build_technical_features(candles_4h)
 
-            await research_aggregator.update_technical(features_5m)
-            await research_aggregator.update_technical(features_15m)
+            for features in (
+                features_5m,
+                features_15m,
+                features_1h,
+                features_4h,
+            ):
+                await research_aggregator.update_technical(features)
 
-            for features in (features_5m, features_15m):
+            for features in (features_5m, features_15m, features_1h, features_4h):
                 print(
                     "TECHNICALS "
                     f"interval={features.interval} "
@@ -348,6 +357,7 @@ async def persist_snapshots(
     telegram_dispatcher: TelegramDispatcher | None = None,
     calibration_buckets=(),
     data_quality_monitor: DataQualityMonitor | None = None,
+    source_freshness_monitor: SourceFreshnessMonitor | None = None,
     *,
     interval_seconds: float = 5.0,
     prediction_interval_seconds: int = 60,
@@ -380,6 +390,26 @@ async def persist_snapshots(
                     ),
                 )
 
+        if source_freshness_monitor is not None:
+            for freshness_event in source_freshness_monitor.observe(snapshot):
+                print(
+                    "SOURCE_FRESHNESS "
+                    f"source={freshness_event.source} "
+                    f"event={freshness_event.kind} "
+                    f"age_ms={freshness_event.age_ms} "
+                    f"bad_intervals={freshness_event.bad_intervals}"
+                )
+                await send_telegram(
+                    telegram_dispatcher,
+                    TelegramNotifier.source_freshness_text(
+                        symbol=snapshot.symbol,
+                        source=freshness_event.source,
+                        kind=freshness_event.kind,
+                        age_ms=freshness_event.age_ms,
+                        bad_intervals=freshness_event.bad_intervals,
+                    ),
+                )
+
         research_snapshot = await research_aggregator.snapshot(snapshot)
         await research_repository.add(research_snapshot)
 
@@ -402,8 +432,12 @@ async def persist_snapshots(
             f"history={research_snapshot.history_seconds}s "
             f"trend_5m={research_snapshot.trend_score_5m} "
             f"trend_15m={research_snapshot.trend_score_15m} "
+            f"trend_1h={research_snapshot.trend_score_1h} "
+            f"trend_4h={research_snapshot.trend_score_4h} "
             f"atr_pct_5m={research_snapshot.atr_pct_5m} "
             f"atr_pct_15m={research_snapshot.atr_pct_15m} "
+            f"atr_pct_1h={research_snapshot.atr_pct_1h} "
+            f"atr_pct_4h={research_snapshot.atr_pct_4h} "
             f"liq_5m={research_snapshot.liquidation_imbalance_5m} "
             f"liq_15m={research_snapshot.liquidation_imbalance_15m} "
             f"binance_oi_5m={research_snapshot.binance_oi_change_5m_pct} "
@@ -725,6 +759,10 @@ async def main() -> None:
         minimum_quality=settings.data_quality_alert_threshold,
         bad_intervals_before_alert=settings.data_quality_bad_intervals,
     )
+    source_freshness_monitor = SourceFreshnessMonitor(
+        stale_after_ms=settings.source_stale_after_ms,
+        bad_intervals_before_alert=settings.source_stale_bad_intervals,
+    )
     calibration_artifact = load_calibration_artifact(
         settings.calibration_file
     )
@@ -939,6 +977,7 @@ async def main() -> None:
                     telegram_dispatcher,
                     calibration_buckets,
                     data_quality_monitor,
+                    source_freshness_monitor,
                     interval_seconds=5.0,
                     prediction_interval_seconds=60,
                 )
