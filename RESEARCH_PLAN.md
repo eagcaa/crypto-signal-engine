@@ -149,7 +149,7 @@ Historical-compatible materialization must reproduce the live feature semantics 
 - Binance-only historical data quality is based on **recent activity**, not file existence. At each 60-second snapshot, Binance spot and Binance futures each count as available only if their latest trade is no older than 60 seconds.
 - Historical-compatible v1 requires `market_data_quality == 1.0`; if either expected Binance trade stream is stale/missing, return `no_trade`.
 - Aggregate trades are reduced online into one-minute signed-volume/absolute-volume buckets. The 1m/5m/15m CVD and CVD-ratio calculations use those rolling buckets, preserving the 60-second snapshot semantics without rescanning every individual trade for every feature calculation.
-- Materialized JSONL must be loaded with its original `dataset_provenance`. A database row with the same symbol/timestamp but a different provenance is a hard conflict and must never be silently overwritten.
+- Materialized JSONL must be loaded with its original `dataset_provenance`. Research feature identity is `(timestamp, symbol, dataset_provenance)`, so multiple model/data versions may coexist at the same market timestamp without overwriting one another.
 - Historical replay must filter features by provenance and use only `HISTORICAL_CANDIDATE_GATES` with `HistoricalCompatiblePredictionEngine`. Do not report historical-compatible predictions under the live candidate names.
 
 
@@ -176,7 +176,7 @@ Any historical model that adds validated Binance Vision metrics is a separate `h
 
 Historical walk-forward first-touch evaluation must use the locally downloaded Binance Vision spot `aggTrades` archives, not the Binance HTTP API. Monthly stability is attributed by prediction creation month and reported separately from the aggregate leaderboard.
 
-If a materialization bug is fixed and the same provenance must be reloaded, use the provenance-safe loader replace mode. Replacement is allowed only when the existing row has the same `dataset_provenance`; a different provenance at the same symbol/timestamp remains a fatal conflict.
+If a materialization bug is fixed and the same provenance must be reloaded, use the provenance-safe loader replace mode. Replacement only affects the matching `(timestamp, symbol, dataset_provenance)` row; other provenances at the same timestamp remain untouched.
 
 
 ## H4 — Historical-compatible v2 derivatives confirmation
