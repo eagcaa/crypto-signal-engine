@@ -177,7 +177,8 @@ async def run(*, symbol: str, hours: float) -> None:
             evaluations_query = (
                 select(PredictionEvaluationRow)
                 .where(
-                    PredictionEvaluationRow.prediction_id.in_(prediction_ids)
+                    PredictionEvaluationRow.prediction_id.in_(prediction_ids),
+                    PredictionEvaluationRow.status == "evaluated",
                 )
             )
             evaluations = list(
