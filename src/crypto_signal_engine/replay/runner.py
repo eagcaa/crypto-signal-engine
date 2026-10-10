@@ -35,7 +35,7 @@ class ReplayRunner:
         self,
         prediction_engine: CompositePredictionEngine | None = None,
         *,
-        horizons: tuple[int, ...] = (300, 900),
+        horizons: tuple[int, ...] = (300, 900, 3600),
         prediction_interval_seconds: int = 60,
     ) -> None:
         self._prediction_engine = prediction_engine or CompositePredictionEngine()
