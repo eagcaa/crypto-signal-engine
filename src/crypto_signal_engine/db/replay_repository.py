@@ -127,4 +127,6 @@ class ReplayDataRepository:
             binance_book_imbalance=row.binance_book_imbalance,
             bybit_book_imbalance=row.bybit_book_imbalance,
             market_data_quality=row.market_data_quality,
+            liquidation_data_available=row.liquidation_data_available,
+            dataset_provenance=row.dataset_provenance,
         )
