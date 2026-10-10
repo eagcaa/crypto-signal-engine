@@ -10,6 +10,7 @@ from crypto_signal_engine.replay import (
     ReplayResult,
     build_barrier_sweep,
     build_candidate_leaderboard,
+    build_monthly_candidate_leaderboards,
 )
 
 
@@ -245,3 +246,76 @@ def test_one_hour_candidate_uses_two_hour_independence_buckets() -> None:
     )[0]
 
     assert leaderboard.robustness_independent_samples == 1
+
+
+def test_monthly_candidate_reporting_splits_predictions_by_calendar_month() -> None:
+    gate = CandidateGate(
+        name="15m_long_range_high_historical_compatible_v1",
+        horizon_seconds=900,
+        direction=PredictionDirection.LONG,
+        frozen_take_profit_pct=Decimal("0.40"),
+        frozen_stop_loss_pct=Decimal("0.18"),
+    )
+    july_created = datetime(2026, 7, 31, 23, 50, tzinfo=UTC)
+    august_created = datetime(2026, 8, 1, 0, 10, tzinfo=UTC)
+    predictions = tuple(
+        Prediction(
+            id=uuid4(),
+            symbol="BTCUSDT",
+            created_at=created_at,
+            expires_at=created_at + timedelta(minutes=15),
+            horizon_seconds=900,
+            direction=PredictionDirection.LONG,
+            entry_price=Decimal("100"),
+            raw_score=Decimal("0.30"),
+            data_quality=Decimal("1"),
+            model_name="historical_compatible_v1_15m",
+        )
+        for created_at in (july_created, august_created)
+    )
+    points = tuple(
+        ReplayPricePoint(
+            symbol="BTCUSDT",
+            timestamp=created_at + timedelta(minutes=1),
+            price=Decimal("100.50"),
+        )
+        for created_at in (july_created, august_created)
+    )
+    result = ReplayResult(
+        decisions=(),
+        predictions=predictions,
+        evaluations=(),
+        open_predictions=(),
+    )
+    rows = build_barrier_sweep(
+        result,
+        list(points),
+        round_trip_cost_pct=Decimal("0.12"),
+        take_profit_grid=(Decimal("0.40"),),
+        stop_loss_grid=(Decimal("0.18"),),
+    )
+    window = CandidateWindowResult(
+        window_index=1,
+        gate=gate,
+        result=result,
+        price_points=points,
+        row=rows[0],
+        has_feature_data=True,
+        window_start=datetime(2026, 7, 31, 18, 0, tzinfo=UTC),
+        window_end=datetime(2026, 8, 1, 6, 0, tzinfo=UTC),
+    )
+
+    monthly = build_monthly_candidate_leaderboards(
+        [window],
+        minimum_trades=1,
+        minimum_active_windows=1,
+        minimum_positive_window_ratio=Decimal("0"),
+        minimum_profit_factor=Decimal("0"),
+        minimum_robustness_samples=1,
+        robustness_simulations=20,
+        round_trip_cost_pct=Decimal("0.12"),
+    )
+
+    assert [month for month, _ in monthly] == ["2026-07", "2026-08"]
+    assert monthly[0][1][0].trades == 1
+    assert monthly[1][1][0].trades == 1
