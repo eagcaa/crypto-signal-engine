@@ -132,6 +132,10 @@ def build_candidate_leaderboard(
             else None
         )
 
+        robustness_bucket_minutes = max(
+            60,
+            (gate.horizon_seconds * 2 + 59) // 60,
+        )
         independent_returns = build_candidate_independent_returns(
             aggregate_result
             if predictions and price_points
@@ -145,6 +149,7 @@ def build_candidate_leaderboard(
             take_profit_pct=gate.frozen_take_profit_pct,
             stop_loss_pct=gate.frozen_stop_loss_pct,
             round_trip_cost_pct=round_trip_cost_pct,
+            bucket_minutes=robustness_bucket_minutes,
         )
         robustness = bootstrap_candidate_robustness(
             independent_returns,
