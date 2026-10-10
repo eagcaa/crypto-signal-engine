@@ -15,10 +15,12 @@ from crypto_signal_engine.db.replay_repository import ReplayDataRepository
 from crypto_signal_engine.predictions import (
     CompositePredictionEngine,
     HistoricalCompatiblePredictionEngine,
+    HistoricalCompatibleV2PredictionEngine,
 )
 from crypto_signal_engine.replay import (
     CANDIDATE_GATES,
     HISTORICAL_CANDIDATE_GATES,
+    HISTORICAL_V2_CANDIDATE_GATES,
     CandidateWindowResult,
     ReplayResult,
     ReplayRunner,
@@ -48,6 +50,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--dataset-provenance", default="")
     parser.add_argument("--historical-compatible", action="store_true")
+    parser.add_argument(
+        "--historical-v2",
+        action="store_true",
+        help=(
+            "Use preregistered historical-compatible v2 engine/gates. "
+            "Requires v2 provenance rows materialized from a PASS "
+            "metrics-alignment artifact."
+        ),
+    )
     parser.add_argument(
         "--backfill-root",
         default="runtime-data/backfill",
@@ -81,6 +92,7 @@ async def run(
     end_at: str = "",
     dataset_provenance: str = "",
     historical_compatible: bool = False,
+    historical_v2: bool = False,
     backfill_root: str = "runtime-data/backfill",
 ) -> None:
     if window_hours <= 0:
@@ -90,11 +102,18 @@ async def run(
     if end_offset_hours < 0:
         raise ValueError("end_offset_hours cannot be negative")
 
-    candidate_gates = (
-        HISTORICAL_CANDIDATE_GATES
-        if historical_compatible
-        else CANDIDATE_GATES
-    )
+    if historical_compatible and historical_v2:
+        raise ValueError(
+            "Choose only one historical engine version."
+        )
+
+    historical_mode = historical_compatible or historical_v2
+    if historical_v2:
+        candidate_gates = HISTORICAL_V2_CANDIDATE_GATES
+    elif historical_compatible:
+        candidate_gates = HISTORICAL_CANDIDATE_GATES
+    else:
+        candidate_gates = CANDIDATE_GATES
     frozen_gates = tuple(
         gate
         for gate in candidate_gates
@@ -114,11 +133,12 @@ async def run(
     try:
         session_factory = create_session_factory(engine)
         repository = ReplayDataRepository(session_factory)
-        prediction_engine_cls = (
-            HistoricalCompatiblePredictionEngine
-            if historical_compatible
-            else CompositePredictionEngine
-        )
+        if historical_v2:
+            prediction_engine_cls = HistoricalCompatibleV2PredictionEngine
+        elif historical_compatible:
+            prediction_engine_cls = HistoricalCompatiblePredictionEngine
+        else:
+            prediction_engine_cls = CompositePredictionEngine
         runner = ReplayRunner(
             prediction_engine=prediction_engine_cls(
                 fee_pct_per_side=settings.paper_fee_pct_per_side,
@@ -151,9 +171,9 @@ async def run(
             f"window_hours={window_hours:g} "
             f"windows={windows} "
             f"end_offset_hours={end_offset_hours:g} "
-            f"price_source={'local_binance_vision_aggTrades' if historical_compatible else 'binance_spot_aggTrades_api'} "
+            f"price_source={'local_binance_vision_aggTrades' if historical_mode else 'binance_spot_aggTrades_api'} "
             f"provenance={dataset_provenance or 'any'} "
-            f"engine={'historical_compatible' if historical_compatible else 'live_v4'}"
+            f"engine={'historical_compatible_v2' if historical_v2 else ('historical_compatible_v1' if historical_compatible else 'live_v4')}"
         )
 
         for offset_index in range(windows):
@@ -173,7 +193,7 @@ async def run(
                     for prediction in discovery_result.predictions
                 ]
                 if prediction_windows:
-                    if historical_compatible:
+                    if historical_mode:
                         exact_prices = (
                             local_price_source.fetch_price_points_for_windows(
                                 symbol,
@@ -371,6 +391,7 @@ def main() -> None:
             end_at=args.end_at,
             dataset_provenance=args.dataset_provenance,
             historical_compatible=args.historical_compatible,
+            historical_v2=args.historical_v2,
             backfill_root=args.backfill_root,
         )
     )
