@@ -10,6 +10,7 @@ from crypto_signal_engine.examples.backfill_metrics import (
 )
 from crypto_signal_engine.examples.validate_metrics_alignment import (
     LiveOiPoint,
+    RatioLagResult,
     evaluate_alignment,
 )
 from crypto_signal_engine.features.historical_metrics import (
@@ -33,6 +34,42 @@ def _archive_point(
         taker_buy_sell_ratio=Decimal("1.05"),
     )
 
+
+
+
+def _valid_ratio_results(
+    *,
+    p90_seconds: float = 60.0,
+) -> list[RatioLagResult]:
+    return [
+        RatioLagResult(
+            live_field="long_short_ratio",
+            archive_column="count_long_short_ratio",
+            archive_rows=100,
+            matched=100,
+            match_rate=1.0,
+            median_lag_seconds=p90_seconds,
+            p90_lag_seconds=p90_seconds,
+        ),
+        RatioLagResult(
+            live_field="top_trader_long_short_ratio",
+            archive_column="count_toptrader_long_short_ratio",
+            archive_rows=100,
+            matched=100,
+            match_rate=1.0,
+            median_lag_seconds=p90_seconds,
+            p90_lag_seconds=p90_seconds,
+        ),
+        RatioLagResult(
+            live_field="taker_buy_sell_ratio",
+            archive_column="sum_taker_long_short_vol_ratio",
+            archive_rows=100,
+            matched=100,
+            match_rate=1.0,
+            median_lag_seconds=p90_seconds,
+            p90_lag_seconds=p90_seconds,
+        ),
+    ]
 
 def test_metrics_archive_spec_uses_binance_vision_daily_metrics_path() -> None:
     spec = metrics_archive_spec(
@@ -120,10 +157,16 @@ def test_alignment_selects_plus_five_minute_observable_shift() -> None:
         for point in archive_points
     ]
 
-    result = evaluate_alignment(archive_points, live_points)
+    result = evaluate_alignment(
+        archive_points,
+        live_points,
+        _valid_ratio_results(p90_seconds=120),
+    )
 
     assert result.status == "PASS"
     assert result.selected_shift_minutes == 5
+    assert result.ratio_delay_minutes == 2
+    assert len(result.ratio_mappings) == 3
 
 
 def test_alignment_is_ambiguous_when_all_shifts_fit_equally() -> None:
@@ -143,7 +186,11 @@ def test_alignment_is_ambiguous_when_all_shifts_fit_equally() -> None:
         for index in range(70)
     ]
 
-    result = evaluate_alignment(archive_points, live_points)
+    result = evaluate_alignment(
+        archive_points,
+        live_points,
+        _valid_ratio_results(),
+    )
 
     assert result.status == "AMBIGUOUS"
     assert result.selected_shift_minutes is None
@@ -209,3 +256,59 @@ def test_metrics_timeline_never_exposes_point_before_observable_time() -> None:
         / Decimal("1000")
         * Decimal("100")
     )
+
+
+def test_alignment_fails_when_ratio_observability_is_missing() -> None:
+    start = datetime(2026, 10, 8, tzinfo=UTC)
+    archive_points = [
+        _archive_point(
+            start + timedelta(minutes=5 * index),
+            str(1000 + 100 * index),
+        )
+        for index in range(12)
+    ]
+    live_points = [
+        LiveOiPoint(
+            timestamp=point.timestamp,
+            open_interest=point.open_interest,
+        )
+        for point in archive_points
+    ]
+
+    result = evaluate_alignment(
+        archive_points,
+        live_points,
+        [],
+    )
+
+    assert result.status == "FAIL"
+    assert result.selected_shift_minutes is None
+    assert result.reason.startswith("ratio_mapping_missing:")
+
+
+def test_alignment_uses_conservative_ratio_delay_when_longer_than_oi_shift() -> None:
+    start = datetime(2026, 10, 8, tzinfo=UTC)
+    archive_points = [
+        _archive_point(
+            start + timedelta(minutes=5 * index),
+            str(1000 + 100 * index),
+        )
+        for index in range(12)
+    ]
+    live_points = [
+        LiveOiPoint(
+            timestamp=point.timestamp,
+            open_interest=point.open_interest,
+        )
+        for point in archive_points
+    ]
+
+    result = evaluate_alignment(
+        archive_points,
+        live_points,
+        _valid_ratio_results(p90_seconds=420),
+    )
+
+    assert result.status == "PASS"
+    assert result.ratio_delay_minutes == 7
+    assert result.selected_shift_minutes == 7
