@@ -151,15 +151,21 @@ def default_materialized_path(
     days: int,
     end_day: date,
     input_root: Path,
+    historical_version: str = "v1",
 ) -> Path:
     if days <= 0:
         raise ValueError("days must be positive")
     start_day = end_day.fromordinal(end_day.toordinal() - days + 1)
+    prefix = (
+        "features-v2"
+        if historical_version == "v2"
+        else "features"
+    )
     return (
         input_root
         / symbol.upper()
         / "materialized"
-        / f"features-{start_day.isoformat()}-{end_day.isoformat()}.jsonl"
+        / f"{prefix}-{start_day.isoformat()}-{end_day.isoformat()}.jsonl"
     )
 
 
@@ -172,6 +178,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--days", type=int, default=7)
     parser.add_argument("--end-date", default="")
     parser.add_argument("--input-root", default="runtime-data/backfill")
+    parser.add_argument(
+        "--historical-version",
+        choices=("v1", "v2"),
+        default="v1",
+    )
     parser.add_argument("--batch-size", type=int, default=1000)
     parser.add_argument(
         "--replace",
@@ -196,6 +207,7 @@ def main() -> None:
             days=args.days,
             end_day=date.fromisoformat(args.end_date),
             input_root=Path(args.input_root),
+            historical_version=args.historical_version,
         )
 
     asyncio.run(
