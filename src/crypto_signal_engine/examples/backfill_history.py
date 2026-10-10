@@ -11,6 +11,7 @@ import aiohttp
 
 BASE_URL = "https://data.binance.vision/data"
 TECHNICAL_WARMUP_DAYS = 18
+EXACT_OUTCOME_BUFFER_DAYS = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +89,26 @@ def daily_archive_specs(
     specs.extend(kline_archive_specs(symbol=symbol, day=day))
     return tuple(specs)
 
+
+
+def exact_outcome_archive_specs(
+    *,
+    symbol: str,
+    day: date,
+) -> tuple[ArchiveSpec, ...]:
+    """Spot aggTrades needed only to finish first-touch outcomes past end_day."""
+    symbol = symbol.upper()
+    stamp = day.isoformat()
+    return (
+        ArchiveSpec(
+            dataset="spot_aggTrades_outcome_buffer",
+            url=(
+                f"{BASE_URL}/spot/daily/aggTrades/{symbol}/"
+                f"{symbol}-aggTrades-{stamp}.zip"
+            ),
+            relative_path=f"spot/aggTrades/{symbol}-aggTrades-{stamp}.zip",
+        ),
+    )
 
 def archive_timestamp_to_datetime(value: int | str) -> datetime:
     raw = int(value)
@@ -227,6 +248,28 @@ async def run(
                     f"bytes={result.bytes}"
                 )
 
+        for offset in range(1, EXACT_OUTCOME_BUFFER_DAYS + 1):
+            current_day = days_to_fetch[-1] + timedelta(days=offset)
+            print(
+                "BACKFILL_OUTCOME_BUFFER "
+                f"day={current_day.isoformat()}"
+            )
+            for spec in exact_outcome_archive_specs(
+                symbol=symbol,
+                day=current_day,
+            ):
+                result = await download_archive(
+                    session,
+                    spec,
+                    root=root,
+                )
+                results.append(result)
+                print(
+                    f"  dataset={result.dataset} "
+                    f"status={result.status} "
+                    f"bytes={result.bytes}"
+                )
+
     manifest = {
         "schema_version": 1,
         "symbol": symbol.upper(),
@@ -236,6 +279,7 @@ async def run(
         "days": len(days_to_fetch),
         "feature_snapshot_cadence_seconds": 60,
         "technical_warmup_days": TECHNICAL_WARMUP_DAYS,
+        "exact_outcome_buffer_days": EXACT_OUTCOME_BUFFER_DAYS,
         "dataset_provenance": "binance_vision_historical_compatible_v1",
         "files": [asdict(item) for item in results],
     }
@@ -258,7 +302,8 @@ async def run(
     )
     print(
         "NOTE feature materialization is intentionally 60s cadence; "
-        "raw aggTrades remain tick-level for later exact first-touch replay."
+        "raw aggTrades remain tick-level for later exact first-touch replay, "
+        "including the post-period outcome buffer day."
     )
 
 
