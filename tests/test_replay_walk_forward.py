@@ -172,3 +172,76 @@ def test_candidate_leaderboard_ignores_unfrozen_candidates() -> None:
     windows = [_window(index=1, gate=gate, outcome="tp")]
 
     assert build_candidate_leaderboard(windows) == ()
+
+
+
+def test_one_hour_candidate_uses_two_hour_independence_buckets() -> None:
+    gate = CandidateGate(
+        name="1h_test",
+        horizon_seconds=3600,
+        direction=PredictionDirection.LONG,
+        frozen_take_profit_pct=Decimal("0.40"),
+        frozen_stop_loss_pct=Decimal("0.18"),
+    )
+
+    created_at = datetime(2026, 10, 9, 10, 0, tzinfo=UTC)
+    predictions = tuple(
+        Prediction(
+            id=uuid4(),
+            symbol="BTCUSDT",
+            created_at=created_at + timedelta(minutes=minute),
+            expires_at=created_at + timedelta(minutes=minute + 60),
+            horizon_seconds=3600,
+            direction=PredictionDirection.LONG,
+            entry_price=Decimal("100"),
+            raw_score=Decimal("0.30"),
+            data_quality=Decimal("0.90"),
+            model_name="shadow_test",
+        )
+        for minute in (0, 70)
+    )
+    points = (
+        ReplayPricePoint(
+            symbol="BTCUSDT",
+            timestamp=created_at + timedelta(minutes=1),
+            price=Decimal("100.50"),
+        ),
+        ReplayPricePoint(
+            symbol="BTCUSDT",
+            timestamp=created_at + timedelta(minutes=71),
+            price=Decimal("100.50"),
+        ),
+    )
+    result = ReplayResult(
+        decisions=(),
+        predictions=predictions,
+        evaluations=(),
+        open_predictions=(),
+    )
+    row = build_barrier_sweep(
+        result,
+        list(points),
+        round_trip_cost_pct=Decimal("0.12"),
+        take_profit_grid=(Decimal("0.40"),),
+        stop_loss_grid=(Decimal("0.18"),),
+    )[0]
+
+    leaderboard = build_candidate_leaderboard(
+        [
+            CandidateWindowResult(
+                window_index=1,
+                gate=gate,
+                result=result,
+                price_points=points,
+                row=row,
+            )
+        ],
+        minimum_trades=1,
+        minimum_active_windows=1,
+        minimum_positive_window_ratio=Decimal("0"),
+        minimum_profit_factor=Decimal("0"),
+        minimum_robustness_samples=1,
+        robustness_simulations=20,
+    )[0]
+
+    assert leaderboard.robustness_independent_samples == 1
