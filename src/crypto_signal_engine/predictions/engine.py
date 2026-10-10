@@ -288,7 +288,10 @@ class CompositePredictionEngine:
             contributions[name] = contribution
             raw_score += contribution
 
-        raw_score = self._clamp(raw_score)
+        raw_score = self._finalize_raw_score(
+            raw_score,
+            active_weight=active_weight,
+        )
         reason = self._reason(profile, contributions, raw_score)
 
         if abs(raw_score) < self._minimum_abs_score:
@@ -685,6 +688,14 @@ class CompositePredictionEngine:
             return None
         return sum(values, Decimal("0")) / Decimal(len(values))
 
+    def _finalize_raw_score(
+        self,
+        raw_score: Decimal,
+        *,
+        active_weight: Decimal,
+    ) -> Decimal:
+        return self._clamp(raw_score)
+
     @staticmethod
     def _clamp(value: Decimal) -> Decimal:
         return max(
@@ -758,3 +769,13 @@ class HistoricalCompatiblePredictionEngine(CompositePredictionEngine):
         profile: _HorizonProfile,
     ) -> Decimal | None:
         return None
+
+    def _finalize_raw_score(
+        self,
+        raw_score: Decimal,
+        *,
+        active_weight: Decimal,
+    ) -> Decimal:
+        if active_weight <= 0:
+            return Decimal("0")
+        return self._clamp(raw_score / active_weight)
