@@ -1,6 +1,7 @@
 from datetime import date
 
 from crypto_signal_engine.examples.backfill_history import (
+    archive_timestamp_to_datetime,
     daily_archive_specs,
     requested_days,
 )
@@ -37,3 +38,21 @@ def test_requested_days_is_inclusive_and_ordered() -> None:
         date(2026, 10, 8),
         date(2026, 10, 9),
     )
+
+
+def test_archive_timestamp_supports_milliseconds_and_microseconds() -> None:
+    millisecond_value = 1760000000000
+    microsecond_value = 1760000000000000
+
+    assert archive_timestamp_to_datetime(
+        millisecond_value
+    ) == archive_timestamp_to_datetime(microsecond_value)
+
+
+def test_archive_timestamp_rejects_impossible_values() -> None:
+    try:
+        archive_timestamp_to_datetime(123)
+    except ValueError as exc:
+        assert "supported range" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
