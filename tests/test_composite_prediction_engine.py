@@ -6,6 +6,7 @@ from crypto_signal_engine.features.research import ResearchFeatureSnapshot
 from crypto_signal_engine.predictions import (
     CompositePredictionEngine,
     HistoricalCompatiblePredictionEngine,
+    HistoricalCompatibleV2PredictionEngine,
     PredictionDecisionDirection,
 )
 
@@ -949,3 +950,104 @@ def test_historical_v1_ignores_metrics_even_when_present() -> None:
         "futures_cvd",
         "trend",
     }
+
+
+def test_historical_v2_uses_only_preregistered_feature_groups() -> None:
+    features = replace(
+        make_features(
+            binance_book="0.9",
+            bybit_book="0.9",
+            spot_cvd_1m="5",
+            spot_cvd_5m="5",
+            futures_cvd_1m="5",
+            futures_cvd_5m="5",
+            binance_oi_5m="0.8",
+            bybit_oi_5m="0",
+            funding_binance="-0.0005",
+            funding_bybit="-0.0005",
+            binance_long_short="0.6",
+            bybit_long_short="1",
+            top_trader="0.7",
+            taker_ratio="2.0",
+            liq_imbalance="0.8",
+            spot_sources=1,
+            futures_sources=1,
+            data_quality="1.0",
+        ),
+        bybit_oi_change_5m_pct=None,
+        bybit_oi_change_15m_pct=None,
+        bybit_funding_rate=None,
+        bybit_long_short_ratio=None,
+        dataset_provenance=(
+            "binance_vision_historical_compatible_v2"
+        ),
+        liquidation_data_available=False,
+        binance_book_imbalance=None,
+        bybit_book_imbalance=None,
+    )
+
+    decision = HistoricalCompatibleV2PredictionEngine(
+        minimum_abs_score=Decimal("0"),
+    ).decide(features, horizon_seconds=900)
+
+    assert set(decision.feature_contributions) == {
+        "spot_cvd",
+        "futures_cvd",
+        "open_interest",
+        "crowding",
+        "taker_flow",
+        "trend",
+    }
+    assert "funding" not in decision.feature_contributions
+    assert "order_book" not in decision.feature_contributions
+    assert "liquidations" not in decision.feature_contributions
+    assert decision.prediction is not None
+    assert (
+        decision.prediction.model_name
+        == "historical_compatible_v2_15m"
+    )
+
+
+def test_historical_v2_requires_full_preregistered_active_weight() -> None:
+    features = replace(
+        make_features(
+            binance_book="0",
+            bybit_book="0",
+            spot_cvd_1m="5",
+            spot_cvd_5m="5",
+            futures_cvd_1m="5",
+            futures_cvd_5m="5",
+            binance_oi_5m="0.8",
+            bybit_oi_5m="0",
+            funding_binance="0",
+            funding_bybit="0",
+            binance_long_short="0.8",
+            bybit_long_short="1",
+            top_trader="0.8",
+            taker_ratio="1",
+            liq_imbalance="0",
+            spot_sources=1,
+            futures_sources=1,
+            data_quality="1.0",
+        ),
+        bybit_oi_change_5m_pct=None,
+        bybit_oi_change_15m_pct=None,
+        bybit_funding_rate=None,
+        bybit_long_short_ratio=None,
+        binance_taker_buy_sell_ratio=None,
+        dataset_provenance=(
+            "binance_vision_historical_compatible_v2"
+        ),
+        liquidation_data_available=False,
+        binance_book_imbalance=None,
+        bybit_book_imbalance=None,
+    )
+
+    decision = HistoricalCompatibleV2PredictionEngine().decide(
+        features,
+        horizon_seconds=900,
+    )
+
+    assert decision.prediction is None
+    assert decision.direction == PredictionDecisionDirection.NO_TRADE
+    assert "Insufficient active feature weight: 0.75/0.80" in decision.reason
