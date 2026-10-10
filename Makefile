@@ -1,4 +1,4 @@
-.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical backfill-history backfill-materialize backfill-load calibrate db-up db-down db-logs db-shell clean
+.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical backfill-history backfill-metrics validate-metrics-alignment backfill-materialize backfill-load calibrate db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
 PYTHONPATH_SRC := PYTHONPATH=src
@@ -7,6 +7,7 @@ HOURS ?= 6
 OFFSET ?= 12
 WINDOWS ?= 6
 DAYS ?= 7
+START_DATE ?=
 END_DATE ?=
 END_AT ?=
 PROVENANCE ?= binance_vision_historical_compatible_v1
@@ -34,6 +35,8 @@ help:
 	@echo "  make replay-historical Replay historical-compatible DB rows (END_AT required)"
 	@echo "  make replay-walk-forward-historical Historical-compatible walk forward"
 	@echo "  make backfill-history Download/validate Binance Vision history (DAYS=7 END_DATE=YYYY-MM-DD)"
+	@echo "  make backfill-metrics Download only Binance Vision USD-M metrics (START_DATE/END_DATE)"
+	@echo "  make validate-metrics-alignment Compare archived metrics OI against persisted live Binance OI"
 	@echo "  make backfill-materialize Convert downloaded history to 60s features"
 	@echo "  make backfill-load Load materialized historical features into PostgreSQL"
 	@echo "  make calibrate     Build exact replay calibration artifact"
@@ -126,6 +129,16 @@ replay-walk-forward-historical:
 backfill-history:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
 	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.backfill_history --symbol "$(SYMBOL)" --days "$(DAYS)" $(if $(END_DATE),--end-date "$(END_DATE)",)
+
+backfill-metrics:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	@if [ -z "$(START_DATE)" ] || [ -z "$(END_DATE)" ]; then echo "START_DATE and END_DATE are required, e.g. START_DATE=2026-10-08 END_DATE=2026-10-10"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.backfill_metrics --symbol "$(SYMBOL)" --start-date "$(START_DATE)" --end-date "$(END_DATE)"
+
+validate-metrics-alignment:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	@if [ -z "$(START_DATE)" ] || [ -z "$(END_DATE)" ]; then echo "START_DATE and END_DATE are required, e.g. START_DATE=2026-10-08 END_DATE=2026-10-10"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.validate_metrics_alignment --symbol "$(SYMBOL)" --start-date "$(START_DATE)" --end-date "$(END_DATE)"
 
 backfill-materialize:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
