@@ -236,21 +236,84 @@ def build_candidate_leaderboard(
 
 def build_monthly_candidate_leaderboards(
     windows: list[CandidateWindowResult],
+    *,
+    round_trip_cost_pct: Decimal = Decimal("0.12"),
     **leaderboard_kwargs,
 ) -> tuple[tuple[str, tuple[CandidateLeaderboardRow, ...]], ...]:
     grouped: dict[str, list[CandidateWindowResult]] = {}
+
     for item in windows:
-        if item.window_start is None:
+        predictions_by_month: dict[str, list] = {}
+        for prediction in item.result.predictions:
+            month = prediction.created_at.strftime("%Y-%m")
+            predictions_by_month.setdefault(month, []).append(prediction)
+
+        if not predictions_by_month:
+            if item.window_start is not None and item.has_feature_data:
+                month = item.window_start.strftime("%Y-%m")
+                grouped.setdefault(month, []).append(
+                    CandidateWindowResult(
+                        window_index=item.window_index,
+                        gate=item.gate,
+                        result=ReplayResult(
+                            decisions=(),
+                            predictions=(),
+                            evaluations=(),
+                            open_predictions=(),
+                        ),
+                        price_points=item.price_points,
+                        row=None,
+                        has_feature_data=True,
+                        window_start=item.window_start,
+                        window_end=item.window_end,
+                    )
+                )
             continue
-        month = item.window_start.astimezone(
-            item.window_start.tzinfo
-        ).strftime("%Y-%m")
-        grouped.setdefault(month, []).append(item)
+
+        for month, predictions in predictions_by_month.items():
+            prediction_ids = {prediction.id for prediction in predictions}
+            subset = ReplayResult(
+                decisions=(),
+                predictions=tuple(predictions),
+                evaluations=tuple(
+                    evaluation
+                    for evaluation in item.result.evaluations
+                    if evaluation.prediction_id in prediction_ids
+                ),
+                open_predictions=tuple(
+                    prediction
+                    for prediction in item.result.open_predictions
+                    if prediction.id in prediction_ids
+                ),
+            )
+            rows = build_barrier_sweep(
+                subset,
+                list(item.price_points),
+                round_trip_cost_pct=round_trip_cost_pct,
+                take_profit_grid=(item.gate.frozen_take_profit_pct,),
+                stop_loss_grid=(item.gate.frozen_stop_loss_pct,),
+            )
+            grouped.setdefault(month, []).append(
+                CandidateWindowResult(
+                    window_index=item.window_index,
+                    gate=item.gate,
+                    result=subset,
+                    price_points=item.price_points,
+                    row=rows[0] if rows else None,
+                    has_feature_data=item.has_feature_data,
+                    window_start=item.window_start,
+                    window_end=item.window_end,
+                )
+            )
 
     return tuple(
         (
             month,
-            build_candidate_leaderboard(items, **leaderboard_kwargs),
+            build_candidate_leaderboard(
+                items,
+                round_trip_cost_pct=round_trip_cost_pct,
+                **leaderboard_kwargs,
+            ),
         )
         for month, items in sorted(grouped.items())
     )
