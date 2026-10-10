@@ -684,3 +684,88 @@ def test_historical_compatible_profile_excludes_order_book_and_liquidations() ->
     assert "liquidations" not in decision.feature_contributions
     assert decision.prediction is not None
     assert decision.prediction.model_name == "historical_compatible_v1_15m"
+
+
+def test_historical_profile_does_not_reject_binance_only_quality() -> None:
+    features = replace(
+        make_features(
+            binance_book="0",
+            bybit_book="0",
+            spot_cvd_1m="5",
+            spot_cvd_5m="5",
+            futures_cvd_1m="5",
+            futures_cvd_5m="5",
+            binance_oi_5m="0.4",
+            bybit_oi_5m="0",
+            funding_binance="-0.0001",
+            funding_bybit="0",
+            binance_long_short="0.9",
+            bybit_long_short="1",
+            top_trader="0.9",
+            taker_ratio="1.5",
+            liq_imbalance="0",
+            spot_sources=1,
+            futures_sources=1,
+            data_quality="0.33",
+        ),
+        dataset_provenance="binance_vision_historical_compatible_v1",
+        liquidation_data_available=False,
+        binance_book_imbalance=None,
+        bybit_book_imbalance=None,
+    )
+
+    decision = HistoricalCompatiblePredictionEngine().decide(
+        features,
+        horizon_seconds=900,
+    )
+
+    assert decision.prediction is not None
+    assert decision.prediction.model_name == "historical_compatible_v1_15m"
+
+
+def test_historical_profile_does_not_half_single_source_cvd() -> None:
+    features = replace(
+        make_features(
+            binance_book="0",
+            bybit_book="0",
+            spot_cvd_1m="5",
+            spot_cvd_5m="5",
+            futures_cvd_1m="5",
+            futures_cvd_5m="5",
+            binance_oi_5m="0",
+            bybit_oi_5m="0",
+            funding_binance="0",
+            funding_bybit="0",
+            binance_long_short="1",
+            bybit_long_short="1",
+            top_trader="1",
+            taker_ratio="1",
+            liq_imbalance="0",
+            spot_sources=1,
+            futures_sources=1,
+            data_quality="0.33",
+        ),
+        spot_cvd_ratio_15m=Decimal("0.80"),
+        futures_cvd_ratio_15m=Decimal("0.80"),
+        dataset_provenance="binance_vision_historical_compatible_v1",
+        liquidation_data_available=False,
+        binance_book_imbalance=None,
+        bybit_book_imbalance=None,
+    )
+
+    live = CompositePredictionEngine(
+        minimum_data_quality=Decimal("0"),
+    ).decide(features, horizon_seconds=900)
+    historical = HistoricalCompatiblePredictionEngine().decide(
+        features,
+        horizon_seconds=900,
+    )
+
+    assert historical.feature_contributions["spot_cvd"] == Decimal("0.1440")
+    assert historical.feature_contributions["futures_cvd"] == Decimal("0.1440")
+    assert historical.feature_contributions["spot_cvd"] == (
+        live.feature_contributions["spot_cvd"] * Decimal("2")
+    )
+    assert historical.feature_contributions["futures_cvd"] == (
+        live.feature_contributions["futures_cvd"] * Decimal("2")
+    )
