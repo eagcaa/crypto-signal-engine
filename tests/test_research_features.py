@@ -109,6 +109,21 @@ def test_rolling_cvd_and_liquidation_imbalance() -> None:
             )
         )
 
+        await aggregator.update_technical(
+            TechnicalFeatureSnapshot(
+                interval="1h",
+                close=Decimal("85000"),
+                ema_fast=Decimal("85200"),
+                ema_slow=Decimal("84800"),
+                ema_spread_atr=Decimal("0.5"),
+                atr=Decimal("800"),
+                atr_pct=Decimal("0.941"),
+                trend_score=Decimal("0.5"),
+                trend_regime="uptrend",
+                volatility_regime="high",
+            )
+        )
+
         snapshot = await aggregator.snapshot(_market_snapshot(now))
 
         assert snapshot.spot_cvd_1m == Decimal("2")
@@ -122,6 +137,10 @@ def test_rolling_cvd_and_liquidation_imbalance() -> None:
         assert snapshot.trend_regime_5m == "uptrend"
         assert snapshot.atr_pct_5m == Decimal("0.588")
         assert snapshot.trend_score_15m is None
+        assert snapshot.trend_score_1h == Decimal("0.5")
+        assert snapshot.trend_regime_1h == "uptrend"
+        assert snapshot.atr_pct_1h == Decimal("0.941")
+        assert snapshot.trend_score_4h is None
         assert snapshot.long_liquidations_5m_usd == Decimal("85000")
         assert snapshot.short_liquidations_5m_usd == Decimal("255000")
         assert snapshot.liquidation_imbalance_5m == Decimal("0.5")
