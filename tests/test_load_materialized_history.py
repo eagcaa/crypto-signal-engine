@@ -91,3 +91,20 @@ def test_snapshot_from_json_preserves_provenance_and_decimal_fields() -> None:
     assert snapshot.dataset_provenance == (
         "binance_vision_historical_compatible_v1"
     )
+
+
+def test_default_materialized_path_supports_v2_prefix(tmp_path: Path) -> None:
+    path = default_materialized_path(
+        symbol="btcusdt",
+        days=62,
+        end_day=date(2026, 8, 31),
+        input_root=tmp_path,
+        historical_version="v2",
+    )
+
+    assert path == (
+        tmp_path
+        / "BTCUSDT"
+        / "materialized"
+        / "features-v2-2026-07-01-2026-08-31.jsonl"
+    )
