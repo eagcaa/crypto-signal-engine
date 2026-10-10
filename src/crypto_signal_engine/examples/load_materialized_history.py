@@ -138,7 +138,7 @@ async def load_file(
             f"path={path} "
             f"inserted={inserted} "
             f"mode={'replace' if replace else 'insert'} "
-            f"{'replaced_or_existing' if replace else 'skipped_same_provenance'}={skipped}"
+            f"{'replaced' if replace else 'skipped_same_provenance'}={skipped}"
         )
         return inserted, skipped
     finally:
