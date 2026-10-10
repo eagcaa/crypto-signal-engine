@@ -2,6 +2,8 @@ from datetime import date
 
 from crypto_signal_engine.examples.backfill_history import (
     TECHNICAL_WARMUP_DAYS,
+    EXACT_OUTCOME_BUFFER_DAYS,
+    exact_outcome_archive_specs,
     archive_timestamp_to_datetime,
     daily_archive_specs,
     kline_archive_specs,
@@ -73,3 +75,16 @@ def test_backfill_downloads_eighteen_days_of_technical_warmup() -> None:
         "spot_klines_1h",
         "spot_klines_4h",
     }
+
+
+def test_backfill_uses_one_post_period_spot_outcome_buffer_day() -> None:
+    assert EXACT_OUTCOME_BUFFER_DAYS == 1
+    specs = exact_outcome_archive_specs(
+        symbol="BTCUSDT",
+        day=date(2026, 7, 8),
+    )
+    assert len(specs) == 1
+    assert specs[0].dataset == "spot_aggTrades_outcome_buffer"
+    assert specs[0].relative_path.endswith(
+        "spot/aggTrades/BTCUSDT-aggTrades-2026-07-08.zip"
+    )
