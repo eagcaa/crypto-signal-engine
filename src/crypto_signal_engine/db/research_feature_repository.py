@@ -132,25 +132,21 @@ class ResearchFeatureRepository:
                         )
                     ).all()
                 )
-                existing_by_timestamp = {
-                    row.timestamp: row
+                existing_keys = {
+                    (row.timestamp, row.dataset_provenance)
                     for row in existing_rows
                 }
 
                 rows_to_add: list[ResearchFeatureSnapshotRow] = []
                 for snapshot in batch:
-                    existing = existing_by_timestamp.get(snapshot.timestamp)
-                    if existing is None:
+                    key = (
+                        snapshot.timestamp,
+                        snapshot.dataset_provenance,
+                    )
+                    if key not in existing_keys:
                         rows_to_add.append(self._to_row(snapshot))
+                        existing_keys.add(key)
                         continue
-
-                    if existing.dataset_provenance != snapshot.dataset_provenance:
-                        raise ValueError(
-                            "Research feature provenance conflict at "
-                            f"{snapshot.symbol} {snapshot.timestamp.isoformat()}: "
-                            f"existing={existing.dataset_provenance} "
-                            f"incoming={snapshot.dataset_provenance}"
-                        )
                     skipped += 1
 
                 session.add_all(rows_to_add)
@@ -193,25 +189,18 @@ class ResearchFeatureRepository:
                         )
                     ).all()
                 )
-                existing_by_timestamp = {
-                    row.timestamp: row
+                existing_by_key = {
+                    (row.timestamp, row.dataset_provenance): row
                     for row in existing_rows
                 }
 
                 for snapshot in batch:
-                    existing = existing_by_timestamp.get(snapshot.timestamp)
+                    key = (
+                        snapshot.timestamp,
+                        snapshot.dataset_provenance,
+                    )
+                    existing = existing_by_key.get(key)
                     if existing is not None:
-                        if (
-                            existing.dataset_provenance
-                            != snapshot.dataset_provenance
-                        ):
-                            raise ValueError(
-                                "Research feature provenance conflict at "
-                                f"{snapshot.symbol} "
-                                f"{snapshot.timestamp.isoformat()}: "
-                                f"existing={existing.dataset_provenance} "
-                                f"incoming={snapshot.dataset_provenance}"
-                            )
                         await session.delete(existing)
                         replaced += 1
 
