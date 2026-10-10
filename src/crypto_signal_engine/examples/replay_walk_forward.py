@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from decimal import Decimal
 
 from crypto_signal_engine.collectors.binance import BinanceSpotHistoricalTradeClient
@@ -21,8 +22,10 @@ from crypto_signal_engine.replay import (
     CandidateWindowResult,
     ReplayResult,
     ReplayRunner,
+    LocalBinanceSpotAggTradePriceSource,
     build_barrier_sweep,
     build_candidate_leaderboard,
+    build_monthly_candidate_leaderboards,
     filter_replay_result,
 )
 
@@ -45,6 +48,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--dataset-provenance", default="")
     parser.add_argument("--historical-compatible", action="store_true")
+    parser.add_argument(
+        "--backfill-root",
+        default="runtime-data/backfill",
+        help="Root containing local Binance Vision archives.",
+    )
     parser.add_argument("--minimum-trades", type=int, default=30)
     parser.add_argument("--minimum-active-windows", type=int, default=3)
     parser.add_argument(
@@ -73,6 +81,7 @@ async def run(
     end_at: str = "",
     dataset_provenance: str = "",
     historical_compatible: bool = False,
+    backfill_root: str = "runtime-data/backfill",
 ) -> None:
     if window_hours <= 0:
         raise ValueError("window_hours must be positive")
@@ -117,6 +126,9 @@ async def run(
             )
         )
         historical_client = BinanceSpotHistoricalTradeClient()
+        local_price_source = LocalBinanceSpotAggTradePriceSource(
+            Path(backfill_root)
+        )
 
         round_trip_cost_pct = Decimal("2") * (
             settings.paper_fee_pct_per_side
@@ -139,7 +151,7 @@ async def run(
             f"window_hours={window_hours:g} "
             f"windows={windows} "
             f"end_offset_hours={end_offset_hours:g} "
-            "price_source=binance_spot_aggTrades "
+            f"price_source={'local_binance_vision_aggTrades' if historical_compatible else 'binance_spot_aggTrades_api'} "
             f"provenance={dataset_provenance or 'any'} "
             f"engine={'historical_compatible' if historical_compatible else 'live_v4'}"
         )
@@ -160,14 +172,23 @@ async def run(
                     (prediction.created_at, prediction.expires_at)
                     for prediction in discovery_result.predictions
                 ]
-                exact_prices = (
-                    await historical_client.fetch_price_points_for_windows(
-                        symbol,
-                        windows=prediction_windows,
-                    )
-                    if prediction_windows
-                    else []
-                )
+                if prediction_windows:
+                    if historical_compatible:
+                        exact_prices = (
+                            local_price_source.fetch_price_points_for_windows(
+                                symbol,
+                                windows=prediction_windows,
+                            )
+                        )
+                    else:
+                        exact_prices = (
+                            await historical_client.fetch_price_points_for_windows(
+                                symbol,
+                                windows=prediction_windows,
+                            )
+                        )
+                else:
+                    exact_prices = []
                 result = runner.run(features, exact_prices)
             else:
                 exact_prices = []
@@ -209,6 +230,8 @@ async def run(
                         price_points=tuple(exact_prices),
                         row=row,
                         has_feature_data=bool(features),
+                        window_start=window_start,
+                        window_end=window_end,
                     )
                 )
 
@@ -238,6 +261,15 @@ async def run(
                 )
 
         leaderboard = build_candidate_leaderboard(
+            candidate_windows,
+            minimum_trades=minimum_trades,
+            minimum_active_windows=minimum_active_windows,
+            minimum_positive_window_ratio=minimum_positive_window_ratio,
+            minimum_profit_factor=minimum_profit_factor,
+            round_trip_cost_pct=round_trip_cost_pct,
+        )
+
+        monthly = build_monthly_candidate_leaderboards(
             candidate_windows,
             minimum_trades=minimum_trades,
             minimum_active_windows=minimum_active_windows,
@@ -287,6 +319,39 @@ async def run(
                 f"status={status} "
                 f"reasons={reasons}"
             )
+        print()
+        print("MONTHLY CANDIDATE STABILITY")
+        for month, rows in monthly:
+            for row in rows:
+                expectancy = (
+                    "n/a"
+                    if row.expectancy_pct is None
+                    else f"{row.expectancy_pct:+.4f}%"
+                )
+                profit_factor = (
+                    "n/a"
+                    if row.profit_factor is None
+                    else f"{row.profit_factor:.3f}"
+                )
+                robustness_rate = (
+                    "n/a"
+                    if row.robustness_positive_expectancy_rate is None
+                    else (
+                        f"{row.robustness_positive_expectancy_rate * Decimal('100'):.1f}%"
+                    )
+                )
+                print(
+                    f"{month} "
+                    f"{row.candidate_name} "
+                    f"windows={row.windows_tested} "
+                    f"active={row.active_windows} "
+                    f"trades={row.trades} "
+                    f"net_expectancy={expectancy} "
+                    f"profit_factor={profit_factor} "
+                    f"independent_samples={row.robustness_independent_samples} "
+                    f"bootstrap_positive={robustness_rate} "
+                    f"robust={row.robustness_passed}"
+                )
     finally:
         await engine.dispose()
 
@@ -306,6 +371,7 @@ def main() -> None:
             end_at=args.end_at,
             dataset_provenance=args.dataset_provenance,
             historical_compatible=args.historical_compatible,
+            backfill_root=args.backfill_root,
         )
     )
 
