@@ -447,3 +447,41 @@ If it does not meet those conditions, stop the H5 baseline. Do not rescue it wit
 ### Time boundary
 
 The H5 research branch should be accepted, rejected or explicitly paused by 2026-12-31. Do not extend research indefinitely by adding post-hoc filters.
+
+
+### H5 development result — rejected baseline
+
+The frozen H5 always-on development baseline was evaluated once on 2020-01-01 through 2023-12-31 after the H5 data audit passed. The 2024-2025 final-test period remains untouched.
+
+Primary frozen result: **1x leverage, detailed 0.38% baseline cost accounting**.
+
+- cumulative net return: **36.6352%**
+- annualized net return: **8.1162%**
+- DTB3 annualized benchmark: **1.9169%**
+- annualized excess return: **+6.1994 percentage points**
+- maximum drawdown: **1.6117%**
+- rebalances: **5**
+- negative funding fraction: **13.44%**
+- longest negative-funding streak: **192 hours**
+- worst observed 24h perpetual rise: **34.8865%**
+- static 1x margin stress: **survived**
+
+Calendar-year excess return versus DTB3:
+
+- 2020: **+10.7463 pp**
+- 2021: **+18.9572 pp**
+- 2022: **-0.8874 pp**
+- 2023: **-3.0648 pp**
+
+The pre-registered decision rule required both at least **+3 pp annualized excess return** and positive excess return in at least **3 of 4 development calendar years**. H5 passed the aggregate excess-return hurdle but passed only **2 of 4** calendar years. Therefore the frozen always-on H5 baseline is **REJECTED**.
+
+Cost sensitivity did not change the disposition: the 0.20%, 0.30% and 0.40% all-in sensitivity cases showed the same 2020-2021 positive / 2022-2023 negative excess-return pattern. The 2x leverage cases also failed the same year-stability interpretation and do not rescue the baseline.
+
+Two observed explanations are recorded for future hypothesis design, not as retroactive changes to H5:
+
+1. **Economic regime dependence.** Funding carry was strong relative to near-zero DTB3 in 2020-2021, while 2022-2023 combined weaker carry with a much higher USD cash benchmark. The baseline therefore did not demonstrate benchmark-beating stability across regimes.
+2. **One-way rebalance shrinkage.** The frozen rebalance rule only reduced the spot/perpetual position when futures margin was stressed. It never rebuilt the position after price declines or excess margin returned. This mechanically reduced later funding exposure and may have contributed materially to the weak 2022-2023 returns. This is an interpretation of the observed development result, not a proven causal decomposition.
+
+Do **not** change the H5 rebalance rule and rerun 2020-2023 as though it were new validation evidence. Any bidirectional rebalance design is a separate hypothesis/version. A development rerun may be used only for implementation verification and must not be counted as independent evidence.
+
+Do **not** inspect 2024-2025 until any successor hypothesis is fully pre-registered and frozen.
