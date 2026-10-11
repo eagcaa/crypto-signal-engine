@@ -223,6 +223,18 @@ If the existing spot/futures CVD or trend features show a stable cost-clearing r
 
 If none of the existing feature families show a stable relationship at any tested horizon, V2 research moves to new derivative inputs.
 
+### July-August diagnostics result
+
+The first feature diagnostics pass is complete on the 2026-07-01 through 2026-08-31 research window.
+
+- None of the tested existing feature/horizon pairs (spot CVD, futures CVD or trend at 15m, 1h or 4h) cleared the frozen 0.12% round-trip research cost.
+- Rank correlations were weak (approximately within +/-0.05).
+- Spot 15m CVD showed a small but stable negative top-minus-bottom spread across 15m, 1h and 4h forward horizons, consistent with weak mean reversion rather than the directional interpretation used by v1.
+- The magnitude of this effect is far below trading cost and is not itself a strategy hypothesis.
+- Trend features were not stable across the two development halves and are treated as regime description, not demonstrated directional edge.
+
+This closes the "v1 only needs a longer horizon" explanation for the current feature set. Any V2 hypothesis must add independently justified information rather than simply stretching the same signal.
+
 ### Metrics timestamp / observability gate
 
 Before Binance Vision USD-M `metrics` fields are eligible for feature diagnostics or strategy evaluation, their observable-time semantics must be validated against already-persisted live Binance derivatives snapshots.
@@ -236,7 +248,17 @@ The ratio analysis must infer the archive-to-live mapping from observed values r
 
 Report duplicate archive timestamps explicitly. A metrics row labelled T may be exposed to historical features only at or after the conservatively inferred observable time.
 
-If alignment is ambiguous, insufficiently matched, or otherwise fails validation, metrics remain excluded.
+The October live/archive comparison found a clear open-interest alignment: the archived OI row labelled T best matched the live OI observed around T + 5 minutes. Historical OI research therefore uses T + 6 minutes as the earliest observable time, adding a one-minute safety buffer.
+
+The archived long/short, top-trader and taker-ratio fields did not achieve sufficiently confident one-to-one matching against the corresponding persisted live API values. They remain excluded.
+
+The validator distinguishes these cases:
+
+- `PASS`: OI and ratio observability are validated.
+- `PASS_OI_ONLY`: OI observability is validated, but ratio fields are not.
+- `FAIL` / `AMBIGUOUS`: OI itself is not safe to use.
+
+A `PASS_OI_ONLY` artifact may be used only for OI diagnostics. It must not unlock the full historical V2 materializer or expose crowding/taker fields.
 
 ### V2 freeze rule
 
@@ -246,8 +268,9 @@ V2 is frozen only after:
 
 1. July-August diagnostics for the existing feature set are complete.
 2. Metrics observability validation is complete if metrics are being considered.
-3. Any newly validated metrics fields are run through the same July-August feature diagnostics.
-4. The V2 hypothesis is written here before any September result is inspected.
+3. Validated OI is run through the same July-August 15m/1h/4h feature diagnostics using the T + 6 minute observability rule.
+4. Only metrics fields that independently pass observability validation may be considered for a strategy hypothesis.
+5. The V2 hypothesis is written here before any September result is inspected.
 
 The existing `HistoricalCompatibleV2PredictionEngine` implementation is provisional research scaffolding only until this freeze step is completed. It must not be treated as the final V2 hypothesis merely because the code exists.
 
