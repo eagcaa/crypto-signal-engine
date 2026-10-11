@@ -1,4 +1,4 @@
-.PHONY: help setup install test live dashboard live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage feature-diagnostics oi-feature-diagnostics metrics-alignment readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical replay-walk-forward-historical-v2 backfill-history backfill-metrics validate-metrics-alignment backfill-materialize backfill-materialize-v2 backfill-load backfill-load-v2 h5-backfill h5-data-audit h5-baseline h5b-final-backfill h5b-final-audit h5b-final-test calibrate db-up db-down db-logs db-shell clean
+.PHONY: help setup install test live dashboard live-log market-watch market-watch-log paper-live candidate-paper-live paper-report shadow-report feature-coverage feature-diagnostics oi-feature-diagnostics metrics-alignment readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical replay-walk-forward-historical-v2 backfill-history backfill-metrics validate-metrics-alignment backfill-materialize backfill-materialize-v2 backfill-load backfill-load-v2 h5-backfill h5-data-audit h5-baseline h5b-final-backfill h5b-final-audit h5b-final-test calibrate db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
 PYTHONPATH_SRC := PYTHONPATH=src
@@ -15,6 +15,7 @@ PROVENANCE_V2 ?= binance_vision_historical_compatible_v2
 METRICS_ARTIFACT ?= runtime-data/metrics-alignment/BTCUSDT-2026-10-08-2026-10-09.json
 METRICS_DAYS ?= 2
 REPLACE ?= 0
+ARGS ?=
 
 help:
 	@echo "Available commands:"
@@ -24,6 +25,8 @@ help:
 	@echo "  make live         Run live market snapshot collector"
 	@echo "  make dashboard    Serve live decision-support dashboard on :8000"
 	@echo "  make live-log     Run live collector and persist timestamped runtime log"
+	@echo "  make market-watch Live Binance BTC context alerts; no DB required"
+	@echo "  make market-watch-log Keep Mac awake and log standalone watch output"
 	@echo "  make paper-live   Run live collector with local paper trading enabled"
 	@echo "  make candidate-paper-live Run only the frozen candidate paper tracker"
 	@echo "  make paper-report Show persisted paper performance and validation"
@@ -86,7 +89,16 @@ dashboard:
 live-log:
 	@mkdir -p runtime-logs
 	@echo "Writing live output to runtime-logs/"
-	caffeinate -dimsu $(MAKE) live 2>&1 | tee -a runtime-logs/live_$$(date +%Y%m%d_%H%M%S).log
+	caffeinate -dimsu $(MAKE) live 2>&1 | tee -a runtime-logs/live_$(date +%Y%m%d_%H%M%S).log
+
+market-watch:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.market_watch --symbol "$(SYMBOL)" $(ARGS)
+
+market-watch-log:
+	@mkdir -p runtime-logs
+	@echo "Writing market-watch output to runtime-logs/"
+	caffeinate -dimsu $(MAKE) market-watch SYMBOL="$(SYMBOL)" ARGS='$(ARGS)' 2>&1 | tee -a runtime-logs/watch_$(date +%Y%m%d_%H%M%S).log
 
 paper-live:
 	@mkdir -p runtime-logs
