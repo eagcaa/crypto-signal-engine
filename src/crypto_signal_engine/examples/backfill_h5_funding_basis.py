@@ -92,7 +92,7 @@ def monthly_archive_specs(
                 f"{symbol}/{symbol}-fundingRate-{stamp}.zip"
             ),
             relative_path=(
-                f"funding-basis/futures/um/fundingRate/"
+                "funding-basis/futures/um/fundingRate/"
                 f"{symbol}-fundingRate-{stamp}.zip"
             ),
         ),
@@ -103,7 +103,7 @@ def monthly_archive_specs(
                 f"{symbol}/1h/{symbol}-1h-{stamp}.zip"
             ),
             relative_path=(
-                f"funding-basis/spot/klines/1h/"
+                "funding-basis/spot/klines/1h/"
                 f"{symbol}-1h-{stamp}.zip"
             ),
         ),
@@ -114,7 +114,7 @@ def monthly_archive_specs(
                 f"{symbol}/1h/{symbol}-1h-{stamp}.zip"
             ),
             relative_path=(
-                f"funding-basis/futures/um/klines/1h/"
+                "funding-basis/futures/um/klines/1h/"
                 f"{symbol}-1h-{stamp}.zip"
             ),
         ),
