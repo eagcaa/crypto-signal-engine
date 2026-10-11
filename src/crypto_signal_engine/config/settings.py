@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
-    market_state_alerts_enabled: bool = True
+    market_state_alerts_enabled: bool = False
 
     calibration_file: str = "runtime-data/calibration.json"
     calibration_max_age_hours: int = 168
