@@ -62,7 +62,7 @@ def _max_contiguous_missing_hours(
     longest = 1
     current = 1
     for previous, current_ts in pairwise(missing):
-        if current_ts - previous == pd.Timedelta(hours=1):
+        if (current_ts - previous).total_seconds() == 3600:
             current += 1
             longest = max(longest, current)
         else:
@@ -81,8 +81,8 @@ def _missing_ranges(
     previous = missing[0]
 
     for current in missing[1:]:
-        if current - previous != pd.Timedelta(hours=1):
-            hours = int((previous - start) / pd.Timedelta(hours=1)) + 1
+        if (current - previous).total_seconds() != 3600:
+            hours = int((previous - start).total_seconds() // 3600) + 1
             ranges.append((start, previous, hours))
             start = current
         previous = current
