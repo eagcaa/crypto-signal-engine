@@ -140,6 +140,14 @@ def test_add_oi_features_respects_observable_delay(
         start + timedelta(minutes=6),
         "binance_oi_change_5m_pct",
     ]
+    before_contracts = result.loc[
+        start + timedelta(minutes=5),
+        "binance_oi_contracts_change_5m_pct",
+    ]
+    visible_contracts = result.loc[
+        start + timedelta(minutes=6),
+        "binance_oi_contracts_change_5m_pct",
+    ]
 
     assert before == pytest.approx(
         float(
@@ -156,3 +164,18 @@ def test_add_oi_features_respects_observable_delay(
         )
     )
     assert before != visible
+    assert before_contracts == pytest.approx(
+        float(
+            (Decimal("102") - Decimal("101"))
+            / Decimal("101")
+            * Decimal("100")
+        )
+    )
+    assert visible_contracts == pytest.approx(
+        float(
+            (Decimal("103") - Decimal("102"))
+            / Decimal("102")
+            * Decimal("100")
+        )
+    )
+    assert before_contracts != visible_contracts
