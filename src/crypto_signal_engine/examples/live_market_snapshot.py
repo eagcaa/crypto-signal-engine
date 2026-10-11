@@ -44,7 +44,8 @@ from crypto_signal_engine.integrations import (
     TelegramNotifier,
 )
 from crypto_signal_engine.integrations.coinglass import CoinGlassApiError
-from crypto_signal_engine.market import (\n    MarketSnapshotAggregator,\n    MarketStateAlertMonitor,\n)
+from crypto_signal_engine.market import MarketSnapshotAggregator
+from crypto_signal_engine.market.state_alerts import MarketStateAlertMonitor
 from crypto_signal_engine.paper import (
     CandidatePaperTracker,
     PaperBroker,
