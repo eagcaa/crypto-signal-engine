@@ -132,15 +132,27 @@ def test_add_oi_features_respects_observable_delay(
         observable_delay_minutes=6,
     )
 
-    assert pd.isna(
-        result.loc[
-            start + timedelta(minutes=5),
-            "binance_oi_change_5m_pct",
-        ]
+    before = result.loc[
+        start + timedelta(minutes=5),
+        "binance_oi_change_5m_pct",
+    ]
+    visible = result.loc[
+        start + timedelta(minutes=6),
+        "binance_oi_change_5m_pct",
+    ]
+
+    assert before == pytest.approx(
+        float(
+            (Decimal("1020") - Decimal("1010"))
+            / Decimal("1010")
+            * Decimal("100")
+        )
     )
-    assert not pd.isna(
-        result.loc[
-            start + timedelta(minutes=6),
-            "binance_oi_change_5m_pct",
-        ]
+    assert visible == pytest.approx(
+        float(
+            (Decimal("1030") - Decimal("1020"))
+            / Decimal("1020")
+            * Decimal("100")
+        )
     )
+    assert before != visible
