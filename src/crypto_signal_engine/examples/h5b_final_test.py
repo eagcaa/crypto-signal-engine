@@ -7,6 +7,7 @@ metrics have been produced.
 
 import argparse
 import csv
+import json
 import zipfile
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -415,12 +416,47 @@ def print_h5b_result(
         )
 
 
+def require_final_audit_pass(
+    *,
+    input_root: Path,
+    symbol: str,
+) -> None:
+    path = (
+        input_root
+        / symbol.upper()
+        / "h5b-final-audit.json"
+    )
+    if not path.exists():
+        raise RuntimeError(
+            "H5b final test requires a PASS data-audit artifact. "
+            "Run h5b-final-audit first."
+        )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    expected = {
+        "status": "PASS",
+        "symbol": symbol.upper(),
+        "start": FINAL_START.isoformat(),
+        "end": FINAL_END.isoformat(),
+    }
+    for key, value in expected.items():
+        if payload.get(key) != value:
+            raise RuntimeError(
+                "H5b final test refuses invalid data-audit artifact: "
+                f"{key}={payload.get(key)!r}, expected={value!r}"
+            )
+
+
 def run(
     *,
     symbol: str,
     input_root: Path,
 ) -> None:
     symbol = symbol.upper()
+    require_final_audit_pass(
+        input_root=input_root,
+        symbol=symbol,
+    )
     spot = load_final_kline_prices(
         final_paths(
             root=input_root,
