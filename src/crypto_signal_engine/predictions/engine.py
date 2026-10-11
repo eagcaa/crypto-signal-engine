@@ -833,11 +833,12 @@ class HistoricalCompatiblePredictionEngine(CompositePredictionEngine):
 class HistoricalCompatibleV2PredictionEngine(
     HistoricalCompatiblePredictionEngine
 ):
-    """Historical v2: v1 flow/trend plus validated Binance metrics.
+    """Rejected/unused historical V2 research scaffolding.
 
-    Funding, order book and liquidations remain excluded. This class must
-    only be used with v2 materialized rows produced from a PASS metrics
-    alignment artifact.
+    The 15m-4h directional hypothesis family was rejected before V2 was
+    built or evaluated. This class is kept only for historical reference.
+    Funding, order book and liquidations remain excluded. If reused under
+    a future hypothesis, it must be explicitly re-registered first.
     """
 
     MODEL_PREFIX = "historical_compatible_v2"
