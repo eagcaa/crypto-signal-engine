@@ -10,7 +10,7 @@ import csv
 import math
 import zipfile
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from io import TextIOWrapper
 from pathlib import Path
@@ -588,12 +588,12 @@ def simulate(
         yearly_start_equity.setdefault(year, equity)
         yearly_end_equity[year] = equity
 
-    final_spot, spot_cursor = _latest_price_at_or_before(
+    final_spot, _ = _latest_price_at_or_before(
         spot_prices,
         end_time,
         cursor=spot_cursor,
     )
-    final_perp, perp_cursor = _latest_price_at_or_before(
+    final_perp, _ = _latest_price_at_or_before(
         perp_prices,
         end_time,
         cursor=perp_cursor,
