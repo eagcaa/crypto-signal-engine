@@ -585,4 +585,4 @@ Primary case: **1x, detailed 0.38% accounting, 2024-01-01 through 2025-12-31.** 
 
 The full command output is committed verbatim. Once primary H5b result metrics for 2024-2025 are produced, the final-test period is consumed for H5b and the test is not re-run after any code or rule change.
 
-If H5b FAILS, the funding/basis branch is closed; no further variant is tested on 2024-2025. If H5b PASSES, the next steps are exchange-accurate liquidation modelling (mark price, maintenance margin, intra-hour moves) and small-size paper trading, not live capital.
+If H5b FAILS, H5b is rejected and the 2024-2025 final-test period is consumed for this hypothesis family version. The broader project does not automatically close; any later funding/basis idea must be pre-registered as a new hypothesis and evaluated only on genuinely new, untouched data rather than reusing 2024-2025. If H5b PASSES, the next steps are exchange-accurate liquidation modelling (mark price, maintenance margin, intra-hour moves) and small-size paper trading, not live capital.
