@@ -74,6 +74,19 @@ def test_h5_fred_validator_accepts_legacy_date_header(
     validate_fred_csv(path)
 
 
+def test_h5_fred_validator_rejects_invalid_date_header(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "DTB3.csv"
+    path.write_text(
+        "foo,DTB3\n2019-12-31,1.52\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Unexpected DTB3 CSV header"):
+        validate_fred_csv(path)
+
+
 def test_h5_fred_url_is_bounded_before_final_test() -> None:
     url = fred_dtb3_url()
     assert "cosd=2019-12-01" in url
