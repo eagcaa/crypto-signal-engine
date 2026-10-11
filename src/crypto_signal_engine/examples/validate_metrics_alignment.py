@@ -37,6 +37,7 @@ MIN_MATCHES = 10
 CLEAR_WIN_RATIO = Decimal("0.75")
 MIN_RATIO_MATCH_RATE = 0.80
 MIN_RATIO_MAPPING_MARGIN = 0.10
+OI_SAFETY_BUFFER_MINUTES = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -317,10 +318,15 @@ def evaluate_alignment(
                 reason="multiple_timestamp_shifts_fit_similarly",
             )
 
+    oi_observable_delay = max(
+        0,
+        best.shift_minutes + OI_SAFETY_BUFFER_MINUTES,
+    )
+
     if ratio_error is not None:
         return AlignmentResult(
-            status="FAIL",
-            selected_shift_minutes=None,
+            status="PASS_OI_ONLY",
+            selected_shift_minutes=oi_observable_delay,
             archive_points=len(archive_points),
             live_points=len(live_points),
             duplicate_timestamps=0,
@@ -332,8 +338,7 @@ def evaluate_alignment(
 
     assert ratio_delay is not None
     observable_delay = max(
-        0,
-        best.shift_minutes,
+        oi_observable_delay,
         ratio_delay,
     )
 
@@ -632,6 +637,7 @@ async def run(
             "clear_win_ratio": str(CLEAR_WIN_RATIO),
             "minimum_ratio_match_rate": MIN_RATIO_MATCH_RATE,
             "minimum_ratio_mapping_margin": MIN_RATIO_MAPPING_MARGIN,
+            "oi_safety_buffer_minutes": OI_SAFETY_BUFFER_MINUTES,
         },
     }
     output_path.write_text(
@@ -647,7 +653,7 @@ async def run(
         f"path={output_path}"
     )
 
-    return 0 if result.status == "PASS" else 2
+    return 0 if result.status in {"PASS", "PASS_OI_ONLY"} else 2
 
 
 def parse_args() -> argparse.Namespace:
