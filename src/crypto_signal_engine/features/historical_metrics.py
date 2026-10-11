@@ -29,6 +29,8 @@ class ArchivedMetricPoint:
 class HistoricalMetricFeatures:
     oi_change_5m_pct: Decimal | None
     oi_change_15m_pct: Decimal | None
+    oi_contracts_change_5m_pct: Decimal | None
+    oi_contracts_change_15m_pct: Decimal | None
     long_short_ratio: Decimal | None
     top_trader_long_short_ratio: Decimal | None
     taker_buy_sell_ratio: Decimal | None
@@ -290,6 +292,22 @@ class HistoricalMetricsTimeline:
                 latest.open_interest_value,
                 (
                     fifteen_minutes_ago.open_interest_value
+                    if fifteen_minutes_ago is not None
+                    else None
+                ),
+            ),
+            oi_contracts_change_5m_pct=_change_pct(
+                latest.open_interest,
+                (
+                    five_minutes_ago.open_interest
+                    if five_minutes_ago is not None
+                    else None
+                ),
+            ),
+            oi_contracts_change_15m_pct=_change_pct(
+                latest.open_interest,
+                (
+                    fifteen_minutes_ago.open_interest
                     if fifteen_minutes_ago is not None
                     else None
                 ),
