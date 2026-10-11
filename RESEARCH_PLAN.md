@@ -485,3 +485,104 @@ Two observed explanations are recorded for future hypothesis design, not as retr
 Do **not** change the H5 rebalance rule and rerun 2020-2023 as though it were new validation evidence. Any bidirectional rebalance design is a separate hypothesis/version. A development rerun may be used only for implementation verification and must not be counted as independent evidence.
 
 Do **not** inspect 2024-2025 until any successor hypothesis is fully pre-registered and frozen.
+
+
+## H5b — Two-sided rebalanced carry (pre-registered)
+
+**Status: FROZEN.** Pre-registered on 2026-10-11, after viewing the H5 development result and before any 2024-2025 data was downloaded or inspected. Changing any rule below after this commit consumes the final-test period for the changed version.
+
+### Hypothesis
+
+The H5 always-on spot-long / perpetual-short carry, with its hedge size maintained in both directions by the mechanical rule below, earns economically meaningful excess return over DTB3 in 2024-2025.
+
+H5b was designed after seeing the H5 2020-2023 result. 2020-2023 therefore cannot be evidence for H5b. The only evidential test is the 2024-2025 final-test period, run once.
+
+### What is unchanged from H5
+
+Everything not defined in this section is identical to H5: BTCUSDT, Binance spot and Binance USD-M perpetual, hourly 1h-kline timeline with scheduled-close timestamp semantics, actual funding timestamps with no lookahead, funding paid on `q * latest perp close at or before the funding time`, the frozen fees (spot 0.10%, futures 0.05% per side), slippage 0.02% per execution per leg, detailed 0.38% accounting plus the 0.20/0.30/0.40% sensitivity cases, initial spot notional 10,000 USDT, return on total committed capital, DTB3 benchmark and its conversion, and the static stress test.
+
+No signal or filter is added. There is no entry/exit or sizing decision based on funding, basis, trend, volatility, interest rates or any other market variable. The position is opened at the first hour of the period and held until the last hour.
+
+### Definitions
+
+At each timeline timestamp `t`:
+
+- `S_t`, `P_t`: latest spot and perpetual hourly closes available at `t`.
+- `L`: leverage, 1 (primary) or 2 (report only).
+- `fs`, `ff`: spot and futures execution cost rates of the cost model (fee + slippage).
+- `q_t`: BTC held in spot, always equal to the BTC quantity of the short.
+- `E_t`: average entry price of the short.
+- `C_t`: futures margin cash (initial margin, plus funding, plus realized short PnL, plus transfers, minus execution costs booked to the margin-cash account).
+- `M_t = C_t + q_t * (E_t - P_t)`: futures margin equity.
+- `R_t = q_t * P_t / L`: target margin for the current short.
+- `m_t = M_t / R_t`: margin coverage ratio.
+- `q_0 = 10,000 / S_0` at the first hour of the period: the **BTC quantity cap**. `q_t` never exceeds `q_0`.
+
+At entry: `q = q_0`, `E = P_0`, and initial futures margin is `q_0 * P_0 / L`. As in H5 accounting, both the spot and futures entry execution costs are charged against committed capital and booked to margin cash. Therefore initial `m` is slightly below 1 because of entry costs; no immediate rebalance is performed solely because of those entry costs.
+
+### Rebalancing rule
+
+Order at each timestamp: (1) apply funding events at that timestamp, (2) mark `M_t`, (3) evaluate the triggers, (4) execute at `S_t` and `P_t` when both legs are tradable under the data rule below, (5) record equity. At most one resize per timestamp.
+
+**Down-resize (margin stress):** if `m_t < 0.50`, sell `D` BTC of spot and buy back `D` BTC of the short, moving the spot proceeds to margin, so that coverage returns to exactly 1 after costs:
+
+`D = (R_t - M_t) / (S_t * (1 - fs) - P_t * ff + P_t / L)`
+
+**Up-resize (excess margin):** if `m_t > 1.50` and `q_t < q_0`, move cash from margin to spot, buy `U` BTC of spot and sell `U` BTC more of the short, so that coverage returns to exactly 1 after costs, but never above the cap:
+
+`U = min((M_t - R_t) / (S_t * (1 + fs) + P_t * ff + P_t / L), q_0 - q_t)`
+
+After an up-resize the short average entry price becomes `E' = (q_t * E_t + U * P_t) / (q_t + U)`. If the cap binds, coverage stays above 1 and the remaining excess stays in margin. A down-resize leaves the average entry price of the remaining short unchanged.
+
+If `q_t = q_0` and `m_t > 1.50`, nothing happens. The position never grows above its starting BTC size, so there is no compounding or martingale-style scaling.
+
+**Difference from H5 (intentional):** H5 triggered on margin equity below 50% of the *initial USD margin* and restored it to that USD amount. H5b triggers on and restores the coverage ratio against the *current* short notional. An absolute-USD target cannot be used with up-resizing, because rebuilding size at a fixed USD margin would leave the larger short under-collateralized. Consequence: at 1x the down-resize fires after roughly a 33% perpetual rise from the last reset (H5: ~50%), so H5b may rebalance more often and pay more costs. This is accepted before viewing any result.
+
+The 0.50 and 1.50 thresholds, the coverage target of 1, and the `q_0` BTC cap are frozen.
+
+### Missing-spot execution rule
+
+The existing H5 data-quality rule still permits short spot-data gaps within its frozen limits. During a timestamp for which no actual spot 1h candle exists, the latest prior spot close may be used only to mark portfolio equity. **No resize may execute at a missing-spot timestamp**, because the historical data does not establish a contemporaneous executable spot price there.
+
+Funding may still be applied using the perpetual data at that timestamp. Any pending resize condition is simply re-evaluated at the first later timestamp with an actual spot candle. No synthetic spot fill, forward-filled execution price or perpetual-price substitute is allowed.
+
+### Return accounting
+
+Calendar-year return = year-end equity / previous year-end equity - 1, with the first year starting from committed capital before entry costs. **The final calendar year includes the full exit costs on both legs** (H5 excluded them from its last yearly figure; H5b fixes this conservatively). Annualized return, excess over DTB3 and the DTB3 conversion are as in H5.
+
+### Data
+
+- Final-test period: 2024-01-01 through 2025-12-31 (17,544 expected hours).
+- Download command for this period may be written only after this section is committed. FRED DTB3 is fetched from 2023-12-01 to 2025-12-31.
+- The H5 data-quality rule applies unchanged on the 2024-2025 grid: fewer than 0.1% missing spot hours (at most 17), no contiguous spot gap above 6 hours, no off-grid or duplicate spot timestamps, perpetual and funding complete. The audit must PASS before the strategy is run; any remediation rule must be recorded before the strategy is run.
+- Binance Vision spot archives use microsecond timestamps from 2025-01-01; a test covering both millisecond and microsecond units must exist before the download.
+
+### Verification before the final run
+
+Unit tests must cover at minimum:
+
+- down-resize returns `m` to 1 after costs,
+- up-resize returns `m` to 1 after costs,
+- the `q_0` cap binds,
+- no up-resize at `q = q_0`,
+- the average-entry-price update,
+- final-year exit costs,
+- no resize executes on a missing-spot timestamp,
+- millisecond and microsecond Binance timestamps normalize correctly.
+
+Running H5b on 2020-2023 is allowed only to check mechanics. Its output is labelled non-evidential, is recorded as such, and cannot change any H5b rule. Unit and synthetic tests are preferred; a 2020-2023 mechanics run is not required.
+
+### Final-test decision rule (run once)
+
+Primary case: **1x, detailed 0.38% accounting, 2024-01-01 through 2025-12-31.** H5b PASSES only if all hold:
+
+- net return over the period > 0,
+- excess return over DTB3 > 0 in **2024** and in **2025**,
+- annualized excess return over DTB3 across 2024-2025 >= **+3 percentage points**,
+- static stress test survives.
+
+2x and the 0.20/0.30/0.40% sensitivity cases are reported but cannot turn a FAIL into a PASS.
+
+The full command output is committed verbatim. Once primary H5b result metrics for 2024-2025 are produced, the final-test period is consumed for H5b and the test is not re-run after any code or rule change.
+
+If H5b FAILS, the funding/basis branch is closed; no further variant is tested on 2024-2025. If H5b PASSES, the next steps are exchange-accurate liquidation modelling (mark price, maintenance margin, intra-hour moves) and small-size paper trading, not live capital.
