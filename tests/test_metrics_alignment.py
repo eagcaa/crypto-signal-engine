@@ -256,6 +256,16 @@ def test_metrics_timeline_never_exposes_point_before_observable_time() -> None:
         / Decimal("1000")
         * Decimal("100")
     )
+    assert visible.oi_contracts_change_5m_pct == (
+        (Decimal("103") - Decimal("102"))
+        / Decimal("102")
+        * Decimal("100")
+    )
+    assert visible.oi_contracts_change_15m_pct == (
+        (Decimal("103") - Decimal("100"))
+        / Decimal("100")
+        * Decimal("100")
+    )
 
 
 def test_alignment_returns_oi_only_when_ratio_observability_is_missing() -> None:
