@@ -21,9 +21,17 @@ from crypto_signal_engine.examples.backfill_history import (
 
 
 BINANCE_BASE_URL = "https://data.binance.vision/data"
-FRED_DTB3_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DTB3"
 DEVELOPMENT_START = date(2020, 1, 1)
 DEVELOPMENT_END = date(2023, 12, 31)
+FRED_WARMUP_START = date(2019, 12, 1)
+
+
+def fred_dtb3_url() -> str:
+    return (
+        "https://fred.stlouisfed.org/graph/fredgraph.csv"
+        f"?id=DTB3&cosd={FRED_WARMUP_START.isoformat()}"
+        f"&coed={DEVELOPMENT_END.isoformat()}"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,7 +150,7 @@ async def download_fred_dtb3(
         )
 
     temp = target.with_suffix(".csv.part")
-    async with session.get(FRED_DTB3_URL) as response:
+    async with session.get(fred_dtb3_url()) as response:
         response.raise_for_status()
         temp.write_bytes(await response.read())
 
