@@ -361,7 +361,7 @@ def worst_24h_perp_rise_pct(
         index=pd.DatetimeIndex([item.timestamp for item in prices]),
     )
     prior = series.reindex(
-        series.index - pd.Timedelta(hours=24),
+        series.index - pd.offsets.Hour(24),
         method="pad",
     )
     prior.index = series.index
