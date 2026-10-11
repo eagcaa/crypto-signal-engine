@@ -10,7 +10,7 @@ import csv
 import math
 import zipfile
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from io import TextIOWrapper
 from pathlib import Path
@@ -126,7 +126,14 @@ def load_kline_prices(
                 continue
             if len(row) < 7:
                 raise ValueError(f"Unexpected kline row in {path}: {row}")
-            timestamp = _parse_archive_timestamp(row[6].strip())
+            open_timestamp = _parse_archive_timestamp(
+                row[0].strip()
+            )
+            timestamp = (
+                open_timestamp
+                + timedelta(hours=1)
+                - timedelta(milliseconds=1)
+            )
             _assert_development_timestamp(timestamp, source=str(path))
             output.append(
                 PricePoint(
