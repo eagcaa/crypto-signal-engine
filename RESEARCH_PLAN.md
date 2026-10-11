@@ -397,6 +397,12 @@ Report benchmark cumulative return and annualized return. Excess return = strate
 
 The strategy is not considered economically attractive merely because net return is positive; the excess return must be large enough to justify exchange, margin, operational and liquidation risks.
 
+### H5 hourly price timestamp semantics
+
+For H5 spot and perpetual 1h Binance Vision klines, historical price availability is timestamped at the **scheduled end of the hour derived from kline open time** (`open_time + 1h - 1ms`), not at the archive's raw `close_time` field.
+
+This is conservative for partial candles created around exchange maintenance: a candle that stopped trading early is not exposed to the simulation before the normal end of its hour. Off-grid raw close timestamps therefore do not count as separate hourly observations or as missing-hour replacements.
+
 ### H5 development data-quality rule
 
 The H5 baseline may use the latest previously observed spot price across short missing hourly spot-kline gaps only when all of the following are true:
