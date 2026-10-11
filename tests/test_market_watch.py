@@ -114,7 +114,7 @@ def test_whale_trade_alert_only_above_threshold_and_cooldown() -> None:
 
     assert watch.on_trade(
         _trade(
-            10,
+            3,
             100_000,
             15,
             TradeSide.SELL,
@@ -124,7 +124,7 @@ def test_whale_trade_alert_only_above_threshold_and_cooldown() -> None:
 
     assert watch.on_trade(
         _trade(
-            31,
+            6,
             100_000,
             15,
             TradeSide.SELL,
