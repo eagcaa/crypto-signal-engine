@@ -12,7 +12,7 @@ END_DATE ?=
 END_AT ?=
 PROVENANCE ?= binance_vision_historical_compatible_v1
 PROVENANCE_V2 ?= binance_vision_historical_compatible_v2
-METRICS_ARTIFACT ?=
+METRICS_ARTIFACT ?= runtime-data/metrics-alignment/BTCUSDT-2026-10-08-2026-10-09.json
 METRICS_DAYS ?= 2
 REPLACE ?= 0
 
