@@ -29,6 +29,7 @@ class WatchConfig:
     funding_high: float = 0.0005
     funding_low: float = -0.0001
     cooldown: timedelta = timedelta(minutes=30)
+    whale_cooldown: timedelta = timedelta(minutes=5)
     summary_every: timedelta = timedelta(hours=1)
 
 
@@ -122,6 +123,7 @@ class MarketWatch:
                 f"{market}: piyasa emriyle {_usd(notional)} {action}\n"
                 f"Fiyat: {price:,.1f}"
             ),
+            cooldown=self.config.whale_cooldown,
         )
         return [alert] if alert else []
 
@@ -416,9 +418,12 @@ class MarketWatch:
         kind: str,
         now: datetime,
         text: str,
+        *,
+        cooldown: timedelta | None = None,
     ) -> WatchAlert | None:
         last = self._last_alert.get(kind)
-        if last is not None and now - last < self.config.cooldown:
+        effective_cooldown = cooldown or self.config.cooldown
+        if last is not None and now - last < effective_cooldown:
             return None
         self._last_alert[kind] = now
         return WatchAlert(kind=kind, timestamp=now, text=text)
