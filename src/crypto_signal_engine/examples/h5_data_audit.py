@@ -87,7 +87,7 @@ def _missing_ranges(
             start = current
         previous = current
 
-    hours = int((previous - start) / pd.Timedelta(hours=1)) + 1
+    hours = int((previous - start).total_seconds() // 3600) + 1
     ranges.append((start, previous, hours))
     return ranges
 
