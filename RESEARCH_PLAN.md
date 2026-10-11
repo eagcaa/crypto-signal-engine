@@ -288,6 +288,10 @@ Therefore validated OI does not provide a cost-clearing directional edge under t
 
 September remains untouched.
 
+### Rejected hypothesis family
+
+**Rejected hypothesis family:** BTCUSDT, Binance free flow and OI data, 15-minute to 4-hour directional prediction. No feature cleared trading costs in the July-August diagnostics. September and April-June were not used.
+
 ### V2 freeze rule
 
 Do not select V2 features, horizon, score threshold, regime gates or barriers by looking at September.
