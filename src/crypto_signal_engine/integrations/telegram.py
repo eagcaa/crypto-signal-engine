@@ -2,6 +2,7 @@ from decimal import Decimal
 
 import aiohttp
 
+from crypto_signal_engine.market.state_alerts import MarketStateAlert
 from crypto_signal_engine.paper.models import PaperAccountSnapshot, PaperPosition
 from crypto_signal_engine.predictions.models import Prediction, PredictionEvaluation
 
@@ -46,6 +47,23 @@ class TelegramNotifier:
                     )
                 if isinstance(body, dict) and body.get("ok") is False:
                     raise RuntimeError(f"Telegram API error: {body}")
+
+    @staticmethod
+    def market_state_text(
+        alert: MarketStateAlert,
+        *,
+        symbol: str,
+    ) -> str:
+        details = "\n".join(
+            f"- {item}"
+            for item in alert.details
+        )
+        return (
+            f"MARKET STATE | {symbol}\n"
+            f"{alert.title}\n"
+            f"{alert.summary}\n"
+            f"{details}"
+        )
 
     @staticmethod
     def prediction_text(
