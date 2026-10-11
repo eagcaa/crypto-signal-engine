@@ -34,7 +34,9 @@ def _duplicates(timestamps: list[datetime]) -> int:
     return sum(count - 1 for count in counts.values() if count > 1)
 
 
-def _missing_hourly_points(points: list[PricePoint]) -> int:
+def _hourly_coverage(
+    points: list[PricePoint],
+) -> tuple[pd.DatetimeIndex, pd.DatetimeIndex]:
     expected_start = datetime.combine(
         DEVELOPMENT_START,
         datetime.min.time(),
@@ -47,7 +49,24 @@ def _missing_hourly_points(points: list[PricePoint]) -> int:
         tz="UTC",
     )
     actual = pd.DatetimeIndex([item.timestamp for item in points])
-    return len(expected.difference(actual))
+    return expected.difference(actual), actual.difference(expected)
+
+
+def _max_contiguous_missing_hours(
+    missing: pd.DatetimeIndex,
+) -> int:
+    if len(missing) == 0:
+        return 0
+
+    longest = 1
+    current = 1
+    for previous, current_ts in zip(missing, missing[1:]):
+        if current_ts - previous == pd.Timedelta(hours=1):
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 1
+    return longest
 
 
 def _funding_gap_hours(points: list[FundingPoint]) -> list[int]:
@@ -103,8 +122,10 @@ def run(*, symbol: str, input_root: Path) -> None:
     funding_duplicates = _duplicates(
         [item.timestamp for item in funding]
     )
-    spot_missing = _missing_hourly_points(spot)
-    perp_missing = _missing_hourly_points(perp)
+    spot_missing, spot_unexpected = _hourly_coverage(spot)
+    perp_missing, perp_unexpected = _hourly_coverage(perp)
+    spot_max_gap = _max_contiguous_missing_hours(spot_missing)
+    perp_max_gap = _max_contiguous_missing_hours(perp_missing)
 
     gaps = _funding_gap_hours(funding)
     gap_counts = Counter(gaps)
@@ -120,12 +141,14 @@ def run(*, symbol: str, input_root: Path) -> None:
     spot_ok = (
         len(spot) == EXPECTED_HOURLY_POINTS
         and spot_duplicates == 0
-        and spot_missing == 0
+        and len(spot_missing) == 0
+        and len(spot_unexpected) == 0
     )
     perp_ok = (
         len(perp) == EXPECTED_HOURLY_POINTS
         and perp_duplicates == 0
-        and perp_missing == 0
+        and len(perp_missing) == 0
+        and len(perp_unexpected) == 0
     )
     funding_ok = (
         len(funding) > 0
@@ -151,7 +174,9 @@ def run(*, symbol: str, input_root: Path) -> None:
         "H5_DATA_SPOT "
         f"points={len(spot)} "
         f"expected={EXPECTED_HOURLY_POINTS} "
-        f"missing_hours={spot_missing} "
+        f"missing_hours={len(spot_missing)} "
+        f"unexpected_timestamps={len(spot_unexpected)} "
+        f"max_contiguous_missing_hours={spot_max_gap} "
         f"duplicates={spot_duplicates} "
         f"first={spot[0].timestamp.isoformat()} "
         f"last={spot[-1].timestamp.isoformat()}"
@@ -160,11 +185,34 @@ def run(*, symbol: str, input_root: Path) -> None:
         "H5_DATA_PERP "
         f"points={len(perp)} "
         f"expected={EXPECTED_HOURLY_POINTS} "
-        f"missing_hours={perp_missing} "
+        f"missing_hours={len(perp_missing)} "
+        f"unexpected_timestamps={len(perp_unexpected)} "
+        f"max_contiguous_missing_hours={perp_max_gap} "
         f"duplicates={perp_duplicates} "
         f"first={perp[0].timestamp.isoformat()} "
         f"last={perp[-1].timestamp.isoformat()}"
     )
+    if len(spot_missing):
+        print(
+            "H5_DATA_SPOT_MISSING "
+            + ",".join(item.isoformat() for item in spot_missing)
+        )
+    if len(spot_unexpected):
+        print(
+            "H5_DATA_SPOT_UNEXPECTED "
+            + ",".join(item.isoformat() for item in spot_unexpected)
+        )
+    if len(perp_missing):
+        print(
+            "H5_DATA_PERP_MISSING "
+            + ",".join(item.isoformat() for item in perp_missing)
+        )
+    if len(perp_unexpected):
+        print(
+            "H5_DATA_PERP_UNEXPECTED "
+            + ",".join(item.isoformat() for item in perp_unexpected)
+        )
+
     print(
         "H5_DATA_FUNDING "
         f"points={len(funding)} "
