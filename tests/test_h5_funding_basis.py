@@ -222,3 +222,53 @@ def test_h5_positive_funding_is_income_to_short() -> None:
 
     assert result.funding_income == Decimal("50.000")
     assert result.ending_equity == result.starting_capital + Decimal("50.000")
+
+
+
+def test_h5_kline_loader_normalizes_partial_hour_close_time(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "BTCUSDT-1h-2020-02.zip"
+    csv_name = "BTCUSDT-1h-2020-02.csv"
+    open_time = int(
+        datetime(2020, 2, 19, 11, 0, tzinfo=UTC).timestamp() * 1000
+    )
+    raw_close_time = int(
+        datetime(2020, 2, 19, 11, 35, 32, 286000, tzinfo=UTC).timestamp()
+        * 1000
+    )
+
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            csv_name,
+            ",".join(
+                [
+                    str(open_time),
+                    "10000",
+                    "10010",
+                    "9990",
+                    "10005",
+                    "10",
+                    str(raw_close_time),
+                    "100000",
+                    "10",
+                    "5",
+                    "50000",
+                    "0",
+                ]
+            )
+            + "\n",
+        )
+
+    points = load_kline_prices([path])
+
+    assert points[0].timestamp == datetime(
+        2020,
+        2,
+        19,
+        11,
+        59,
+        59,
+        999000,
+        tzinfo=UTC,
+    )
