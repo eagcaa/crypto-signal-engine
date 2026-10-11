@@ -89,7 +89,7 @@ dashboard:
 live-log:
 	@mkdir -p runtime-logs
 	@echo "Writing live output to runtime-logs/"
-	caffeinate -dimsu $(MAKE) live 2>&1 | tee -a runtime-logs/live_$(date +%Y%m%d_%H%M%S).log
+	caffeinate -dimsu $(MAKE) live 2>&1 | tee -a runtime-logs/live_$$(date +%Y%m%d_%H%M%S).log
 
 market-watch:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
@@ -98,17 +98,17 @@ market-watch:
 market-watch-log:
 	@mkdir -p runtime-logs
 	@echo "Writing market-watch output to runtime-logs/"
-	caffeinate -dimsu $(MAKE) market-watch SYMBOL="$(SYMBOL)" ARGS='$(ARGS)' 2>&1 | tee -a runtime-logs/watch_$(date +%Y%m%d_%H%M%S).log
+	caffeinate -dimsu $(MAKE) market-watch SYMBOL="$(SYMBOL)" ARGS='$(ARGS)' 2>&1 | tee -a runtime-logs/watch_$$(date +%Y%m%d_%H%M%S).log
 
 paper-live:
 	@mkdir -p runtime-logs
 	@echo "Starting PAPER-ONLY live session; no exchange orders are sent."
-	PAPER_TRADING_ENABLED=true caffeinate -dimsu $(MAKE) live 2>&1 | tee -a runtime-logs/paper_$(date +%Y%m%d_%H%M%S).log
+	PAPER_TRADING_ENABLED=true caffeinate -dimsu $(MAKE) live 2>&1 | tee -a runtime-logs/paper_$$(date +%Y%m%d_%H%M%S).log
 
 candidate-paper-live:
 	@mkdir -p runtime-logs
 	@echo "Starting CANDIDATE PAPER-ONLY forward validation; no exchange orders are sent."
-	PAPER_TRADING_ENABLED=false CANDIDATE_PAPER_ENABLED=true caffeinate -dimsu $(MAKE) live 2>&1 | tee -a runtime-logs/candidate_paper_$(date +%Y%m%d_%H%M%S).log
+	PAPER_TRADING_ENABLED=false CANDIDATE_PAPER_ENABLED=true caffeinate -dimsu $(MAKE) live 2>&1 | tee -a runtime-logs/candidate_paper_$$(date +%Y%m%d_%H%M%S).log
 
 paper-report:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
