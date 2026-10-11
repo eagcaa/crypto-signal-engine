@@ -7,7 +7,6 @@ metrics have been produced.
 
 import argparse
 import csv
-import math
 import zipfile
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -18,7 +17,6 @@ from pathlib import Path
 import pandas as pd
 
 from crypto_signal_engine.examples.h5_funding_basis_baseline import (
-    CostModel,
     FundingPoint,
     PricePoint,
     SENSITIVITY_ROUND_TRIP_PCT,
