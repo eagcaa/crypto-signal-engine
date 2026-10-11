@@ -1,4 +1,4 @@
-.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage feature-diagnostics metrics-alignment readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical replay-walk-forward-historical-v2 backfill-history backfill-metrics validate-metrics-alignment backfill-materialize backfill-materialize-v2 backfill-load backfill-load-v2 calibrate db-up db-down db-logs db-shell clean
+.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage feature-diagnostics oi-feature-diagnostics metrics-alignment readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical replay-walk-forward-historical-v2 backfill-history backfill-metrics validate-metrics-alignment backfill-materialize backfill-materialize-v2 backfill-load backfill-load-v2 calibrate db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
 PYTHONPATH_SRC := PYTHONPATH=src
@@ -29,6 +29,7 @@ help:
 	@echo "  make shadow-report Show 1h shadow gross/cost/net economics"
 	@echo "  make feature-coverage Show persisted research feature history coverage"
 	@echo "  make feature-diagnostics Raw feature vs 15m/1h/4h forward returns on Jul-Aug research only"
+	@echo "  make oi-feature-diagnostics Delayed OI vs 15m/1h/4h forward returns on Jul-Aug only"
 	@echo "  make metrics-alignment Rich OI/ratio observability diagnostic vs live Binance data"
 	@echo "  make readiness    Check calibration and paper validation gates"
 	@echo "  make evaluation-report Show evaluation source/version breakdown"
@@ -101,6 +102,11 @@ feature-coverage:
 feature-diagnostics:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
 	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.feature_diagnostics --input "runtime-data/backfill/$(SYMBOL)/materialized/features-2026-07-01-2026-08-31.jsonl"
+
+oi-feature-diagnostics:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	@if [ -z "$(METRICS_ARTIFACT)" ]; then echo "METRICS_ARTIFACT is required"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.oi_feature_diagnostics --symbol "$(SYMBOL)" --input "runtime-data/backfill/$(SYMBOL)/materialized/features-2026-07-01-2026-08-31.jsonl" --metrics-alignment-artifact "$(METRICS_ARTIFACT)" --start-date "2026-07-01" --end-date "2026-08-31"
 
 metrics-alignment:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
