@@ -397,6 +397,20 @@ Report benchmark cumulative return and annualized return. Excess return = strate
 
 The strategy is not considered economically attractive merely because net return is positive; the excess return must be large enough to justify exchange, margin, operational and liquidation risks.
 
+### H5 development data-quality rule
+
+The H5 baseline may use the latest previously observed spot price across short missing hourly spot-kline gaps only when all of the following are true:
+
+- total missing spot hours are **strictly less than 0.1%** of the expected development-hour grid (at 35,064 expected hours, this permits at most 35 missing hours),
+- no contiguous missing spot-price gap exceeds **6 hours**,
+- there are no unexpected off-grid spot timestamps,
+- spot timestamps contain no duplicates,
+- the perpetual hourly series remains complete and duplicate-free.
+
+Every missing spot range must be reported before strategy evaluation. If any condition fails, the H5 data audit remains FAIL and the baseline must not run until a new data-source/remediation rule is explicitly recorded.
+
+This rule was added after the first coverage audit revealed 39 missing spot hours. Because 39 exceeds the frozen <0.1% threshold, this rule does **not** convert that observed dataset to PASS and must not be loosened to rescue the current result.
+
 ### No-lookahead funding rule
 
 At every historical decision time, only funding payments whose actual funding timestamps are at or before that time may be used.
