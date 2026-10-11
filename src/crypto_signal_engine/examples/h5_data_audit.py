@@ -1,0 +1,219 @@
+"""Audit frozen H5 development data without running the strategy."""
+
+import argparse
+from collections import Counter
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pandas as pd
+
+from crypto_signal_engine.examples.backfill_h5_funding_basis import (
+    DEVELOPMENT_END,
+    DEVELOPMENT_START,
+)
+from crypto_signal_engine.examples.h5_funding_basis_baseline import (
+    FundingPoint,
+    PricePoint,
+    _paths,
+    load_dtb3,
+    load_funding,
+    load_kline_prices,
+)
+
+
+EXPECTED_HOURLY_POINTS = (
+    (DEVELOPMENT_END - DEVELOPMENT_START).days + 1
+) * 24
+EXPECTED_8H_FUNDING_POINTS = (
+    (DEVELOPMENT_END - DEVELOPMENT_START).days + 1
+) * 3
+
+
+def _duplicates(timestamps: list[datetime]) -> int:
+    counts = Counter(timestamps)
+    return sum(count - 1 for count in counts.values() if count > 1)
+
+
+def _missing_hourly_points(points: list[PricePoint]) -> int:
+    expected_start = datetime.combine(
+        DEVELOPMENT_START,
+        datetime.min.time(),
+        tzinfo=UTC,
+    ) + timedelta(hours=1) - timedelta(milliseconds=1)
+    expected = pd.date_range(
+        expected_start,
+        periods=EXPECTED_HOURLY_POINTS,
+        freq="h",
+        tz="UTC",
+    )
+    actual = pd.DatetimeIndex([item.timestamp for item in points])
+    return len(expected.difference(actual))
+
+
+def _funding_gap_hours(points: list[FundingPoint]) -> list[int]:
+    return [
+        int(
+            (
+                later.timestamp - earlier.timestamp
+            ).total_seconds()
+            // 3600
+        )
+        for earlier, later in zip(points, points[1:])
+    ]
+
+
+def run(*, symbol: str, input_root: Path) -> None:
+    symbol = symbol.upper()
+    spot = load_kline_prices(
+        _paths(
+            root=input_root,
+            symbol=symbol,
+            market="spot",
+            dataset="klines",
+        )
+    )
+    perp = load_kline_prices(
+        _paths(
+            root=input_root,
+            symbol=symbol,
+            market="futures/um",
+            dataset="klines",
+        )
+    )
+    funding = load_funding(
+        _paths(
+            root=input_root,
+            symbol=symbol,
+            market="futures/um",
+            dataset="fundingRate",
+        )
+    )
+    dtb3 = load_dtb3(
+        input_root
+        / symbol
+        / "funding-basis/benchmark/DTB3.csv"
+    )
+
+    spot_duplicates = _duplicates(
+        [item.timestamp for item in spot]
+    )
+    perp_duplicates = _duplicates(
+        [item.timestamp for item in perp]
+    )
+    funding_duplicates = _duplicates(
+        [item.timestamp for item in funding]
+    )
+    spot_missing = _missing_hourly_points(spot)
+    perp_missing = _missing_hourly_points(perp)
+
+    gaps = _funding_gap_hours(funding)
+    gap_counts = Counter(gaps)
+    max_funding_gap = max(gaps) if gaps else 0
+
+    dtb3_first = dtb3.index.min()
+    dtb3_last = dtb3.index.max()
+    dtb3_seed_ok = (
+        dtb3_first.date() <= DEVELOPMENT_START
+        and dtb3_last.date() >= DEVELOPMENT_END - timedelta(days=7)
+    )
+
+    spot_ok = (
+        len(spot) == EXPECTED_HOURLY_POINTS
+        and spot_duplicates == 0
+        and spot_missing == 0
+    )
+    perp_ok = (
+        len(perp) == EXPECTED_HOURLY_POINTS
+        and perp_duplicates == 0
+        and perp_missing == 0
+    )
+    funding_ok = (
+        len(funding) > 0
+        and funding_duplicates == 0
+        and funding[0].timestamp.date() == DEVELOPMENT_START
+        and funding[-1].timestamp.date() == DEVELOPMENT_END
+        and max_funding_gap <= 24
+    )
+    status = (
+        "PASS"
+        if spot_ok and perp_ok and funding_ok and dtb3_seed_ok
+        else "FAIL"
+    )
+
+    print(
+        "H5_DATA_AUDIT "
+        f"status={status} "
+        f"symbol={symbol} "
+        f"start={DEVELOPMENT_START.isoformat()} "
+        f"end={DEVELOPMENT_END.isoformat()}"
+    )
+    print(
+        "H5_DATA_SPOT "
+        f"points={len(spot)} "
+        f"expected={EXPECTED_HOURLY_POINTS} "
+        f"missing_hours={spot_missing} "
+        f"duplicates={spot_duplicates} "
+        f"first={spot[0].timestamp.isoformat()} "
+        f"last={spot[-1].timestamp.isoformat()}"
+    )
+    print(
+        "H5_DATA_PERP "
+        f"points={len(perp)} "
+        f"expected={EXPECTED_HOURLY_POINTS} "
+        f"missing_hours={perp_missing} "
+        f"duplicates={perp_duplicates} "
+        f"first={perp[0].timestamp.isoformat()} "
+        f"last={perp[-1].timestamp.isoformat()}"
+    )
+    print(
+        "H5_DATA_FUNDING "
+        f"points={len(funding)} "
+        f"expected_if_8h={EXPECTED_8H_FUNDING_POINTS} "
+        f"duplicates={funding_duplicates} "
+        f"first={funding[0].timestamp.isoformat()} "
+        f"last={funding[-1].timestamp.isoformat()} "
+        f"max_gap_hours={max_funding_gap}"
+    )
+    print(
+        "H5_DATA_FUNDING_INTERVALS "
+        + " ".join(
+            f"{hours}h={count}"
+            for hours, count in sorted(gap_counts.items())
+        )
+    )
+    print(
+        "H5_DATA_DTB3 "
+        f"observations={len(dtb3)} "
+        f"first={dtb3_first.isoformat()} "
+        f"last={dtb3_last.isoformat()} "
+        f"seed_ok={str(dtb3_seed_ok).lower()}"
+    )
+
+    if status != "PASS":
+        raise RuntimeError(
+            "H5 development data audit failed; do not run the baseline."
+        )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Audit H5 development inputs without strategy evaluation."
+    )
+    parser.add_argument("--symbol", default="BTCUSDT")
+    parser.add_argument(
+        "--input-root",
+        default="runtime-data/h5",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    run(
+        symbol=args.symbol,
+        input_root=Path(args.input_root),
+    )
+
+
+if __name__ == "__main__":
+    main()
