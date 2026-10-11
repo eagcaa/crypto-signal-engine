@@ -226,17 +226,13 @@ def test_h5b_pending_down_resize_executes_when_spot_returns() -> None:
 
 
 def test_h5b_year_boundary_only_final_year_includes_exit_costs() -> None:
-    start = datetime(2024, 12, 31, 22, 59, 59, 999000, tzinfo=UTC)
+    start = datetime(2024, 12, 31, 0, 59, 59, 999000, tzinfo=UTC)
     spot = [
-        PricePoint(timestamp=start, close=Decimal("100")),
         PricePoint(
-            timestamp=start + timedelta(hours=1),
+            timestamp=start + timedelta(hours=hour),
             close=Decimal("100"),
-        ),
-        PricePoint(
-            timestamp=start + timedelta(hours=2),
-            close=Decimal("100"),
-        ),
+        )
+        for hour in range(27)
     ]
     perp = list(spot)
 
