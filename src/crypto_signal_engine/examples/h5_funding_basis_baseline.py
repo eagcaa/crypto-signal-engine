@@ -10,7 +10,7 @@ import csv
 import math
 import zipfile
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from io import TextIOWrapper
 from pathlib import Path
@@ -460,7 +460,6 @@ def simulate(
 
     equity_peak = starting_capital
     max_drawdown = Decimal("0")
-    yearly_start_equity: dict[int, Decimal] = {}
     yearly_end_equity: dict[int, Decimal] = {}
 
     funding_by_time: dict[datetime, list[FundingPoint]] = {}
@@ -585,7 +584,6 @@ def simulate(
             max_drawdown = max(max_drawdown, drawdown)
 
         year = timestamp.year
-        yearly_start_equity.setdefault(year, equity)
         yearly_end_equity[year] = equity
 
     final_spot, _ = _latest_price_at_or_before(
