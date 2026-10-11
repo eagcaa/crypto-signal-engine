@@ -125,7 +125,8 @@ def validate_fred_csv(path: Path) -> None:
     with path.open(encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         fields = set(reader.fieldnames or ())
-        if "DATE" not in fields or "DTB3" not in fields:
+        has_date = "DATE" in fields or "observation_date" in fields
+        if not has_date or "DTB3" not in fields:
             raise ValueError(
                 f"Unexpected DTB3 CSV header in {path}: "
                 f"{sorted(fields)}"
