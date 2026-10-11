@@ -44,7 +44,7 @@ from crypto_signal_engine.integrations import (
     TelegramNotifier,
 )
 from crypto_signal_engine.integrations.coinglass import CoinGlassApiError
-from crypto_signal_engine.market import MarketSnapshotAggregator
+from crypto_signal_engine.market import (\n    MarketSnapshotAggregator,\n    MarketStateAlertMonitor,\n)
 from crypto_signal_engine.paper import (
     CandidatePaperTracker,
     PaperBroker,
@@ -358,6 +358,7 @@ async def persist_snapshots(
     calibration_buckets=(),
     data_quality_monitor: DataQualityMonitor | None = None,
     source_freshness_monitor: SourceFreshnessMonitor | None = None,
+    market_state_monitor: MarketStateAlertMonitor | None = None,
     *,
     interval_seconds: float = 5.0,
     prediction_interval_seconds: int = 60,
@@ -412,6 +413,24 @@ async def persist_snapshots(
 
         research_snapshot = await research_aggregator.snapshot(snapshot)
         await research_repository.add(research_snapshot)
+
+        if market_state_monitor is not None:
+            for alert in market_state_monitor.evaluate(research_snapshot):
+                details = " | ".join(alert.details)
+                print(
+                    "MARKET_STATE "
+                    f"key={alert.key} "
+                    f"title={alert.title!r} "
+                    f"summary={alert.summary!r} "
+                    f"details={details!r}"
+                )
+                await send_telegram(
+                    telegram_dispatcher,
+                    TelegramNotifier.market_state_text(
+                        alert,
+                        symbol=research_snapshot.symbol,
+                    ),
+                )
 
         print(
             "FEATURES "
@@ -917,6 +936,16 @@ async def main() -> None:
         )
     aggregator = MarketSnapshotAggregator("BTCUSDT")
     research_aggregator = ResearchFeatureAggregator("BTCUSDT")
+    market_state_monitor = (
+        MarketStateAlertMonitor()
+        if settings.market_state_alerts_enabled
+        else None
+    )
+    if market_state_monitor is not None:
+        print(
+            "MARKET_STATE_ALERTS enabled "
+            "mode=descriptive_only trade_signals=disabled"
+        )
 
     try:
         async with asyncio.TaskGroup() as task_group:
@@ -997,6 +1026,7 @@ async def main() -> None:
                     calibration_buckets,
                     data_quality_monitor,
                     source_freshness_monitor,
+                    market_state_monitor,
                     interval_seconds=5.0,
                     prediction_interval_seconds=60,
                 )
