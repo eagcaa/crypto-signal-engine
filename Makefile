@@ -1,4 +1,4 @@
-.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage feature-diagnostics oi-feature-diagnostics metrics-alignment readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical replay-walk-forward-historical-v2 backfill-history backfill-metrics validate-metrics-alignment backfill-materialize backfill-materialize-v2 backfill-load backfill-load-v2 h5-backfill h5-baseline calibrate db-up db-down db-logs db-shell clean
+.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage feature-diagnostics oi-feature-diagnostics metrics-alignment readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical replay-walk-forward-historical-v2 backfill-history backfill-metrics validate-metrics-alignment backfill-materialize backfill-materialize-v2 backfill-load backfill-load-v2 h5-backfill h5-data-audit h5-baseline calibrate db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
 PYTHONPATH_SRC := PYTHONPATH=src
@@ -49,6 +49,7 @@ help:
 	@echo "  make backfill-load Load materialized historical v1 features into PostgreSQL"
 	@echo "  make backfill-load-v2 Load materialized historical v2 features into PostgreSQL"
 	@echo "  make h5-backfill    Download frozen 2020-2023 H5 funding/basis development data"
+	@echo "  make h5-data-audit  Validate H5 development data coverage before baseline"
 	@echo "  make h5-baseline    Run frozen H5 always-on development baseline (1x/2x)"
 	@echo "  make calibrate     Build exact replay calibration artifact"
 	@echo "  make db-up        Start TimescaleDB"
@@ -192,6 +193,10 @@ backfill-load:
 h5-backfill:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
 	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.backfill_h5_funding_basis --symbol "$(SYMBOL)"
+
+h5-data-audit:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.h5_data_audit --symbol "$(SYMBOL)"
 
 h5-baseline:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
