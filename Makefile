@@ -80,7 +80,7 @@ test:
 
 live:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
-	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.live_market_snapshot
+	$(PYTHONPATH_SRC) $(PYTHON) -u -m crypto_signal_engine.examples.live_market_snapshot
 
 dashboard:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
@@ -93,7 +93,7 @@ live-log:
 
 market-watch:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
-	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.market_watch --symbol "$(SYMBOL)" $(ARGS)
+	$(PYTHONPATH_SRC) $(PYTHON) -u -m crypto_signal_engine.examples.market_watch --symbol "$(SYMBOL)" $(ARGS)
 
 market-watch-log:
 	@mkdir -p runtime-logs
