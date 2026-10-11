@@ -94,6 +94,88 @@ class ResearchFeatureRepository:
             dataset_provenance=snapshot.dataset_provenance,
         )
 
+    @staticmethod
+    def _from_row(
+        row: ResearchFeatureSnapshotRow,
+    ) -> ResearchFeatureSnapshot:
+        return ResearchFeatureSnapshot(
+            symbol=row.symbol,
+            timestamp=row.timestamp,
+            price=row.price,
+            spot_cvd_1m=row.spot_cvd_1m,
+            spot_cvd_5m=row.spot_cvd_5m,
+            spot_cvd_15m=row.spot_cvd_15m,
+            futures_cvd_1m=row.futures_cvd_1m,
+            futures_cvd_5m=row.futures_cvd_5m,
+            futures_cvd_15m=row.futures_cvd_15m,
+            spot_cvd_ratio_1m=row.spot_cvd_ratio_1m,
+            spot_cvd_ratio_5m=row.spot_cvd_ratio_5m,
+            spot_cvd_ratio_15m=row.spot_cvd_ratio_15m,
+            futures_cvd_ratio_1m=row.futures_cvd_ratio_1m,
+            futures_cvd_ratio_5m=row.futures_cvd_ratio_5m,
+            futures_cvd_ratio_15m=row.futures_cvd_ratio_15m,
+            spot_trade_sources=row.spot_trade_sources,
+            futures_trade_sources=row.futures_trade_sources,
+            history_seconds=row.history_seconds,
+            trend_score_5m=row.trend_score_5m,
+            trend_score_15m=row.trend_score_15m,
+            trend_score_1h=row.trend_score_1h,
+            trend_score_4h=row.trend_score_4h,
+            atr_pct_5m=row.atr_pct_5m,
+            atr_pct_15m=row.atr_pct_15m,
+            atr_pct_1h=row.atr_pct_1h,
+            atr_pct_4h=row.atr_pct_4h,
+            trend_regime_5m=row.trend_regime_5m,
+            trend_regime_15m=row.trend_regime_15m,
+            trend_regime_1h=row.trend_regime_1h,
+            trend_regime_4h=row.trend_regime_4h,
+            volatility_regime_5m=row.volatility_regime_5m,
+            volatility_regime_15m=row.volatility_regime_15m,
+            volatility_regime_1h=row.volatility_regime_1h,
+            volatility_regime_4h=row.volatility_regime_4h,
+            binance_oi_change_5m_pct=row.binance_oi_change_5m_pct,
+            binance_oi_change_15m_pct=row.binance_oi_change_15m_pct,
+            bybit_oi_change_5m_pct=row.bybit_oi_change_5m_pct,
+            bybit_oi_change_15m_pct=row.bybit_oi_change_15m_pct,
+            binance_funding_rate=row.binance_funding_rate,
+            bybit_funding_rate=row.bybit_funding_rate,
+            binance_long_short_ratio=row.binance_long_short_ratio,
+            bybit_long_short_ratio=row.bybit_long_short_ratio,
+            binance_top_trader_long_short_ratio=(
+                row.binance_top_trader_long_short_ratio
+            ),
+            binance_taker_buy_sell_ratio=row.binance_taker_buy_sell_ratio,
+            long_liquidations_5m_usd=row.long_liquidations_5m_usd,
+            short_liquidations_5m_usd=row.short_liquidations_5m_usd,
+            liquidation_imbalance_5m=row.liquidation_imbalance_5m,
+            long_liquidations_15m_usd=row.long_liquidations_15m_usd,
+            short_liquidations_15m_usd=row.short_liquidations_15m_usd,
+            liquidation_imbalance_15m=row.liquidation_imbalance_15m,
+            binance_book_imbalance=row.binance_book_imbalance,
+            bybit_book_imbalance=row.bybit_book_imbalance,
+            market_data_quality=row.market_data_quality,
+            liquidation_data_available=row.liquidation_data_available,
+            dataset_provenance=row.dataset_provenance,
+        )
+
+    async def latest(
+        self,
+        symbol: str,
+    ) -> ResearchFeatureSnapshot | None:
+        async with self._session_factory() as session:
+            query = (
+                select(ResearchFeatureSnapshotRow)
+                .where(
+                    ResearchFeatureSnapshotRow.symbol == symbol.upper(),
+                    ResearchFeatureSnapshotRow.dataset_provenance
+                    == "live_full",
+                )
+                .order_by(ResearchFeatureSnapshotRow.timestamp.desc())
+                .limit(1)
+            )
+            row = (await session.scalars(query)).first()
+            return None if row is None else self._from_row(row)
+
     async def add(self, snapshot: ResearchFeatureSnapshot) -> None:
         async with self._session_factory() as session:
             session.add(self._to_row(snapshot))
