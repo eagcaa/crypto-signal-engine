@@ -420,6 +420,8 @@ Before any live use, liquidation distance must be modeled with the exchange's ac
 
 The always-on development baseline may advance to a frozen H5 test only if it is positive after trading costs and slippage, survives the 1x/2x margin stress report, and shows economically meaningful excess return over the benchmark rather than a trivial positive carry.
 
+"Economically meaningful" is frozen as: annualized excess return over DTB3 of at least **3 percentage points at 1x leverage** under the detailed **0.38% baseline cost accounting**, and positive excess return in at least **3 of the 4 development calendar years (2020-2023)**.
+
 If it does not meet those conditions, stop the H5 baseline. Do not rescue it with filters selected from the same development results without first recording a new hypothesis.
 
 ### Time boundary
