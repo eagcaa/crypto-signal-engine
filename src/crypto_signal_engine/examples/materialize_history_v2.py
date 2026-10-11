@@ -61,9 +61,9 @@ def load_alignment_shift(
             "Metrics alignment artifact has no selected integer shift."
         )
 
-    if shift not in {-5, 0, 5}:
+    if shift < 0 or shift > 30:
         raise RuntimeError(
-            f"Unsupported metrics alignment shift: {shift}"
+            f"Unsupported metrics observable delay: {shift}"
         )
 
     return shift
