@@ -27,6 +27,8 @@ from crypto_signal_engine.features.historical_metrics import (
 OI_FEATURES = (
     "binance_oi_change_5m_pct",
     "binance_oi_change_15m_pct",
+    "binance_oi_contracts_change_5m_pct",
+    "binance_oi_contracts_change_15m_pct",
 )
 DEFAULT_HORIZONS_MINUTES = (15, 60, 240)
 
@@ -87,6 +89,8 @@ def add_oi_features(
     output = frame.copy()
     oi_5m: list[float | None] = []
     oi_15m: list[float | None] = []
+    oi_contracts_5m: list[float | None] = []
+    oi_contracts_15m: list[float | None] = []
 
     for timestamp in output.index:
         now = timestamp.to_pydatetime()
@@ -105,9 +109,23 @@ def add_oi_features(
             or metrics.oi_change_15m_pct is None
             else float(metrics.oi_change_15m_pct)
         )
+        oi_contracts_5m.append(
+            None
+            if metrics is None
+            or metrics.oi_contracts_change_5m_pct is None
+            else float(metrics.oi_contracts_change_5m_pct)
+        )
+        oi_contracts_15m.append(
+            None
+            if metrics is None
+            or metrics.oi_contracts_change_15m_pct is None
+            else float(metrics.oi_contracts_change_15m_pct)
+        )
 
     output["binance_oi_change_5m_pct"] = oi_5m
     output["binance_oi_change_15m_pct"] = oi_15m
+    output["binance_oi_contracts_change_5m_pct"] = oi_contracts_5m
+    output["binance_oi_contracts_change_15m_pct"] = oi_contracts_15m
     return output
 
 
