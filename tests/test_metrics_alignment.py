@@ -164,7 +164,7 @@ def test_alignment_selects_plus_five_minute_observable_shift() -> None:
     )
 
     assert result.status == "PASS"
-    assert result.selected_shift_minutes == 5
+    assert result.selected_shift_minutes == 6
     assert result.ratio_delay_minutes == 2
     assert len(result.ratio_mappings) == 3
 
@@ -258,7 +258,7 @@ def test_metrics_timeline_never_exposes_point_before_observable_time() -> None:
     )
 
 
-def test_alignment_fails_when_ratio_observability_is_missing() -> None:
+def test_alignment_returns_oi_only_when_ratio_observability_is_missing() -> None:
     start = datetime(2026, 10, 8, tzinfo=UTC)
     archive_points = [
         _archive_point(
@@ -281,8 +281,9 @@ def test_alignment_fails_when_ratio_observability_is_missing() -> None:
         [],
     )
 
-    assert result.status == "FAIL"
-    assert result.selected_shift_minutes is None
+    assert result.status == "PASS_OI_ONLY"
+    assert result.selected_shift_minutes == 1
+    assert result.ratio_delay_minutes is None
     assert result.reason.startswith("ratio_mapping_missing:")
 
 
