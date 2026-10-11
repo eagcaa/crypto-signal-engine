@@ -10,6 +10,7 @@ from crypto_signal_engine.examples.backfill_h5_funding_basis import (
     fred_dtb3_url,
     monthly_archive_specs,
     validate_development_range,
+    validate_fred_csv,
 )
 from crypto_signal_engine.examples.h5_funding_basis_baseline import (
     CostModel,
@@ -47,6 +48,30 @@ def test_h5_monthly_archive_paths_are_frozen_sources() -> None:
         "/futures/um/monthly/klines/BTCUSDT/1h/"
         "BTCUSDT-1h-2020-01.zip"
     )
+
+
+def test_h5_fred_validator_accepts_observation_date_header(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "DTB3.csv"
+    path.write_text(
+        "observation_date,DTB3\n2019-12-31,1.52\n",
+        encoding="utf-8",
+    )
+
+    validate_fred_csv(path)
+
+
+def test_h5_fred_validator_accepts_legacy_date_header(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "DTB3.csv"
+    path.write_text(
+        "DATE,DTB3\n2019-12-31,1.52\n",
+        encoding="utf-8",
+    )
+
+    validate_fred_csv(path)
 
 
 def test_h5_fred_url_is_bounded_before_final_test() -> None:
