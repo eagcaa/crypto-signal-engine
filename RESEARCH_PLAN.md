@@ -352,6 +352,28 @@ For the first research pass, model a conservative standard-fee case:
 
 These are research assumptions, not a claim about the user's account-specific Binance fee tier. Before any live implementation, replace them only with verified account/exchange fees and record the change as a new execution assumption.
 
+### Rebalancing rule (always-on baseline)
+
+When the futures margin buffer falls below 50% of its initial allocation, sell enough spot BTC to restore the futures margin buffer to its initial level and reduce the perpetual short by the same BTC quantity so the position remains delta-neutral.
+
+All rebalancing executions pay the frozen spot and futures fees plus the frozen slippage assumption. Report the number of rebalances, BTC/notional resized, capital transferred to futures margin, and total rebalancing cost.
+
+The 50% trigger is frozen before viewing development results and must not be changed after results are inspected. A different trigger is a new hypothesis.
+
+### Slippage and cost sensitivity
+
+Freeze slippage at **0.02% per execution per leg** for the detailed baseline simulation.
+
+Under the frozen standard-fee assumptions, the initial complete entry plus exit costs 0.30% in fees before slippage. Four executions across spot and futures entry/exit add 0.08% slippage, for a detailed baseline round-trip assumption of approximately **0.38%**, before any rebalancing costs.
+
+In addition to the detailed execution accounting, report sensitivity at three simplified **all-in complete round-trip cost** levels:
+
+- 0.20%
+- 0.30%
+- 0.40%
+
+These sensitivity cases are alternative all-in scenarios and must not be added on top of the detailed fee/slippage calculation.
+
 ### Capital-return definition and benchmark
 
 Measure return on **total capital committed**, not on gross notional alone. Total committed capital includes the capital used for the full spot leg plus the futures margin allocated to the short leg.
@@ -369,7 +391,11 @@ Report at minimum:
 - turnover / number of complete position cycles,
 - return by calendar year.
 
-Also compare the strategy against a USD cash / low-risk benchmark over the same period. The strategy is not considered economically attractive merely because net return is positive; the excess return must be large enough to justify exchange, margin, operational and liquidation risks.
+Benchmark the strategy against the **US 3-month Treasury bill rate, FRED series DTB3**, over the same period. Use the historical observations from FRED and compound the benchmark through time using a documented, deterministic conversion from the quoted annualized rate to the simulation time step; do not select or change the benchmark after viewing strategy results.
+
+Report benchmark cumulative return and annualized return. Excess return = strategy annualized net return minus benchmark annualized return.
+
+The strategy is not considered economically attractive merely because net return is positive; the excess return must be large enough to justify exchange, margin, operational and liquidation risks.
 
 ### No-lookahead funding rule
 
