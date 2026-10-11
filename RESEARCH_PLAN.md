@@ -292,6 +292,8 @@ September remains untouched.
 
 **Rejected hypothesis family:** BTCUSDT, Binance free flow and OI data, 15-minute to 4-hour directional prediction. No feature cleared trading costs in the July-August diagnostics. September and April-June were not used.
 
+> **Superseded:** V2 was not built. The directional hypothesis family was rejected above; the rules below are kept only as a historical record.
+
 ### V2 freeze rule
 
 Do not select V2 features, horizon, score threshold, regime gates or barriers by looking at September.
@@ -306,6 +308,8 @@ V2 is frozen only after:
 
 The existing `HistoricalCompatibleV2PredictionEngine` implementation is provisional research scaffolding only until this freeze step is completed. It must not be treated as the final V2 hypothesis merely because the code exists.
 
+> **Superseded:** V2 was not built. The directional hypothesis family was rejected above; the rules below are kept only as a historical record.
+
 ### V2 evaluation protocol
 
 After the V2 hypothesis is frozen, evaluate it on July-August and report aggregate plus monthly stability.
@@ -313,3 +317,85 @@ After the V2 hypothesis is frozen, evaluate it on July-August and report aggrega
 Only if it passes the research thresholds should September be opened once as the primary final historical holdout. If V2 is changed after viewing September, September is consumed and cannot be reused as unbiased evidence; use the untouched April-June backup holdout for a later version instead.
 
 October live-forward data remains separate from all historical holdouts.
+
+
+## H5 — Delta-neutral funding/basis research
+
+### Pre-registered hypothesis
+
+BTCUSDT spot long plus an equal-notional Binance USD-M perpetual short may earn a positive net return from funding/basis carry without relying on BTC price direction.
+
+**Why this may clear costs:** the return source is repeated carry while the position remains open, so trading costs are paid infrequently relative to the holding period rather than on every short-horizon directional prediction.
+
+This is a separate hypothesis family from H1-H4. The September 2026 and April-June 2026 directional holdouts are not reused for H5.
+
+### Frozen research periods
+
+- **Development:** 2020-01-01 through 2023-12-31.
+- **Final test:** 2024-01-01 through 2025-12-31, inspected once only after the development rules are frozen.
+- Do not tune H5 on the final-test period. Any rule changed after viewing 2024-2025 consumes that test period for the changed version.
+
+### Baseline first: always-on carry
+
+The first H5 experiment is the simplest possible version: maintain an equal-notional spot-long / perpetual-short position continuously, with no funding threshold, volatility filter, trend filter, weekday filter, regime filter or discretionary entry rule.
+
+Do not add conditional entry/exit rules unless the always-on development result is economically viable after the frozen cost assumptions. If the always-on baseline does not clear costs, any later filtered version is a new hypothesis and must be pre-registered before testing.
+
+### Frozen research cost assumptions
+
+For the first research pass, model a conservative standard-fee case:
+
+- Spot fee: 0.10% per side.
+- Futures fee: 0.05% per side.
+- One complete entry plus exit across both legs therefore costs 0.30% before slippage.
+- Report slippage separately and also report a conservative net result including an explicit slippage assumption.
+
+These are research assumptions, not a claim about the user's account-specific Binance fee tier. Before any live implementation, replace them only with verified account/exchange fees and record the change as a new execution assumption.
+
+### Capital-return definition and benchmark
+
+Measure return on **total capital committed**, not on gross notional alone. Total committed capital includes the capital used for the full spot leg plus the futures margin allocated to the short leg.
+
+Report at minimum:
+
+- cumulative net return on committed capital,
+- annualized net return,
+- funding income before costs,
+- total trading costs,
+- maximum drawdown,
+- worst calendar month,
+- longest negative-funding streak,
+- fraction of time funding is negative,
+- turnover / number of complete position cycles,
+- return by calendar year.
+
+Also compare the strategy against a USD cash / low-risk benchmark over the same period. The strategy is not considered economically attractive merely because net return is positive; the excess return must be large enough to justify exchange, margin, operational and liquidation risks.
+
+### No-lookahead funding rule
+
+At every historical decision time, only funding payments whose actual funding timestamps are at or before that time may be used.
+
+Do not use the next announced or predicted funding rate in the first H5 research pass, even if such a value may be visible in live APIs. Use actual historical funding timestamps rather than assuming a fixed 8-hour interval.
+
+### Futures leverage and liquidation stress rule
+
+Model the futures short at both 1x and 2x leverage.
+
+For each leverage case:
+
+- track allocated futures margin separately from spot capital,
+- report the minimum margin buffer,
+- evaluate whether the allocated margin would survive the worst observed 24-hour adverse BTC price move in the development period,
+- treat this as a stress test, not as a substitute for exchange-specific liquidation mechanics.
+
+Before any live use, liquidation distance must be modeled with the exchange's actual mark-price, maintenance-margin and liquidation rules.
+
+### Development decision rule
+
+The always-on development baseline may advance to a frozen H5 test only if it is positive after trading costs and slippage, survives the 1x/2x margin stress report, and shows economically meaningful excess return over the benchmark rather than a trivial positive carry.
+
+If it does not meet those conditions, stop the H5 baseline. Do not rescue it with filters selected from the same development results without first recording a new hypothesis.
+
+### Time boundary
+
+The H5 research branch should be accepted, rejected or explicitly paused by 2026-12-31. Do not extend research indefinitely by adding post-hoc filters.
