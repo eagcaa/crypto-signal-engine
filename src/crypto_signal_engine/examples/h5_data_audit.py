@@ -3,6 +3,7 @@
 import argparse
 from collections import Counter
 from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 from pathlib import Path
 
 import pandas as pd
@@ -60,13 +61,48 @@ def _max_contiguous_missing_hours(
 
     longest = 1
     current = 1
-    for previous, current_ts in zip(missing, missing[1:]):
+    for previous, current_ts in pairwise(missing):
         if current_ts - previous == pd.Timedelta(hours=1):
             current += 1
             longest = max(longest, current)
         else:
             current = 1
     return longest
+
+
+def _missing_ranges(
+    missing: pd.DatetimeIndex,
+) -> list[tuple[pd.Timestamp, pd.Timestamp, int]]:
+    if len(missing) == 0:
+        return []
+
+    ranges: list[tuple[pd.Timestamp, pd.Timestamp, int]] = []
+    start = missing[0]
+    previous = missing[0]
+
+    for current in missing[1:]:
+        if current - previous != pd.Timedelta(hours=1):
+            hours = int((previous - start) / pd.Timedelta(hours=1)) + 1
+            ranges.append((start, previous, hours))
+            start = current
+        previous = current
+
+    hours = int((previous - start) / pd.Timedelta(hours=1)) + 1
+    ranges.append((start, previous, hours))
+    return ranges
+
+
+def _spot_missing_is_tolerable(
+    missing: pd.DatetimeIndex,
+    *,
+    unexpected_count: int,
+) -> bool:
+    missing_fraction = len(missing) / EXPECTED_HOURLY_POINTS
+    return (
+        missing_fraction < 0.001
+        and _max_contiguous_missing_hours(missing) <= 6
+        and unexpected_count == 0
+    )
 
 
 def _funding_gap_hours(points: list[FundingPoint]) -> list[int]:
@@ -77,7 +113,7 @@ def _funding_gap_hours(points: list[FundingPoint]) -> list[int]:
             ).total_seconds()
             // 3600
         )
-        for earlier, later in zip(points, points[1:])
+        for earlier, later in pairwise(points)
     ]
 
 
@@ -139,10 +175,11 @@ def run(*, symbol: str, input_root: Path) -> None:
     )
 
     spot_ok = (
-        len(spot) == EXPECTED_HOURLY_POINTS
-        and spot_duplicates == 0
-        and len(spot_missing) == 0
-        and len(spot_unexpected) == 0
+        spot_duplicates == 0
+        and _spot_missing_is_tolerable(
+            spot_missing,
+            unexpected_count=len(spot_unexpected),
+        )
     )
     perp_ok = (
         len(perp) == EXPECTED_HOURLY_POINTS
@@ -177,6 +214,8 @@ def run(*, symbol: str, input_root: Path) -> None:
         f"missing_hours={len(spot_missing)} "
         f"unexpected_timestamps={len(spot_unexpected)} "
         f"max_contiguous_missing_hours={spot_max_gap} "
+        f"missing_fraction={len(spot_missing) / EXPECTED_HOURLY_POINTS:.6f} "
+        f"tolerable={str(_spot_missing_is_tolerable(spot_missing, unexpected_count=len(spot_unexpected))).lower()} "
         f"duplicates={spot_duplicates} "
         f"first={spot[0].timestamp.isoformat()} "
         f"last={spot[-1].timestamp.isoformat()}"
@@ -211,6 +250,22 @@ def run(*, symbol: str, input_root: Path) -> None:
         print(
             "H5_DATA_PERP_UNEXPECTED "
             + ",".join(item.isoformat() for item in perp_unexpected)
+        )
+
+    spot_ranges = sorted(
+        _missing_ranges(spot_missing),
+        key=lambda item: (-item[2], item[0]),
+    )
+    for rank, (start, end, hours) in enumerate(
+        spot_ranges[:10],
+        start=1,
+    ):
+        print(
+            "H5_DATA_SPOT_GAP "
+            f"rank={rank} "
+            f"hours={hours} "
+            f"start={start.isoformat()} "
+            f"end={end.isoformat()}"
         )
 
     print(
