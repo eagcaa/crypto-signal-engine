@@ -764,12 +764,12 @@ def print_result(
         f"rebalances={result.rebalances} "
         f"rebalanced_btc={result.rebalanced_btc:.8f} "
         f"margin_transfers={result.transferred_to_margin:.2f} "
-        f"negative_funding_fraction="
+        "negative_funding_fraction="
         f"{result.negative_funding_fraction:.4f} "
-        f"longest_negative_streak_hours="
+        "longest_negative_streak_hours="
         f"{result.longest_negative_funding_streak_hours:.2f} "
         f"worst_24h_perp_rise={result.worst_24h_perp_rise_pct:.4f}% "
-        f"static_margin_stress_survives="
+        "static_margin_stress_survives="
         f"{str(result.static_margin_stress_survives).lower()} "
         f"minimum_margin_equity={result.minimum_margin_equity:.2f}"
     )
@@ -802,7 +802,7 @@ def print_result(
             f"status={'PASS' if passes else 'FAIL'} "
             f"excess_annualized={excess:.4f}pp "
             f"positive_excess_years={positive_excess_years}/4 "
-            f"stress_survives="
+            "stress_survives="
             f"{str(result.static_margin_stress_survives).lower()}"
         )
 
@@ -847,8 +847,8 @@ def run(
 
     print(
         "H5_BENCHMARK "
-        f"series=DTB3 "
-        f"conversion=simple_daily_rate_over_360 "
+        "series=DTB3 "
+        "conversion=simple_daily_rate_over_360 "
         f"cumulative={benchmark_total:.4f}% "
         f"annualized={benchmark_annualized:.4f}%"
     )
