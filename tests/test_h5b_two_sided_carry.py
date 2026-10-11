@@ -200,3 +200,64 @@ def test_h5b_timestamp_parser_accepts_milliseconds_and_microseconds() -> None:
 
     assert millis == datetime(2024, 1, 1, tzinfo=UTC)
     assert micros == datetime(2025, 1, 1, tzinfo=UTC)
+
+
+
+def test_h5b_pending_down_resize_executes_when_spot_returns() -> None:
+    spot = [_point(0, "100")]
+    spot.extend(_point(hour, "200") for hour in range(2, 26))
+
+    perp = [_point(0, "100"), _point(1, "200")]
+    perp.extend(_point(hour, "200") for hour in range(2, 26))
+
+    result = simulate_h5b(
+        leverage=Decimal("1"),
+        spot_prices=spot,
+        perp_prices=perp,
+        funding=[],
+        cost_model=CostModel(
+            name="zero",
+            spot_execution_rate=Decimal("0"),
+            futures_execution_rate=Decimal("0"),
+        ),
+    )
+
+    assert result.down_resizes == 1
+
+
+def test_h5b_year_boundary_only_final_year_includes_exit_costs() -> None:
+    start = datetime(2024, 12, 31, 22, 59, 59, 999000, tzinfo=UTC)
+    spot = [
+        PricePoint(timestamp=start, close=Decimal("100")),
+        PricePoint(
+            timestamp=start + timedelta(hours=1),
+            close=Decimal("100"),
+        ),
+        PricePoint(
+            timestamp=start + timedelta(hours=2),
+            close=Decimal("100"),
+        ),
+    ]
+    perp = list(spot)
+
+    result = simulate_h5b(
+        leverage=Decimal("1"),
+        spot_prices=spot,
+        perp_prices=perp,
+        funding=[],
+        cost_model=COSTS,
+    )
+
+    entry_only_return = (
+        (
+            result.starting_capital
+            - Decimal("10000") * COSTS.spot_execution_rate
+            - Decimal("10000") * COSTS.futures_execution_rate
+        )
+        / result.starting_capital
+        - Decimal("1")
+    ) * Decimal("100")
+
+    assert result.yearly_returns_pct[2024] == entry_only_return
+    assert result.yearly_returns_pct[2025] < Decimal("0")
+    assert result.yearly_returns_pct[2025] < result.yearly_returns_pct[2024]
