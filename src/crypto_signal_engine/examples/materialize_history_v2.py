@@ -1,3 +1,10 @@
+"""Rejected/unused V2 research scaffolding.
+
+The 15m-4h directional hypothesis family was rejected before V2 evaluation.
+This module is retained only for historical reference and remains gated by a
+full PASS metrics-alignment artifact.
+"""
+
 import argparse
 import json
 from dataclasses import asdict, replace
