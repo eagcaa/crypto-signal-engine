@@ -1,0 +1,28 @@
+PYTHONPATH=src .venv/bin/python -m crypto_signal_engine.examples.h5b_final_test --symbol "BTCUSDT"
+H5B_BENCHMARK series=DTB3 conversion=simple_daily_rate_over_360 cumulative=9.6039% annualized=4.6951%
+H5B_INPUT symbol=BTCUSDT start=2024-01-01 end=2025-12-31 spot_points=17544 perp_points=17544 funding_points=2193
+H5B_RESULT leverage=1x cost_model=detailed_0.38pct net_return=9.3483% annualized=4.5667% benchmark_annualized=4.6951% excess_annualized=-0.1284pp funding_income=1937.99 trading_costs=73.41 max_drawdown=0.1436% down_resizes=4 up_resizes=2 resized_btc=0.21597060 minimum_margin_equity=6710.38 worst_24h_perp_rise=12.7469% static_margin_stress_survives=true
+H5B_YEAR leverage=1x cost_model=detailed_0.38pct year=2024 strategy=6.7654% benchmark=5.1797% excess=+1.5857pp
+H5B_YEAR leverage=1x cost_model=detailed_0.38pct year=2025 strategy=2.4192% benchmark=4.2064% excess=-1.7872pp
+H5B_FINAL_GATE status=FAIL net_positive=true excess_2024=+1.5857pp excess_2025=-1.7872pp excess_annualized=-0.1284pp stress_survives=true
+H5B_RESULT leverage=1x cost_model=sensitivity_0.20pct net_return=9.5287% annualized=4.6529% benchmark_annualized=4.6951% excess_annualized=-0.0422pp funding_income=1939.32 trading_costs=38.65 max_drawdown=0.1436% down_resizes=4 up_resizes=2 resized_btc=0.21596875 minimum_margin_equity=6719.38 worst_24h_perp_rise=12.7469% static_margin_stress_survives=true
+H5B_YEAR leverage=1x cost_model=sensitivity_0.20pct year=2024 strategy=6.8616% benchmark=5.1797% excess=+1.6819pp
+H5B_YEAR leverage=1x cost_model=sensitivity_0.20pct year=2025 strategy=2.4958% benchmark=4.2064% excess=-1.7106pp
+H5B_RESULT leverage=1x cost_model=sensitivity_0.30pct net_return=9.4284% annualized=4.6050% benchmark_annualized=4.6951% excess_annualized=-0.0901pp funding_income=1938.58 trading_costs=57.97 max_drawdown=0.1436% down_resizes=4 up_resizes=2 resized_btc=0.21596977 minimum_margin_equity=6714.38 worst_24h_perp_rise=12.7469% static_margin_stress_survives=true
+H5B_YEAR leverage=1x cost_model=sensitivity_0.30pct year=2024 strategy=6.8081% benchmark=5.1797% excess=+1.6285pp
+H5B_YEAR leverage=1x cost_model=sensitivity_0.30pct year=2025 strategy=2.4533% benchmark=4.2064% excess=-1.7531pp
+H5B_RESULT leverage=1x cost_model=sensitivity_0.40pct net_return=9.3282% annualized=4.5571% benchmark_annualized=4.6951% excess_annualized=-0.1380pp funding_income=1937.85 trading_costs=77.27 max_drawdown=0.1476% down_resizes=4 up_resizes=2 resized_btc=0.21597080 minimum_margin_equity=6709.38 worst_24h_perp_rise=12.7469% static_margin_stress_survives=true
+H5B_YEAR leverage=1x cost_model=sensitivity_0.40pct year=2024 strategy=6.7547% benchmark=5.1797% excess=+1.5750pp
+H5B_YEAR leverage=1x cost_model=sensitivity_0.40pct year=2025 strategy=2.4107% benchmark=4.2064% excess=-1.7957pp
+H5B_RESULT leverage=2x cost_model=detailed_0.38pct net_return=11.9408% annualized=5.7982% benchmark_annualized=4.6951% excess_annualized=1.1031pp funding_income=1875.11 trading_costs=87.69 max_drawdown=0.1901% down_resizes=8 up_resizes=5 resized_btc=0.33712740 minimum_margin_equity=2977.37 worst_24h_perp_rise=12.7469% static_margin_stress_survives=true
+H5B_YEAR leverage=2x cost_model=detailed_0.38pct year=2024 strategy=8.2879% benchmark=5.1797% excess=+3.1082pp
+H5B_YEAR leverage=2x cost_model=detailed_0.38pct year=2025 strategy=3.3734% benchmark=4.2064% excess=-0.8330pp
+H5B_RESULT leverage=2x cost_model=sensitivity_0.20pct net_return=12.2319% annualized=5.9356% benchmark_annualized=4.6951% excess_annualized=1.2405pp funding_income=1877.28 trading_costs=46.19 max_drawdown=0.1687% down_resizes=8 up_resizes=5 resized_btc=0.33731204 minimum_margin_equity=2979.51 worst_24h_perp_rise=12.7469% static_margin_stress_survives=true
+H5B_YEAR leverage=2x cost_model=sensitivity_0.20pct year=2024 strategy=8.4514% benchmark=5.1797% excess=+3.2718pp
+H5B_YEAR leverage=2x cost_model=sensitivity_0.20pct year=2025 strategy=3.4859% benchmark=4.2064% excess=-0.7205pp
+H5B_RESULT leverage=2x cost_model=sensitivity_0.30pct net_return=12.0702% annualized=5.8593% benchmark_annualized=4.6951% excess_annualized=1.1642pp funding_income=1876.07 trading_costs=69.25 max_drawdown=0.1687% down_resizes=8 up_resizes=5 resized_btc=0.33720943 minimum_margin_equity=2978.32 worst_24h_perp_rise=12.7469% static_margin_stress_survives=true
+H5B_YEAR leverage=2x cost_model=sensitivity_0.30pct year=2024 strategy=8.3606% benchmark=5.1797% excess=+3.1809pp
+H5B_YEAR leverage=2x cost_model=sensitivity_0.30pct year=2025 strategy=3.4234% benchmark=4.2064% excess=-0.7830pp
+H5B_RESULT leverage=2x cost_model=sensitivity_0.40pct net_return=11.9085% annualized=5.7830% benchmark_annualized=4.6951% excess_annualized=1.0879pp funding_income=1874.86 trading_costs=92.29 max_drawdown=0.1968% down_resizes=8 up_resizes=5 resized_btc=0.33710691 minimum_margin_equity=2977.13 worst_24h_perp_rise=12.7469% static_margin_stress_survives=true
+H5B_YEAR leverage=2x cost_model=sensitivity_0.40pct year=2024 strategy=8.2697% benchmark=5.1797% excess=+3.0900pp
+H5B_YEAR leverage=2x cost_model=sensitivity_0.40pct year=2025 strategy=3.3609% benchmark=4.2064% excess=-0.8455pp
