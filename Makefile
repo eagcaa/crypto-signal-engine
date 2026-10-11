@@ -1,4 +1,4 @@
-.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage feature-diagnostics oi-feature-diagnostics metrics-alignment readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical replay-walk-forward-historical-v2 backfill-history backfill-metrics validate-metrics-alignment backfill-materialize backfill-materialize-v2 backfill-load backfill-load-v2 h5-backfill h5-data-audit h5-baseline calibrate db-up db-down db-logs db-shell clean
+.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage feature-diagnostics oi-feature-diagnostics metrics-alignment readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical replay-walk-forward-historical-v2 backfill-history backfill-metrics validate-metrics-alignment backfill-materialize backfill-materialize-v2 backfill-load backfill-load-v2 h5-backfill h5-data-audit h5-baseline h5b-final-backfill h5b-final-audit h5b-final-test calibrate db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
 PYTHONPATH_SRC := PYTHONPATH=src
@@ -51,6 +51,9 @@ help:
 	@echo "  make h5-backfill    Download frozen 2020-2023 H5 funding/basis development data"
 	@echo "  make h5-data-audit  Validate H5 development data coverage before baseline"
 	@echo "  make h5-baseline    Run frozen H5 always-on development baseline (1x/2x)"
+	@echo "  make h5b-final-backfill Download frozen H5b 2024-2025 final-test inputs"
+	@echo "  make h5b-final-audit Audit H5b final-test data without strategy results"
+	@echo "  make h5b-final-test Run frozen H5b 2024-2025 final test after PASS audit"
 	@echo "  make calibrate     Build exact replay calibration artifact"
 	@echo "  make db-up        Start TimescaleDB"
 	@echo "  make db-down      Stop TimescaleDB"
@@ -201,6 +204,18 @@ h5-data-audit:
 h5-baseline:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
 	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.h5_funding_basis_baseline --symbol "$(SYMBOL)"
+
+h5b-final-backfill:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.backfill_h5b_final --symbol "$(SYMBOL)"
+
+h5b-final-audit:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.h5b_final_data_audit --symbol "$(SYMBOL)"
+
+h5b-final-test:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.h5b_final_test --symbol "$(SYMBOL)"
 
 calibrate:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
