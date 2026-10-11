@@ -586,3 +586,41 @@ Primary case: **1x, detailed 0.38% accounting, 2024-01-01 through 2025-12-31.** 
 The full command output is committed verbatim. Once primary H5b result metrics for 2024-2025 are produced, the final-test period is consumed for H5b and the test is not re-run after any code or rule change.
 
 If H5b FAILS, H5b is rejected and the 2024-2025 final-test period is consumed for this hypothesis family version. The broader project does not automatically close; any later funding/basis idea must be pre-registered as a new hypothesis and evaluated only on genuinely new, untouched data rather than reusing 2024-2025. If H5b PASSES, the next steps are exchange-accurate liquidation modelling (mark price, maintenance margin, intra-hour moves) and small-size paper trading, not live capital.
+
+
+### H5b final-test result — rejected
+
+The frozen H5b final test was run once on the untouched 2024-01-01 through 2025-12-31 period after the final data audit passed. This consumes the 2024-2025 final-test period for H5b.
+
+Primary frozen result: **1x leverage, detailed 0.38% accounting**.
+
+- net return: **9.3483%**
+- annualized strategy return: **4.5667%**
+- DTB3 annualized benchmark: **4.6951%**
+- annualized excess return: **-0.1284 percentage points**
+- funding income: **1,937.99 USDT**
+- trading costs: **73.41 USDT**
+- maximum drawdown: **0.1436%**
+- down-resizes: **4**
+- up-resizes: **2**
+- resized BTC: **0.21597060**
+- minimum margin equity: **6,710.38 USDT**
+- worst observed 24h perpetual rise: **12.7469%**
+- static margin stress: **survived**
+
+Calendar-year excess return versus DTB3:
+
+- 2024: strategy **6.7654%**, benchmark **5.1797%**, excess **+1.5857 pp**
+- 2025: strategy **2.4192%**, benchmark **4.2064%**, excess **-1.7872 pp**
+
+The pre-registered H5b gate required all of the following in the 1x detailed case: positive net return, positive excess return in both 2024 and 2025, annualized excess return of at least +3 percentage points across the two-year period, and a passing static stress test.
+
+H5b passed the positive-net-return and stress conditions, but failed the yearly excess-return condition in 2025 and failed the +3 pp annualized-excess hurdle. Therefore H5b is **REJECTED**.
+
+The result is not rescued by transaction-cost sensitivity. Under the 1x 0.20%, 0.30% and 0.40% sensitivity cases, 2025 excess return remained negative and two-year annualized excess remained near or below zero.
+
+The 2x cases are report-only by pre-registration and cannot change the gate. They also did not satisfy the frozen success standard: although 2x detailed annualized excess was **+1.1031 pp**, 2025 excess remained negative (**-0.8330 pp**) and the annualized excess remained below +3 pp.
+
+Interpretation: H5b demonstrated very low drawdown and positive absolute carry, but did not demonstrate a robust economic advantage over the cash-rate benchmark. The two-sided rebalance fixed the mechanical shrinkage issue enough to keep the position active, but the carry itself was not strong enough to beat DTB3 consistently in the untouched final period.
+
+The 2024-2025 final-test period is now consumed for H5b and must not be reused to tune or validate another H5b variant. The broader project remains open. Any later funding/basis hypothesis must be pre-registered separately and evaluated on genuinely new, untouched data.
