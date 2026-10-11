@@ -269,6 +269,25 @@ The OI diagnostics test exactly these four features at 15m, 1h and 4h forward ho
 
 No further OI transformations may be added after viewing these results without recording a new hypothesis here first. The 4h horizon has only ~370 non-overlapping periods in July-August and is weaker evidence than 15m or 1h.
 
+### OI diagnostic result
+
+The pre-registered OI diagnostic set is complete on the 2026-07-01 through 2026-08-31 research window using the T + 6 minute observability rule.
+
+None of the 12 pre-registered OI feature/horizon pairs cleared the frozen 0.12% round-trip research cost.
+
+Key observations:
+
+- USD OI 5m change showed stable positive spreads at 1h and 4h, but the spreads were only 0.0310% and 0.0768%.
+- USD OI 15m change showed a stable 1h spread of 0.0368%; its 4h split was not stable.
+- Contract-quantity OI 5m change showed stable positive spreads at 1h and 4h of 0.0339% and 0.0658%.
+- Contract-quantity OI 15m change was the strongest OI feature, with stable positive spreads of 0.0515% at 1h and 0.0924% at 4h.
+- Even the strongest observed spread implies only about 0.0462% one-sided separation under the diagnostic heuristic, well below the 0.12% round-trip cost.
+- The 4h result is weaker evidence than the minute-row sample count suggests because July-August contains only roughly 370 non-overlapping 4h periods.
+
+Therefore validated OI does not provide a cost-clearing directional edge under the pre-registered transforms and horizons. Do not build or evaluate a V2 strategy by combining these weak OI effects with the already weak CVD/trend effects. Any further OI transform, interaction, threshold, regime filter or horizon is a new hypothesis and must be pre-registered before testing.
+
+September remains untouched.
+
 ### V2 freeze rule
 
 Do not select V2 features, horizon, score threshold, regime gates or barriers by looking at September.
