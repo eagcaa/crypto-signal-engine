@@ -1,4 +1,4 @@
-.PHONY: help setup install test live live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage feature-diagnostics oi-feature-diagnostics metrics-alignment readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical replay-walk-forward-historical-v2 backfill-history backfill-metrics validate-metrics-alignment backfill-materialize backfill-materialize-v2 backfill-load backfill-load-v2 h5-backfill h5-data-audit h5-baseline h5b-final-backfill h5b-final-audit h5b-final-test calibrate db-up db-down db-logs db-shell clean
+.PHONY: help setup install test live dashboard live-log paper-live candidate-paper-live paper-report shadow-report feature-coverage feature-diagnostics oi-feature-diagnostics metrics-alignment readiness evaluation-report replay replay-exact replay-compare replay-holdout replay-walk-forward replay-historical replay-walk-forward-historical replay-walk-forward-historical-v2 backfill-history backfill-metrics validate-metrics-alignment backfill-materialize backfill-materialize-v2 backfill-load backfill-load-v2 h5-backfill h5-data-audit h5-baseline h5b-final-backfill h5b-final-audit h5b-final-test calibrate db-up db-down db-logs db-shell clean
 
 PYTHON := .venv/bin/python
 PYTHONPATH_SRC := PYTHONPATH=src
@@ -22,6 +22,7 @@ help:
 	@echo "  make install      Install/update project in editable mode"
 	@echo "  make test         Run test suite"
 	@echo "  make live         Run live market snapshot collector"
+	@echo "  make dashboard    Serve live decision-support dashboard on :8000"
 	@echo "  make live-log     Run live collector and persist timestamped runtime log"
 	@echo "  make paper-live   Run live collector with local paper trading enabled"
 	@echo "  make candidate-paper-live Run only the frozen candidate paper tracker"
@@ -77,6 +78,10 @@ test:
 live:
 	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
 	$(PYTHONPATH_SRC) $(PYTHON) -m crypto_signal_engine.examples.live_market_snapshot
+
+dashboard:
+	@if [ ! -x "$(PYTHON)" ]; then echo ".venv not found. Run: make setup"; exit 1; fi
+	$(PYTHONPATH_SRC) $(PYTHON) -m uvicorn crypto_signal_engine.api.app:app --host 127.0.0.1 --port 8000
 
 live-log:
 	@mkdir -p runtime-logs
