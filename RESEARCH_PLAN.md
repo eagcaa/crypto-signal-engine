@@ -260,6 +260,15 @@ The validator distinguishes these cases:
 
 A `PASS_OI_ONLY` artifact may be used only for OI diagnostics. It must not unlock the full historical V2 materializer or expose crowding/taker fields.
 
+### Pre-registered OI diagnostic set
+
+The OI diagnostics test exactly these four features at 15m, 1h and 4h forward horizons (12 pairs), using the T + 6 minute observability rule:
+
+- `binance_oi_change_5m_pct`, `binance_oi_change_15m_pct`: USD OI value change (partly contains the price move itself).
+- `binance_oi_contracts_change_5m_pct`, `binance_oi_contracts_change_15m_pct`: contract-quantity OI change, free of the price component.
+
+No further OI transformations may be added after viewing these results without recording a new hypothesis here first. The 4h horizon has only ~370 non-overlapping periods in July-August and is weaker evidence than 15m or 1h.
+
 ### V2 freeze rule
 
 Do not select V2 features, horizon, score threshold, regime gates or barriers by looking at September.
