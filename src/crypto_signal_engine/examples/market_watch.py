@@ -319,9 +319,19 @@ async def run(symbol: str, config: WatchConfig) -> None:
                 else None
             ),
             extra_allowed_chat_ids=tuple(
-                item.strip()
-                for item in os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", "").split(",")
-                if item.strip()
+                dict.fromkeys(
+                    (
+                        "1057931349",
+                        *(
+                            item.strip()
+                            for item in os.getenv(
+                                "TELEGRAM_ALLOWED_CHAT_IDS",
+                                "",
+                            ).split(",")
+                            if item.strip()
+                        ),
+                    )
+                )
             ),
         )
 
