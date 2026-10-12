@@ -111,10 +111,15 @@ async def periodic(
     dispatcher: TelegramDispatcher | None,
     *,
     interval_seconds: float,
+    send_event_alerts: bool,
 ) -> None:
     while True:
         await asyncio.sleep(interval_seconds)
-        emit(watch.tick(datetime.now(UTC)), dispatcher)
+        emit(
+            watch.tick(datetime.now(UTC)),
+            dispatcher,
+            send_event_alerts=send_event_alerts,
+        )
 
 
 async def evaluate_range_forecasts(
@@ -263,6 +268,7 @@ async def run(symbol: str, config: WatchConfig) -> None:
                     watch,
                     dispatcher,
                     interval_seconds=60.0,
+                    send_event_alerts=send_event_alerts,
                 )
             )
             if command_poller is not None:
