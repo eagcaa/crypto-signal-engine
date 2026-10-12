@@ -18,10 +18,12 @@ from crypto_signal_engine.collectors.binance import (
 )
 from crypto_signal_engine.config.settings import get_settings
 from crypto_signal_engine.integrations import (
+    TelegramCommandPoller,
     TelegramDispatcher,
     TelegramNotifier,
 )
 from crypto_signal_engine.watch import MarketWatch, WatchAlert, WatchConfig
+from crypto_signal_engine.watch.coin_analysis import CoinAnalyzer
 
 
 def emit(
@@ -112,10 +114,19 @@ async def run(symbol: str, config: WatchConfig) -> None:
     if dispatcher is not None:
         dispatcher.enqueue(
             f"👀 {watch.symbol} piyasa izleme başladı.\n"
+            "Coin analizi için bota BTC, PYTH, PENDLE gibi coin adını yaz.\n"
             "Bu mesajlar tahmin değildir; piyasanın o anki durumunu anlatır."
         )
 
     symbols = [watch.symbol]
+    command_poller = None
+    if dispatcher is not None:
+        command_poller = TelegramCommandPoller(
+            bot_token=settings.telegram_bot_token,
+            allowed_chat_id=settings.telegram_chat_id,
+            analyzer=CoinAnalyzer(),
+        )
+
     try:
         async with asyncio.TaskGroup() as group:
             group.create_task(
@@ -154,6 +165,8 @@ async def run(symbol: str, config: WatchConfig) -> None:
                     interval_seconds=60.0,
                 )
             )
+            if command_poller is not None:
+                group.create_task(command_poller.run())
     finally:
         if dispatcher is not None:
             await dispatcher.stop()
