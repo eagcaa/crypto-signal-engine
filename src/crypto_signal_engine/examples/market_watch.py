@@ -125,6 +125,11 @@ async def run(symbol: str, config: WatchConfig) -> None:
             bot_token=settings.telegram_bot_token,
             allowed_chat_id=settings.telegram_chat_id,
             analyzer=CoinAnalyzer(),
+            extra_allowed_chat_ids=tuple(
+                item.strip()
+                for item in os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", "").split(",")
+                if item.strip()
+            ),
         )
 
     try:
