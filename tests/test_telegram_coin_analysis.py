@@ -53,3 +53,18 @@ def test_live_range_uses_only_completed_history() -> None:
     assert estimate is not None
     assert estimate.lower < points[-1].price < estimate.upper
     assert estimate.calibration_count >= 20
+
+
+
+def test_coin_analyzer_can_disable_bybit() -> None:
+    from crypto_signal_engine.watch.coin_analysis import CoinAnalyzer
+
+    analyzer = CoinAnalyzer(bybit_enabled=False)
+    assert analyzer._bybit_enabled is False
+
+
+def test_coin_analyzer_can_enable_bybit() -> None:
+    from crypto_signal_engine.watch.coin_analysis import CoinAnalyzer
+
+    analyzer = CoinAnalyzer(bybit_enabled=True)
+    assert analyzer._bybit_enabled is True
