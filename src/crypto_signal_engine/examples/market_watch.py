@@ -17,6 +17,12 @@ from crypto_signal_engine.collectors.binance import (
     BinanceSpotTradeCollector,
 )
 from crypto_signal_engine.config.settings import get_settings
+from crypto_signal_engine.db import (
+    RangeForecastRepository,
+    create_database_engine,
+    create_session_factory,
+    initialize_database,
+)
 from crypto_signal_engine.integrations import (
     TelegramCommandPoller,
     TelegramDispatcher,
@@ -24,6 +30,7 @@ from crypto_signal_engine.integrations import (
 )
 from crypto_signal_engine.watch import MarketWatch, WatchAlert, WatchConfig
 from crypto_signal_engine.watch.coin_analysis import CoinAnalyzer
+from crypto_signal_engine.watch.range_forward import RangeForwardTracker
 
 
 def emit(
@@ -78,9 +85,51 @@ async def periodic(
         emit(watch.tick(datetime.now(UTC)), dispatcher)
 
 
+async def evaluate_range_forecasts(
+    tracker: RangeForwardTracker,
+    *,
+    interval_seconds: float = 60.0,
+) -> None:
+    while True:
+        try:
+            await tracker.evaluate_due()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            print(
+                "RANGE_FORECAST evaluator unavailable: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        await asyncio.sleep(interval_seconds)
+
+
 async def run(symbol: str, config: WatchConfig) -> None:
     settings = get_settings()
     dispatcher = None
+    database_engine = None
+    range_tracker = None
+
+    configured_database_url = os.getenv("DATABASE_URL", "").strip()
+    if configured_database_url:
+        try:
+            database_engine = create_database_engine(settings.database_url)
+            await initialize_database(database_engine)
+            range_tracker = RangeForwardTracker(
+                RangeForecastRepository(
+                    create_session_factory(database_engine)
+                )
+            )
+            print("RANGE_FORECAST database=enabled")
+        except Exception as exc:  # noqa: BLE001
+            print(
+                "RANGE_FORECAST database unavailable; continuing without persistence: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            if database_engine is not None:
+                await database_engine.dispose()
+                database_engine = None
+    else:
+        print("RANGE_FORECAST database=disabled (DATABASE_URL not set)")
 
     if (
         settings.telegram_enabled
@@ -125,6 +174,11 @@ async def run(symbol: str, config: WatchConfig) -> None:
             bot_token=settings.telegram_bot_token,
             allowed_chat_id=settings.telegram_chat_id,
             analyzer=CoinAnalyzer(),
+            on_analysis=(
+                range_tracker.persist_analysis
+                if range_tracker is not None
+                else None
+            ),
             extra_allowed_chat_ids=tuple(
                 item.strip()
                 for item in os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", "").split(",")
@@ -172,9 +226,13 @@ async def run(symbol: str, config: WatchConfig) -> None:
             )
             if command_poller is not None:
                 group.create_task(command_poller.run())
+            if range_tracker is not None:
+                group.create_task(evaluate_range_forecasts(range_tracker))
     finally:
         if dispatcher is not None:
             await dispatcher.stop()
+        if database_engine is not None:
+            await database_engine.dispose()
 
 
 def parse_args() -> argparse.Namespace:
