@@ -104,7 +104,8 @@ async def run(symbol: str, config: WatchConfig) -> None:
         f"price_move_pct={config.price_move_pct} "
         f"oi_move_pct={config.oi_move_pct} "
         f"flow_min_usd={config.flow_min_usd:,.0f} "
-        f"liquidation_wave_usd={config.liquidation_wave_usd:,.0f}"
+        f"liquidation_wave_usd={config.liquidation_wave_usd:,.0f} "
+        f"levels={','.join(str(level) for level in config.levels) or 'none'}"
     )
 
     if dispatcher is not None:
@@ -165,6 +166,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--price-move-pct", type=float, default=0.5)
     parser.add_argument("--oi-move-pct", type=float, default=1.0)
     parser.add_argument("--flow-usd", type=float, default=5_000_000.0)
+    parser.add_argument(
+        "--levels",
+        default="",
+        help="Comma-separated price levels to alert on, e.g. 82450,84199",
+    )
     return parser.parse_args()
 
 
@@ -176,6 +182,11 @@ def main() -> None:
         price_move_pct=args.price_move_pct,
         oi_move_pct=args.oi_move_pct,
         flow_min_usd=args.flow_usd,
+        levels=tuple(
+            float(item)
+            for item in args.levels.split(",")
+            if item.strip()
+        ),
     )
     asyncio.run(run(args.symbol, config))
 
