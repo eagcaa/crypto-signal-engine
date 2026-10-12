@@ -340,3 +340,36 @@ class PaperPositionRow(Base):
     return_pct: Mapped[Decimal | None] = mapped_column(Numeric(20, 12))
     pnl: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
     close_reason: Mapped[str | None] = mapped_column(String(64))
+
+
+
+class RangeForecastRow(Base):
+    __tablename__ = "range_forecasts"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    request_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    anchor_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    anchor_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    horizon_minutes: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    target_coverage: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    lower_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    upper_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    calibration_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    volatility_scaled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    due_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", index=True
+    )
+    observed_low: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
+    observed_high: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
+    covered: Mapped[bool | None] = mapped_column(Boolean)
+    evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    evaluation_source: Mapped[str | None] = mapped_column(String(32))
