@@ -140,6 +140,25 @@ async def evaluate_range_forecasts(
         await asyncio.sleep(interval_seconds)
 
 
+def _coverage_line(
+    label: str,
+    independent: int,
+    covered: int,
+    raw: int,
+) -> str:
+    if not independent:
+        return f"{label}: henüz değerlendirme yok"
+    share = covered / independent
+    margin = 196.0 * (max(share * (1.0 - share), 0.0) / independent) ** 0.5
+    line = (
+        f"{label}: %{share * 100:.0f} tuttu ({covered}/{independent}"
+        f", ±{margin:.0f} puan)"
+    )
+    if raw > independent:
+        line += f" [toplam {raw} kayıt]"
+    return line
+
+
 async def format_range_stats(
     repository: RangeForecastRepository,
     symbol: str | None,
@@ -156,10 +175,23 @@ async def format_range_stats(
         1440: "24 saat",
     }
     grouped: dict[str, list] = {}
+    totals: dict[int, list[int]] = {}
     for item in stats:
         grouped.setdefault(item.symbol, []).append(item)
+        bucket = totals.setdefault(item.horizon_minutes, [0, 0, 0])
+        bucket[0] += item.independent
+        bucket[1] += item.independent_covered
+        bucket[2] += item.evaluated
 
-    lines = ["📊 Forward Range Stats", ""]
+    lines = ["📊 Aralık tahminleri ne kadar tuttu? (hedef %70)", ""]
+    if len(grouped) > 1:
+        lines.append("Tüm coinler")
+        for horizon in sorted(totals):
+            independent, covered, raw = totals[horizon]
+            label = labels.get(horizon, f"{horizon} dk")
+            lines.append(_coverage_line(label, independent, covered, raw))
+        lines.append("")
+
     for stat_symbol in sorted(grouped):
         lines.append(stat_symbol)
         for item in sorted(
@@ -170,15 +202,14 @@ async def format_range_stats(
                 item.horizon_minutes,
                 f"{item.horizon_minutes} dk",
             )
-            if item.evaluated:
-                coverage = f"%{float(item.coverage_pct):.1f}"
-                lines.append(
-                    f"{label}: {item.evaluated} tahmin / {coverage} tuttu "
-                    f"({item.covered}/{item.evaluated})"
+            lines.append(
+                _coverage_line(
+                    label,
+                    item.independent,
+                    item.independent_covered,
+                    item.evaluated,
                 )
-            else:
-                lines.append(f"{label}: henüz değerlendirme yok")
-
+            )
             if item.pending or item.no_data:
                 extra = []
                 if item.pending:
@@ -188,7 +219,11 @@ async def format_range_stats(
                 lines.append("  " + ", ".join(extra))
         lines.append("")
 
-    lines.append("Hedef coverage: %70")
+    lines.append(
+        "Aynı coin için kısa aralıklarla sorulan tahminler tek sayılır. "
+        "± payı küçüldükçe sonuç güvenilir olur; ~50 tahminden önce "
+        "yorum yapmayın."
+    )
     return "\n".join(lines).rstrip()
 
 
