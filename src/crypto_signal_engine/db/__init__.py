@@ -5,6 +5,7 @@ from crypto_signal_engine.db.prediction_repository import PredictionRepository
 from crypto_signal_engine.db.replay_repository import ReplayDataRepository
 from crypto_signal_engine.db.repository import MarketSnapshotRepository
 from crypto_signal_engine.db.research_feature_repository import ResearchFeatureRepository
+from crypto_signal_engine.db.range_forecast_repository import RangeForecastRepository
 from crypto_signal_engine.db.session import (
     create_database_engine,
     create_session_factory,
@@ -19,6 +20,7 @@ __all__ = [
     "PredictionRepository",
     "ReplayDataRepository",
     "ResearchFeatureRepository",
+    "RangeForecastRepository",
     "create_database_engine",
     "create_session_factory",
     "initialize_database",
