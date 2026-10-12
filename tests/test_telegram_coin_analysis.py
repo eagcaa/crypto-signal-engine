@@ -248,5 +248,7 @@ def test_stats_command_parser() -> None:
         TelegramCommandPoller._parse_stats_request("/stats ethusdt")
         == "ETHUSDT"
     )
+    assert TelegramCommandPoller._parse_stats_request("/stats@MyBot btc") == "BTCUSDT"
+    assert TelegramCommandPoller._parse_stats_request("/stats@MyBot") is None
     assert TelegramCommandPoller._parse_stats_request("BTC") is False
     assert TelegramCommandPoller._parse_stats_request("/help") is False
