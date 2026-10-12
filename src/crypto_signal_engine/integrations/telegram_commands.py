@@ -19,10 +19,15 @@ class TelegramCommandPoller:
         bot_token: str,
         allowed_chat_id: str,
         analyzer: CoinAnalyzer,
+        extra_allowed_chat_ids: tuple[str, ...] = (),
         timeout_seconds: float = 35.0,
     ) -> None:
         self._bot_token = bot_token.strip()
-        self._allowed_chat_id = str(allowed_chat_id).strip()
+        self._allowed_chat_ids = {
+            str(item).strip()
+            for item in (allowed_chat_id, *extra_allowed_chat_ids)
+            if str(item).strip()
+        }
         self._analyzer = analyzer
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._offset: int | None = None
@@ -71,7 +76,8 @@ class TelegramCommandPoller:
         if not isinstance(chat, dict) or not isinstance(text, str):
             return
         chat_id = str(chat.get("id", ""))
-        if chat_id != self._allowed_chat_id:
+        if chat_id not in self._allowed_chat_ids:
+            print(f"TELEGRAM command ignored from unauthorized chat {chat_id}")
             return
 
         request = self._parse_request(text)
@@ -106,10 +112,11 @@ class TelegramCommandPoller:
 
     @staticmethod
     def _parse_request(text: str) -> str | None:
-        value = text.strip()
+        stripped = text.strip()
+        value = stripped.split("@", 1)[0] if stripped.startswith("/") else stripped
         if not value:
             return None
-        if value.lower() in {"/start", "/help"}:
+        if value.lower() in {"/start", "/help", "/analyze"}:
             return None
         if value.lower().startswith("/analyze "):
             return value.split(maxsplit=1)[1].strip()
