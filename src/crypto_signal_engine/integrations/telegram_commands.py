@@ -22,6 +22,7 @@ class TelegramCommandPoller:
         analyzer: CoinAnalyzer,
         extra_allowed_chat_ids: tuple[str, ...] = (),
         on_analysis: Callable[[CoinAnalysis], Awaitable[None]] | None = None,
+        stats_provider: Callable[[str | None], Awaitable[str]] | None = None,
         timeout_seconds: float = 35.0,
     ) -> None:
         self._bot_token = bot_token.strip()
@@ -32,6 +33,7 @@ class TelegramCommandPoller:
         }
         self._analyzer = analyzer
         self._on_analysis = on_analysis
+        self._stats_provider = stats_provider
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._offset: int | None = None
 
@@ -81,6 +83,27 @@ class TelegramCommandPoller:
         chat_id = str(chat.get("id", ""))
         if chat_id not in self._allowed_chat_ids:
             print(f"TELEGRAM command ignored from unauthorized chat {chat_id}")
+            return
+
+        stats_symbol = self._parse_stats_request(text)
+        if stats_symbol is not False:
+            if self._stats_provider is None:
+                await self._send(
+                    chat_id,
+                    "📊 Forward istatistikleri için veritabanı bağlı değil.",
+                )
+                return
+            try:
+                await self._send(
+                    chat_id,
+                    await self._stats_provider(stats_symbol),
+                )
+            except Exception as exc:  # noqa: BLE001
+                await self._send(
+                    chat_id,
+                    "⚠️ İstatistikler alınamadı: "
+                    f"{type(exc).__name__}: {exc}",
+                )
             return
 
         request = self._parse_request(text)
@@ -138,3 +161,23 @@ class TelegramCommandPoller:
         if 2 <= len(compact) <= 20 and compact.isalnum():
             return compact
         return None
+
+
+    @staticmethod
+    def _parse_stats_request(text: str) -> str | None | bool:
+        stripped = text.strip()
+        if not stripped.startswith("/"):
+            return False
+
+        command = stripped.split("@", 1)[0]
+        lowered = command.lower()
+        if lowered == "/stats":
+            return None
+        if lowered.startswith("/stats "):
+            symbol = command.split(maxsplit=1)[1].strip().upper()
+            if not symbol:
+                return None
+            if not symbol.endswith("USDT"):
+                symbol = f"{symbol}USDT"
+            return symbol
+        return False
