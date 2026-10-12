@@ -140,6 +140,58 @@ async def evaluate_range_forecasts(
         await asyncio.sleep(interval_seconds)
 
 
+async def format_range_stats(
+    repository: RangeForecastRepository,
+    symbol: str | None,
+) -> str:
+    stats = await repository.coverage_stats(symbol=symbol)
+    if not stats:
+        target = symbol or "henüz hiçbir coin"
+        return f"📊 {target} için forward sonuç yok."
+
+    labels = {
+        15: "15 dk",
+        60: "1 saat",
+        240: "4 saat",
+        1440: "24 saat",
+    }
+    grouped: dict[str, list] = {}
+    for item in stats:
+        grouped.setdefault(item.symbol, []).append(item)
+
+    lines = ["📊 Forward Range Stats", ""]
+    for stat_symbol in sorted(grouped):
+        lines.append(stat_symbol)
+        for item in sorted(
+            grouped[stat_symbol],
+            key=lambda row: row.horizon_minutes,
+        ):
+            label = labels.get(
+                item.horizon_minutes,
+                f"{item.horizon_minutes} dk",
+            )
+            if item.evaluated:
+                coverage = f"%{float(item.coverage_pct):.1f}"
+                lines.append(
+                    f"{label}: {item.evaluated} tahmin / {coverage} tuttu "
+                    f"({item.covered}/{item.evaluated})"
+                )
+            else:
+                lines.append(f"{label}: henüz değerlendirme yok")
+
+            if item.pending or item.no_data:
+                extra = []
+                if item.pending:
+                    extra.append(f"{item.pending} bekliyor")
+                if item.no_data:
+                    extra.append(f"{item.no_data} veri yok")
+                lines.append("  " + ", ".join(extra))
+        lines.append("")
+
+    lines.append("Hedef coverage: %70")
+    return "\n".join(lines).rstrip()
+
+
 async def run(symbol: str, config: WatchConfig) -> None:
     settings = get_settings()
     dispatcher = None
@@ -149,17 +201,17 @@ async def run(symbol: str, config: WatchConfig) -> None:
     )
     database_engine = None
     range_tracker = None
+    range_repository = None
 
     configured_database_url = os.getenv("DATABASE_URL", "").strip()
     if configured_database_url:
         try:
             database_engine = create_database_engine(settings.database_url)
             await initialize_database(database_engine)
-            range_tracker = RangeForwardTracker(
-                RangeForecastRepository(
-                    create_session_factory(database_engine)
-                )
+            range_repository = RangeForecastRepository(
+                create_session_factory(database_engine)
             )
+            range_tracker = RangeForwardTracker(range_repository)
             print("RANGE_FORECAST database=enabled")
         except Exception as exc:  # noqa: BLE001
             print(
@@ -219,6 +271,16 @@ async def run(symbol: str, config: WatchConfig) -> None:
             on_analysis=(
                 range_tracker.persist_analysis
                 if range_tracker is not None
+                else None
+            ),
+            stats_provider=(
+                (
+                    lambda requested_symbol: format_range_stats(
+                        range_repository,
+                        requested_symbol,
+                    )
+                )
+                if range_repository is not None
                 else None
             ),
             extra_allowed_chat_ids=tuple(
