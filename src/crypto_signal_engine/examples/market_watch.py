@@ -7,7 +7,8 @@ Runs independently of the research collector and needs no database.
 
 import argparse
 import asyncio
-from datetime import UTC, datetime
+import os
+from datetime import UTC, datetime, timedelta
 
 from crypto_signal_engine.collectors.binance import (
     BinanceDerivativesClient,
@@ -160,16 +161,42 @@ async def run(symbol: str, config: WatchConfig) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--symbol", default="BTCUSDT")
-    parser.add_argument("--whale-usd", type=float, default=1_000_000.0)
-    parser.add_argument("--liquidation-usd", type=float, default=5_000_000.0)
-    parser.add_argument("--price-move-pct", type=float, default=0.5)
-    parser.add_argument("--oi-move-pct", type=float, default=1.0)
-    parser.add_argument("--flow-usd", type=float, default=5_000_000.0)
+    parser.add_argument("--symbol", default=os.getenv("WATCH_SYMBOL", "BTCUSDT"))
+    parser.add_argument(
+        "--whale-usd",
+        type=float,
+        default=float(os.getenv("WATCH_WHALE_USD", "1000000")),
+    )
+    parser.add_argument(
+        "--liquidation-usd",
+        type=float,
+        default=float(os.getenv("WATCH_LIQUIDATION_USD", "5000000")),
+    )
+    parser.add_argument(
+        "--price-move-pct",
+        type=float,
+        default=float(os.getenv("WATCH_PRICE_MOVE_PCT", "0.5")),
+    )
+    parser.add_argument(
+        "--oi-move-pct",
+        type=float,
+        default=float(os.getenv("WATCH_OI_MOVE_PCT", "1.0")),
+    )
+    parser.add_argument(
+        "--flow-usd",
+        type=float,
+        default=float(os.getenv("WATCH_FLOW_USD", "5000000")),
+    )
     parser.add_argument(
         "--levels",
-        default="",
+        default=os.getenv("WATCH_LEVELS", ""),
         help="Comma-separated price levels to alert on, e.g. 82450,84199",
+    )
+    parser.add_argument(
+        "--summary-minutes",
+        type=int,
+        default=int(os.getenv("WATCH_SUMMARY_MINUTES", "60")),
+        help="Periodic market summary interval in minutes.",
     )
     return parser.parse_args()
 
@@ -187,6 +214,7 @@ def main() -> None:
             for item in args.levels.split(",")
             if item.strip()
         ),
+        summary_every=timedelta(minutes=args.summary_minutes),
     )
     asyncio.run(run(args.symbol, config))
 
