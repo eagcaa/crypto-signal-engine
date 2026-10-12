@@ -271,3 +271,26 @@ def test_hourly_summary_once_per_hour() -> None:
 
     later = watch.tick(T0 + timedelta(minutes=61))
     assert [alert.kind for alert in later] == ["summary"]
+
+
+def test_level_cross_alerts_both_directions_with_cooldown() -> None:
+    watch = MarketWatch("BTCUSDT", WatchConfig(levels=(82_450.0,)))
+    assert watch.on_trade(_trade(0, 82_600, 0.01, TradeSide.BUY)) == []
+
+    [down] = watch.on_trade(_trade(1, 82_440, 0.01, TradeSide.SELL))
+    assert down.kind.startswith("level_")
+    assert "aşağı kesti" in down.text
+    assert "82,450.0" in down.text
+
+    [up] = watch.on_trade(_trade(2, 82_460, 0.01, TradeSide.BUY))
+    assert "yukarı kesti" in up.text
+
+    # Same level and direction inside the cooldown is suppressed.
+    assert watch.on_trade(_trade(3, 82_440, 0.01, TradeSide.SELL)) == []
+
+
+def test_small_price_coin_keeps_decimals() -> None:
+    watch = MarketWatch("PENDLEUSDT", WatchConfig(whale_trade_usd=10_000))
+    [alert] = watch.on_trade(_trade(0, 4.1234, 5_000, TradeSide.BUY))
+    assert "4.1234" in alert.text
+    assert "$21K" in alert.text
