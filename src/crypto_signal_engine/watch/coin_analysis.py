@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
+from math import exp, log
 
 from crypto_signal_engine.collectors.binance import (
     BinanceDerivativesClient,
@@ -125,15 +126,26 @@ class CoinAnalyzer:
                 target_coverage=0.70,
                 minimum_calibration_count=20,
                 volatility_scaled=True,
+                # Calibrate on wicks: the forward check also uses highs/lows.
+                extremes=[
+                    (float(candle.low), float(candle.high)) for candle in candles
+                ],
             )
-            ranges.append((horizon, estimate))
             if estimate is not None:
-                anchor = candles[-1]
+                # Re-centre the band on the freshest price and start the clock
+                # now. The last closed candle of a slow interval can be up to
+                # one interval old (1h for the 24h band).
+                radius = log(estimate.upper / points[-1].price)
+                estimate = replace(
+                    estimate,
+                    lower=current_price * exp(-radius),
+                    upper=current_price * exp(radius),
+                )
                 forecasts.append(
                     CoinRangeForecast(
                         horizon_minutes=horizon,
-                        anchor_at=anchor.close_time,
-                        anchor_price=float(anchor.close),
+                        anchor_at=now,
+                        anchor_price=current_price,
                         target_coverage=estimate.target_coverage,
                         lower_price=estimate.lower,
                         upper_price=estimate.upper,
@@ -141,6 +153,7 @@ class CoinAnalyzer:
                         volatility_scaled=estimate.volatility_scaled,
                     )
                 )
+            ranges.append((horizon, estimate))
 
         hour_candles = candle_sets[-1]
         recent_24h = hour_candles[-24:]
