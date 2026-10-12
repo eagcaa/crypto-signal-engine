@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import aiohttp
 
-from crypto_signal_engine.watch.coin_analysis import CoinAnalyzer
+from crypto_signal_engine.watch.coin_analysis import CoinAnalysis, CoinAnalyzer
 
 
 class TelegramCommandPoller:
@@ -20,6 +21,7 @@ class TelegramCommandPoller:
         allowed_chat_id: str,
         analyzer: CoinAnalyzer,
         extra_allowed_chat_ids: tuple[str, ...] = (),
+        on_analysis: Callable[[CoinAnalysis], Awaitable[None]] | None = None,
         timeout_seconds: float = 35.0,
     ) -> None:
         self._bot_token = bot_token.strip()
@@ -29,6 +31,7 @@ class TelegramCommandPoller:
             if str(item).strip()
         }
         self._analyzer = analyzer
+        self._on_analysis = on_analysis
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._offset: int | None = None
 
@@ -86,6 +89,14 @@ class TelegramCommandPoller:
 
         try:
             analysis = await self._analyzer.analyze(request)
+            if self._on_analysis is not None:
+                try:
+                    await self._on_analysis(analysis)
+                except Exception as exc:  # noqa: BLE001
+                    print(
+                        "RANGE forecast persistence unavailable: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
             await self._send(chat_id, analysis.text)
         except Exception as exc:  # noqa: BLE001
             await self._send(
