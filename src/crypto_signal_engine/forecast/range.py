@@ -4,6 +4,18 @@ The forecast is deliberately direction-agnostic.  For an anchor price P and
 horizon H, it estimates a radius q from *past* maximum absolute log excursions
 and returns [P * exp(-q), P * exp(q)].  A hit means the entire observed future
 path through H stayed inside that band.
+
+Two modes:
+
+- plain: q is a quantile of past raw excursions (same width in calm and
+  volatile markets).
+- volatility-scaled: past excursions are divided by the trailing realized
+  volatility at their anchor; q is that quantile times the *current*
+  trailing volatility, so the band widens when the market is active.
+
+Coverage is also reported per tercile of trailing volatility, because a band
+that averages 70% can still be far too wide in calm markets and far too
+narrow in volatile ones.
 """
 
 from __future__ import annotations
@@ -11,7 +23,7 @@ from __future__ import annotations
 from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from math import ceil, exp, log
+from math import ceil, exp, log, sqrt
 from typing import Sequence
 
 
@@ -31,6 +43,10 @@ class RangeCoverageResult:
     average_full_width_pct: float
     average_radius_pct: float
     minimum_calibration_count: int
+    volatility_scaled: bool = False
+    coverage_low_vol: float | None = None
+    coverage_mid_vol: float | None = None
+    coverage_high_vol: float | None = None
 
 
 def _higher_quantile(values: Sequence[float], probability: float) -> float:
@@ -64,6 +80,66 @@ def _future_excursion(
     )
 
 
+def trailing_volatility(
+    points: Sequence[PricePoint],
+    window_minutes: int,
+) -> list[float | None]:
+    """Causal realized volatility (std of per-step log returns) per point.
+
+    Only returns ending at or before each point are used.
+    """
+    count_points = len(points)
+    output: list[float | None] = [None] * count_points
+    returns = [0.0] * count_points
+    for index in range(1, count_points):
+        previous = points[index - 1].price
+        current = points[index].price
+        if previous > 0 and current > 0:
+            returns[index] = log(current / previous)
+
+    window = timedelta(minutes=window_minutes)
+    total = 0.0
+    total_sq = 0.0
+    start = 1
+    for index in range(1, count_points):
+        total += returns[index]
+        total_sq += returns[index] ** 2
+        while (
+            start < index
+            and points[index].timestamp - points[start - 1].timestamp > window
+        ):
+            total -= returns[start]
+            total_sq -= returns[start] ** 2
+            start += 1
+        count = index - start + 1
+        span = points[index].timestamp - points[start - 1].timestamp
+        if count >= 10 and span >= window * 0.9:
+            mean = total / count
+            variance = total_sq / count - mean * mean
+            if variance > 0:
+                output[index] = sqrt(variance)
+    return output
+
+
+def _tercile_coverage(
+    records: list[tuple[float, bool]],
+) -> tuple[float | None, float | None, float | None]:
+    if len(records) < 3:
+        return None, None, None
+    ordered = sorted(records, key=lambda item: item[0])
+    size = len(ordered)
+    groups = (
+        ordered[: size // 3],
+        ordered[size // 3 : 2 * size // 3],
+        ordered[2 * size // 3 :],
+    )
+    low, mid, high = (
+        sum(hit for _, hit in group) / len(group) if group else None
+        for group in groups
+    )
+    return low, mid, high
+
+
 def evaluate_walk_forward_range(
     points: Sequence[PricePoint],
     *,
@@ -71,6 +147,8 @@ def evaluate_walk_forward_range(
     target_coverage: float = 0.70,
     lookback_days: int = 30,
     minimum_calibration_count: int = 20,
+    volatility_scaled: bool = False,
+    volatility_window_minutes: int | None = None,
 ) -> RangeCoverageResult:
     """Evaluate a strictly causal rolling range forecast.
 
@@ -94,11 +172,17 @@ def evaluate_walk_forward_range(
             0.0,
             0.0,
             minimum_calibration_count,
+            volatility_scaled,
         )
 
     horizon = timedelta(minutes=horizon_minutes)
     lookback = timedelta(days=lookback_days)
     times = [item.timestamp for item in ordered]
+    vol_window = volatility_window_minutes or min(
+        1440,
+        max(60, 4 * horizon_minutes),
+    )
+    volatility = trailing_volatility(ordered, vol_window)
 
     anchor_indices: list[int] = []
     next_anchor = ordered[0].timestamp
@@ -110,13 +194,20 @@ def evaluate_walk_forward_range(
     excursions: dict[int, float] = {}
     for index in anchor_indices:
         value = _future_excursion(ordered, times, index, horizon)
-        if value is not None:
-            excursions[index] = value
+        if value is None:
+            continue
+        if volatility_scaled:
+            anchor_vol = volatility[index]
+            if anchor_vol is None:
+                continue
+            value = value / anchor_vol
+        excursions[index] = value
 
     covered = 0
     evaluated = 0
     widths: list[float] = []
     radii: list[float] = []
+    regime_records: list[tuple[float, bool]] = []
 
     for index in anchor_indices:
         actual = excursions.get(index)
@@ -136,8 +227,15 @@ def evaluate_walk_forward_range(
             continue
 
         radius = _higher_quantile(calibration, target_coverage)
+        hit = actual <= radius
+        if volatility_scaled:
+            # Convert from volatility units back to log-price units.
+            radius *= volatility[index]
+
         evaluated += 1
-        covered += int(actual <= radius)
+        covered += int(hit)
+        if volatility[index] is not None:
+            regime_records.append((volatility[index], hit))
 
         up = exp(radius) - 1.0
         down = 1.0 - exp(-radius)
@@ -145,6 +243,7 @@ def evaluate_walk_forward_range(
         widths.append((up + down) * 100.0)
 
     empirical = covered / evaluated if evaluated else 0.0
+    low, mid, high = _tercile_coverage(regime_records)
     return RangeCoverageResult(
         horizon_minutes=horizon_minutes,
         target_coverage=target_coverage,
@@ -154,4 +253,8 @@ def evaluate_walk_forward_range(
         average_full_width_pct=(sum(widths) / len(widths) if widths else 0.0),
         average_radius_pct=(sum(radii) / len(radii) if radii else 0.0),
         minimum_calibration_count=minimum_calibration_count,
+        volatility_scaled=volatility_scaled,
+        coverage_low_vol=low,
+        coverage_mid_vol=mid,
+        coverage_high_vol=high,
     )
