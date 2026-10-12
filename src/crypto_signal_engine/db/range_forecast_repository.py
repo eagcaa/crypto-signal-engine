@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import Integer, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from crypto_signal_engine.db.models import RangeForecastRow
@@ -27,6 +27,17 @@ class RangeForecastRecord:
     volatility_scaled: bool
     due_at: datetime
     status: str
+
+
+@dataclass(frozen=True, slots=True)
+class RangeCoverageStat:
+    symbol: str
+    horizon_minutes: int
+    evaluated: int
+    covered: int
+    coverage_pct: Decimal
+    pending: int
+    no_data: int
 
 
 class RangeForecastRepository:
@@ -144,3 +155,106 @@ class RangeForecastRepository:
             row.evaluation_source = source
             row.status = "no_data"
             await session.commit()
+
+
+    async def coverage_stats(
+        self,
+        *,
+        symbol: str | None = None,
+    ) -> list[RangeCoverageStat]:
+        async with self._session_factory() as session:
+            normalized = symbol.upper() if symbol else None
+
+            evaluated_query = (
+                select(
+                    RangeForecastRow.symbol,
+                    RangeForecastRow.horizon_minutes,
+                    func.count(RangeForecastRow.id),
+                    func.sum(
+                        (RangeForecastRow.covered.is_(True)).cast(Integer)
+                    ),
+                )
+                .where(RangeForecastRow.status == "evaluated")
+                .group_by(
+                    RangeForecastRow.symbol,
+                    RangeForecastRow.horizon_minutes,
+                )
+            )
+            if normalized:
+                evaluated_query = evaluated_query.where(
+                    RangeForecastRow.symbol == normalized
+                )
+            evaluated_rows = (await session.execute(evaluated_query)).all()
+
+            status_query = (
+                select(
+                    RangeForecastRow.symbol,
+                    RangeForecastRow.horizon_minutes,
+                    RangeForecastRow.status,
+                    func.count(RangeForecastRow.id),
+                )
+                .where(RangeForecastRow.status.in_(("pending", "no_data")))
+                .group_by(
+                    RangeForecastRow.symbol,
+                    RangeForecastRow.horizon_minutes,
+                    RangeForecastRow.status,
+                )
+            )
+            if normalized:
+                status_query = status_query.where(
+                    RangeForecastRow.symbol == normalized
+                )
+            status_rows = (await session.execute(status_query)).all()
+
+            statuses: dict[tuple[str, int], dict[str, int]] = {}
+            for row_symbol, horizon, status, count in status_rows:
+                statuses.setdefault((row_symbol, int(horizon)), {})[status] = int(
+                    count or 0
+                )
+
+            results: list[RangeCoverageStat] = []
+            seen: set[tuple[str, int]] = set()
+
+            for row_symbol, horizon, total, covered in evaluated_rows:
+                key = (row_symbol, int(horizon))
+                seen.add(key)
+                evaluated = int(total or 0)
+                covered_count = int(covered or 0)
+                status_counts = statuses.get(key, {})
+                coverage = (
+                    Decimal(covered_count) * Decimal("100") / Decimal(evaluated)
+                    if evaluated
+                    else Decimal("0")
+                )
+                results.append(
+                    RangeCoverageStat(
+                        symbol=row_symbol,
+                        horizon_minutes=int(horizon),
+                        evaluated=evaluated,
+                        covered=covered_count,
+                        coverage_pct=coverage,
+                        pending=status_counts.get("pending", 0),
+                        no_data=status_counts.get("no_data", 0),
+                    )
+                )
+
+            for key, status_counts in statuses.items():
+                if key in seen:
+                    continue
+                row_symbol, horizon = key
+                results.append(
+                    RangeCoverageStat(
+                        symbol=row_symbol,
+                        horizon_minutes=horizon,
+                        evaluated=0,
+                        covered=0,
+                        coverage_pct=Decimal("0"),
+                        pending=status_counts.get("pending", 0),
+                        no_data=status_counts.get("no_data", 0),
+                    )
+                )
+
+            return sorted(
+                results,
+                key=lambda item: (item.symbol, item.horizon_minutes),
+            )
