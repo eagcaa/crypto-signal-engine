@@ -12,4 +12,4 @@ COPY src ./src
 RUN python -m pip install --upgrade pip \
     && python -m pip install .
 
-CMD ["python", "-m", "crypto_signal_engine.examples.railway_candidate"]
+CMD ["python", "-u", "-m", "crypto_signal_engine.examples.market_watch"]
