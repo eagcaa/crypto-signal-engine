@@ -11,6 +11,8 @@ from crypto_signal_engine.collectors.binance import (
     BinanceDerivativesClient,
     BinanceSpotCandleClient,
 )
+from crypto_signal_engine.collectors.bybit import BybitDerivativesClient
+from crypto_signal_engine.config.settings import get_settings
 from crypto_signal_engine.forecast.range import PricePoint, estimate_live_range
 
 
@@ -48,16 +50,25 @@ class CoinAnalysis:
 
 
 class CoinAnalyzer:
-    """Fetch fresh public Binance data and return a direction-agnostic analysis."""
+    """Fetch fresh public Binance/Bybit data and return a direction-agnostic analysis."""
 
     def __init__(
         self,
         *,
         candle_client: BinanceSpotCandleClient | None = None,
         derivatives_client: BinanceDerivativesClient | None = None,
+        bybit_derivatives_client: BybitDerivativesClient | None = None,
+        bybit_enabled: bool | None = None,
     ) -> None:
+        settings = get_settings()
         self._candles = candle_client or BinanceSpotCandleClient()
         self._derivatives = derivatives_client or BinanceDerivativesClient()
+        self._bybit_derivatives = (
+            bybit_derivatives_client or BybitDerivativesClient()
+        )
+        self._bybit_enabled = (
+            settings.bybit_enabled if bybit_enabled is None else bybit_enabled
+        )
 
     async def analyze(self, requested: str) -> CoinAnalysis:
         symbol = normalize_symbol(requested)
@@ -73,8 +84,14 @@ class CoinAnalyzer:
             for _, interval, limit in specs
         ]
         derivative_task = asyncio.create_task(self._safe_derivatives(symbol))
+        bybit_task = (
+            asyncio.create_task(self._safe_bybit_derivatives(symbol))
+            if self._bybit_enabled
+            else None
+        )
         candle_sets = await asyncio.gather(*candle_tasks)
         derivatives = await derivative_task
+        bybit_derivatives = await bybit_task if bybit_task is not None else None
 
         if not candle_sets or not candle_sets[0]:
             raise RuntimeError(f"{symbol} için Binance spot verisi bulunamadı")
@@ -127,6 +144,8 @@ class CoinAnalyzer:
             ]
         )
 
+        lines.extend(["", "Vadeli piyasa"])
+
         if derivatives is not None:
             funding = (
                 "n/a"
@@ -135,13 +154,12 @@ class CoinAnalyzer:
             )
             lines.extend(
                 [
-                    "",
-                    "Vadeli piyasa",
-                    f"OI 5 dk: {_pct(derivatives.oi_change_5m_pct)}",
-                    f"OI 15 dk: {_pct(derivatives.oi_change_15m_pct)}",
-                    f"Funding: {funding}",
+                    "Binance:",
+                    f"  OI 5 dk: {_pct(derivatives.oi_change_5m_pct)}",
+                    f"  OI 15 dk: {_pct(derivatives.oi_change_15m_pct)}",
+                    f"  Funding: {funding}",
                     (
-                        "Long/short: "
+                        "  Long/short: "
                         + (
                             "n/a"
                             if derivatives.long_short_ratio is None
@@ -151,7 +169,33 @@ class CoinAnalyzer:
                 ]
             )
         else:
-            lines.extend(["", "Vadeli piyasa: veri alınamadı / mevcut değil"])
+            lines.append("Binance: veri alınamadı / mevcut değil")
+
+        if self._bybit_enabled:
+            if bybit_derivatives is not None:
+                bybit_funding = (
+                    "n/a"
+                    if bybit_derivatives.funding_rate is None
+                    else f"{float(bybit_derivatives.funding_rate) * 100:.4f}%"
+                )
+                lines.extend(
+                    [
+                        "Bybit:",
+                        f"  OI 5 dk: {_pct(bybit_derivatives.oi_change_5m_pct)}",
+                        f"  OI 15 dk: {_pct(bybit_derivatives.oi_change_15m_pct)}",
+                        f"  Funding: {bybit_funding}",
+                        (
+                            "  Long/short: "
+                            + (
+                                "n/a"
+                                if bybit_derivatives.long_short_ratio is None
+                                else f"{float(bybit_derivatives.long_short_ratio):.2f}"
+                            )
+                        ),
+                    ]
+                )
+            else:
+                lines.append("Bybit: veri alınamadı / mevcut değil")
 
         lines.extend(
             [
@@ -165,5 +209,11 @@ class CoinAnalyzer:
     async def _safe_derivatives(self, symbol: str):
         try:
             return await self._derivatives.fetch_snapshot(symbol)
+        except Exception:
+            return None
+
+    async def _safe_bybit_derivatives(self, symbol: str):
+        try:
+            return await self._bybit_derivatives.fetch_snapshot(symbol)
         except Exception:
             return None
