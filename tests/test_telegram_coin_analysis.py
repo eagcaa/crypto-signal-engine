@@ -238,3 +238,15 @@ def test_live_range_with_wicks_is_wider_than_close_only() -> None:
         with_wicks.upper - with_wicks.lower
         > closes_only.upper - closes_only.lower
     )
+
+
+
+def test_stats_command_parser() -> None:
+    assert TelegramCommandPoller._parse_stats_request("/stats") is None
+    assert TelegramCommandPoller._parse_stats_request("/stats BTC") == "BTCUSDT"
+    assert (
+        TelegramCommandPoller._parse_stats_request("/stats ethusdt")
+        == "ETHUSDT"
+    )
+    assert TelegramCommandPoller._parse_stats_request("BTC") is False
+    assert TelegramCommandPoller._parse_stats_request("/help") is False
