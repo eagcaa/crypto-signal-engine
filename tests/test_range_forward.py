@@ -29,13 +29,20 @@ class FakeRepository:
     async def mark_evaluated(self, forecast_id, **kwargs):
         self.evaluated.append((forecast_id, kwargs))
 
+    async def mark_no_data(self, forecast_id, **kwargs):
+        self.no_data = getattr(self, "no_data", []) + [forecast_id]
+
 
 class FakeCandleClient:
     def __init__(self, candles) -> None:
         self.candles = candles
 
-    async def fetch_closed(self, symbol, *, interval, limit=100):
-        return self.candles[-limit:]
+    async def fetch_closed(self, symbol, *, interval, limit=100, start_time=None):
+        candles = self.candles
+        if start_time is not None:
+            candles = [item for item in candles if item.close_time > start_time]
+            return candles[:limit]
+        return candles[-limit:]
 
 
 @pytest.mark.asyncio
@@ -122,3 +129,66 @@ async def test_range_tracker_uses_candle_high_low_for_full_path_coverage() -> No
     _, values = repository.evaluated[0]
     assert values["observed_high"] == Decimal("101.20")
     assert values["covered"] is False
+
+
+
+def _record(horizon: int = 15) -> RangeForecastRecord:
+    return RangeForecastRecord(
+        id=uuid4(),
+        request_id=uuid4(),
+        symbol="BTCUSDT",
+        generated_at=T0,
+        anchor_at=T0,
+        anchor_price=Decimal("100"),
+        horizon_minutes=horizon,
+        target_coverage=Decimal("0.70"),
+        lower_price=Decimal("99"),
+        upper_price=Decimal("101"),
+        calibration_count=50,
+        volatility_scaled=True,
+        due_at=T0 + timedelta(minutes=horizon),
+        status="pending",
+    )
+
+
+def _flat_candles(minutes: range) -> list:
+    return [
+        SimpleNamespace(
+            close_time=T0 + timedelta(minutes=minute),
+            low=Decimal("99.50"),
+            high=Decimal("100.50"),
+        )
+        for minute in minutes
+    ]
+
+
+@pytest.mark.asyncio
+async def test_late_evaluator_still_sees_start_of_window() -> None:
+    repository = FakeRepository()
+    repository.due = [_record()]
+    tracker = RangeForwardTracker(
+        repository,
+        candle_client=FakeCandleClient(_flat_candles(range(1, 300))),
+    )
+
+    assert await tracker.evaluate_due(T0 + timedelta(hours=5)) == 1
+    _, values = repository.evaluated[0]
+    assert values["covered"] is True
+
+
+@pytest.mark.asyncio
+async def test_incomplete_window_stays_pending_then_no_data() -> None:
+    repository = FakeRepository()
+    repository.due = [_record()]
+    candles = _flat_candles(range(1, 8))
+    tracker = RangeForwardTracker(
+        repository,
+        candle_client=FakeCandleClient(candles),
+    )
+
+    assert await tracker.evaluate_due(T0 + timedelta(minutes=20)) == 0
+    assert repository.evaluated == []
+    assert getattr(repository, "no_data", []) == []
+
+    assert await tracker.evaluate_due(T0 + timedelta(hours=7)) == 0
+    assert len(repository.no_data) == 1
