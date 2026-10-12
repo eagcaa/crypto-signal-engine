@@ -1,0 +1,170 @@
+"""On-demand Telegram coin analysis for the live market-watch worker."""
+
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from decimal import Decimal
+
+from crypto_signal_engine.collectors.binance import (
+    BinanceDerivativesClient,
+    BinanceSpotCandleClient,
+)
+from crypto_signal_engine.forecast.range import PricePoint, estimate_live_range
+
+
+def normalize_symbol(text: str) -> str:
+    token = text.strip().upper().replace("/", "").replace("-", "")
+    if token.startswith("/ANALYZE"):
+        token = token.removeprefix("/ANALYZE").strip()
+    if token.startswith("/"):
+        token = token[1:]
+    token = token.replace(" ", "")
+    if not token:
+        raise ValueError("coin symbol is required")
+    if token.endswith("USDT"):
+        return token
+    return f"{token}USDT"
+
+
+def _price(value: float) -> str:
+    if value >= 1_000:
+        return f"{value:,.1f}"
+    if value >= 1:
+        return f"{value:,.4f}"
+    return f"{value:.6f}"
+
+
+def _pct(value: Decimal | float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{float(value):+.2f}%"
+
+
+@dataclass(frozen=True, slots=True)
+class CoinAnalysis:
+    symbol: str
+    text: str
+
+
+class CoinAnalyzer:
+    """Fetch fresh public Binance data and return a direction-agnostic analysis."""
+
+    def __init__(
+        self,
+        *,
+        candle_client: BinanceSpotCandleClient | None = None,
+        derivatives_client: BinanceDerivativesClient | None = None,
+    ) -> None:
+        self._candles = candle_client or BinanceSpotCandleClient()
+        self._derivatives = derivatives_client or BinanceDerivativesClient()
+
+    async def analyze(self, requested: str) -> CoinAnalysis:
+        symbol = normalize_symbol(requested)
+
+        specs = (
+            (15, "1m", 1000),
+            (60, "5m", 1000),
+            (240, "15m", 1000),
+            (1440, "1h", 1000),
+        )
+        candle_tasks = [
+            self._candles.fetch_closed(symbol, interval=interval, limit=limit)
+            for _, interval, limit in specs
+        ]
+        derivative_task = asyncio.create_task(self._safe_derivatives(symbol))
+        candle_sets = await asyncio.gather(*candle_tasks)
+        derivatives = await derivative_task
+
+        if not candle_sets or not candle_sets[0]:
+            raise RuntimeError(f"{symbol} için Binance spot verisi bulunamadı")
+
+        current_price = float(candle_sets[0][-1].close)
+        now = datetime.now(UTC)
+        ranges: list[tuple[int, object | None]] = []
+        for (horizon, _, _), candles in zip(specs, candle_sets, strict=True):
+            points = [
+                PricePoint(timestamp=candle.close_time, price=float(candle.close))
+                for candle in candles
+            ]
+            estimate = estimate_live_range(
+                points,
+                horizon_minutes=horizon,
+                target_coverage=0.70,
+                minimum_calibration_count=20,
+                volatility_scaled=True,
+            )
+            ranges.append((horizon, estimate))
+
+        hour_candles = candle_sets[-1]
+        recent_24h = hour_candles[-24:]
+        high_24h = max(float(item.high) for item in recent_24h)
+        low_24h = min(float(item.low) for item in recent_24h)
+
+        lines = [
+            f"🔎 {symbol} — {_price(current_price)}",
+            "",
+            "Deneysel hareket aralığı",
+            "(hedef kapsama %70; canlı forward doğrulama sürüyor)",
+        ]
+        labels = {15: "15 dk", 60: "1 saat", 240: "4 saat", 1440: "24 saat"}
+        for horizon, estimate in ranges:
+            if estimate is None:
+                lines.append(f"{labels[horizon]}: yeterli kalibrasyon yok")
+            else:
+                lines.append(
+                    f"{labels[horizon]}: {_price(estimate.lower)} – "
+                    f"{_price(estimate.upper)} "
+                    f"(n={estimate.calibration_count})"
+                )
+
+        lines.extend(
+            [
+                "",
+                "Yakın piyasa yapısı",
+                f"24s yüksek: {_price(high_24h)}",
+                f"24s düşük: {_price(low_24h)}",
+            ]
+        )
+
+        if derivatives is not None:
+            funding = (
+                "n/a"
+                if derivatives.funding_rate is None
+                else f"{float(derivatives.funding_rate) * 100:.4f}%"
+            )
+            lines.extend(
+                [
+                    "",
+                    "Vadeli piyasa",
+                    f"OI 5 dk: {_pct(derivatives.oi_change_5m_pct)}",
+                    f"OI 15 dk: {_pct(derivatives.oi_change_15m_pct)}",
+                    f"Funding: {funding}",
+                    (
+                        "Long/short: "
+                        + (
+                            "n/a"
+                            if derivatives.long_short_ratio is None
+                            else f"{float(derivatives.long_short_ratio):.2f}"
+                        )
+                    ),
+                ]
+            )
+        else:
+            lines.extend(["", "Vadeli piyasa: veri alınamadı / mevcut değil"])
+
+        lines.extend(
+            [
+                "",
+                "Bu bir yön tahmini veya al/sat sinyali değildir.",
+                f"Güncelleme: {now.strftime('%H:%M UTC')}",
+            ]
+        )
+        return CoinAnalysis(symbol=symbol, text="\n".join(lines))
+
+    async def _safe_derivatives(self, symbol: str):
+        try:
+            return await self._derivatives.fetch_snapshot(symbol)
+        except Exception:
+            return None
