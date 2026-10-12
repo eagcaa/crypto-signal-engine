@@ -22,6 +22,9 @@ _INTERVALS = {
 }
 
 
+NO_DATA_AFTER = timedelta(hours=6)
+
+
 class RangeForwardTracker:
     def __init__(
         self,
@@ -82,7 +85,18 @@ class RangeForwardTracker:
                 continue
 
             if result is None:
-                # Keep it pending; a later evaluator pass may have the candles.
+                # Keep it pending; a later pass may have the candles. Give up
+                # after a grace period (e.g. exchange halt / delisting) so the
+                # row does not stay pending forever.
+                if now - forecast.due_at > NO_DATA_AFTER:
+                    await self._repository.mark_no_data(
+                        forecast.id,
+                        evaluated_at=now,
+                    )
+                    print(
+                        "RANGE_FORECAST_NO_DATA "
+                        f"id={forecast.id} symbol={forecast.symbol}"
+                    )
                 continue
 
             observed_low, observed_high = result
@@ -124,20 +138,30 @@ class RangeForwardTracker:
             "1h": 60,
         }[interval]
         limit = forecast.horizon_minutes // interval_minutes + 6
+        # Fetch from the anchor onward so a late evaluator pass (e.g. after a
+        # restart) still sees the beginning of the forecast window.
         candles = await self._candles.fetch_closed(
             forecast.symbol,
             interval=interval,
             limit=limit,
+            start_time=forecast.anchor_at - timedelta(minutes=interval_minutes),
         )
 
+        # Every candle overlapping (anchor_at, due_at]. The first one may start
+        # slightly before the anchor; including its wick is conservative.
         path = [
             candle
             for candle in candles
             if candle.close_time > forecast.anchor_at
-            and candle.close_time <= forecast.due_at
+            and candle.close_time - timedelta(minutes=interval_minutes)
+            < forecast.due_at
         ]
-        expected = forecast.horizon_minutes // interval_minutes
-        if len(path) < expected:
+        if (
+            not path
+            or path[0].close_time - timedelta(minutes=interval_minutes)
+            > forecast.anchor_at
+            or path[-1].close_time < forecast.due_at
+        ):
             return None
 
         observed_low = min(candle.low for candle in path)
