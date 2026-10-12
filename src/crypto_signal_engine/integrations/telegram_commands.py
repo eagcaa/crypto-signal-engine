@@ -169,7 +169,8 @@ class TelegramCommandPoller:
         if not stripped.startswith("/"):
             return False
 
-        command = stripped.split("@", 1)[0]
+        head, _, rest = stripped.partition(" ")
+        command = (head.split("@", 1)[0] + " " + rest).strip()
         lowered = command.lower()
         if lowered == "/stats":
             return None
