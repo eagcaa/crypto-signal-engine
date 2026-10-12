@@ -75,7 +75,13 @@ def _future_excursion(
     times: Sequence[datetime],
     anchor_index: int,
     horizon: timedelta,
+    extremes: Sequence[tuple[float, float]] | None = None,
 ) -> float | None:
+    """Max absolute log move from the anchor over the horizon.
+
+    With ``extremes`` ((low, high) per point, e.g. candle wicks) the whole
+    intrabar path is used, not only closes.
+    """
     anchor = points[anchor_index]
     if anchor.price <= 0:
         return None
@@ -84,6 +90,12 @@ def _future_excursion(
     if last <= anchor_index or points[last].timestamp < end:
         return None
     base = log(anchor.price)
+    if extremes is not None:
+        return max(
+            max(abs(log(high) - base), abs(log(low) - base))
+            for low, high in extremes[anchor_index + 1 : last + 1]
+            if low > 0 and high > 0
+        )
     return max(
         abs(log(points[index].price) - base)
         for index in range(anchor_index + 1, last + 1)
@@ -281,15 +293,25 @@ def estimate_live_range(
     minimum_calibration_count: int = 20,
     volatility_scaled: bool = True,
     volatility_window_minutes: int | None = None,
+    extremes: Sequence[tuple[float, float]] | None = None,
 ) -> LiveRangeEstimate | None:
     """Estimate a current symmetric price band using only completed past paths.
 
     The last point is the live anchor. Calibration samples must have completed
     their full future horizon before that anchor, so the estimate is causal.
+    ``extremes`` optionally gives (low, high) per point (candle wicks), aligned
+    with ``points``; calibration then measures the full intrabar path, which is
+    what a stop or a target actually experiences.
     """
     if horizon_minutes <= 0:
         raise ValueError("horizon_minutes must be positive")
-    ordered = sorted(points, key=lambda item: item.timestamp)
+    if extremes is not None and len(extremes) != len(points):
+        raise ValueError("extremes must align with points")
+    order = sorted(range(len(points)), key=lambda index: points[index].timestamp)
+    ordered = [points[index] for index in order]
+    ordered_extremes = (
+        [extremes[index] for index in order] if extremes is not None else None
+    )
     if len(ordered) < 3:
         return None
 
@@ -325,7 +347,13 @@ def estimate_live_range(
             next_anchor -= 1
             continue
 
-        excursion = _future_excursion(ordered, times, next_anchor, horizon)
+        excursion = _future_excursion(
+            ordered,
+            times,
+            next_anchor,
+            horizon,
+            ordered_extremes,
+        )
         if excursion is not None:
             if volatility_scaled:
                 anchor_vol = volatility[next_anchor]
