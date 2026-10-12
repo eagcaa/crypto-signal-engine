@@ -1,5 +1,9 @@
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from math import exp
+from types import SimpleNamespace
+
+import pytest
 
 from crypto_signal_engine.forecast.range import PricePoint, estimate_live_range
 from crypto_signal_engine.integrations.telegram_commands import TelegramCommandPoller
@@ -68,3 +72,123 @@ def test_coin_analyzer_can_enable_bybit() -> None:
 
     analyzer = CoinAnalyzer(bybit_enabled=True)
     assert analyzer._bybit_enabled is True
+
+
+
+class _FakeCandleClient:
+    async def fetch_closed(
+        self,
+        symbol: str,
+        *,
+        interval: str,
+        limit: int = 100,
+    ):
+        step_minutes = {
+            "1m": 1,
+            "5m": 5,
+            "15m": 15,
+            "1h": 60,
+        }[interval]
+        count = min(limit, 1000)
+        start = T0
+        candles = []
+        for index in range(count):
+            price = 100.0 * exp(index * 0.00005)
+            close_time = start + timedelta(minutes=step_minutes * index)
+            candles.append(
+                SimpleNamespace(
+                    close_time=close_time,
+                    close=Decimal(str(price)),
+                    high=Decimal(str(price * 1.001)),
+                    low=Decimal(str(price * 0.999)),
+                )
+            )
+        return candles
+
+
+class _FakeDerivativesClient:
+    def __init__(
+        self,
+        *,
+        oi_5m: str,
+        oi_15m: str,
+        funding: str,
+        long_short: str,
+        fail: bool = False,
+    ) -> None:
+        self._snapshot = SimpleNamespace(
+            oi_change_5m_pct=Decimal(oi_5m),
+            oi_change_15m_pct=Decimal(oi_15m),
+            funding_rate=Decimal(funding),
+            long_short_ratio=Decimal(long_short),
+        )
+        self._fail = fail
+
+    async def fetch_snapshot(self, symbol: str):
+        if self._fail:
+            raise RuntimeError("unavailable")
+        return self._snapshot
+
+
+@pytest.mark.asyncio
+async def test_coin_analysis_renders_binance_and_bybit_derivatives() -> None:
+    from crypto_signal_engine.watch.coin_analysis import CoinAnalyzer
+
+    analyzer = CoinAnalyzer(
+        candle_client=_FakeCandleClient(),
+        derivatives_client=_FakeDerivativesClient(
+            oi_5m="1.25",
+            oi_15m="2.50",
+            funding="0.0001",
+            long_short="1.10",
+        ),
+        bybit_derivatives_client=_FakeDerivativesClient(
+            oi_5m="-0.75",
+            oi_15m="0.40",
+            funding="-0.0002",
+            long_short="0.90",
+        ),
+        bybit_enabled=True,
+    )
+
+    result = await analyzer.analyze("btc")
+
+    assert "Binance:" in result.text
+    assert "OI 5 dk: +1.25%" in result.text
+    assert "OI 15 dk: +2.50%" in result.text
+    assert "Funding: 0.0100%" in result.text
+    assert "Long/short: 1.10" in result.text
+
+    assert "Bybit:" in result.text
+    assert "OI 5 dk: -0.75%" in result.text
+    assert "OI 15 dk: +0.40%" in result.text
+    assert "Funding: -0.0200%" in result.text
+    assert "Long/short: 0.90" in result.text
+
+
+@pytest.mark.asyncio
+async def test_coin_analysis_survives_bybit_unavailable() -> None:
+    from crypto_signal_engine.watch.coin_analysis import CoinAnalyzer
+
+    analyzer = CoinAnalyzer(
+        candle_client=_FakeCandleClient(),
+        derivatives_client=_FakeDerivativesClient(
+            oi_5m="0.10",
+            oi_15m="0.20",
+            funding="0.0001",
+            long_short="1.00",
+        ),
+        bybit_derivatives_client=_FakeDerivativesClient(
+            oi_5m="0",
+            oi_15m="0",
+            funding="0",
+            long_short="1",
+            fail=True,
+        ),
+        bybit_enabled=True,
+    )
+
+    result = await analyzer.analyze("eth")
+
+    assert "Binance:" in result.text
+    assert "Bybit: veri alınamadı / mevcut değil" in result.text
