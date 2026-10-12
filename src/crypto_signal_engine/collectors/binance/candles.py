@@ -21,12 +21,15 @@ class BinanceSpotCandleClient:
         *,
         interval: str,
         limit: int = 100,
+        start_time: datetime | None = None,
     ) -> list[Candle]:
         params = {
             "symbol": symbol.upper(),
             "interval": interval,
             "limit": str(limit + 1),
         }
+        if start_time is not None:
+            params["startTime"] = str(int(start_time.timestamp() * 1000))
 
         async with aiohttp.ClientSession(timeout=self._timeout) as session:
             async with session.get(
