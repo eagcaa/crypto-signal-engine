@@ -34,6 +34,17 @@ class PricePoint:
 
 
 @dataclass(frozen=True, slots=True)
+class LiveRangeEstimate:
+    horizon_minutes: int
+    target_coverage: float
+    lower: float
+    upper: float
+    radius_pct: float
+    calibration_count: int
+    volatility_scaled: bool
+
+
+@dataclass(frozen=True, slots=True)
 class RangeCoverageResult:
     horizon_minutes: int
     target_coverage: float
@@ -257,4 +268,90 @@ def evaluate_walk_forward_range(
         coverage_low_vol=low,
         coverage_mid_vol=mid,
         coverage_high_vol=high,
+    )
+
+
+
+def estimate_live_range(
+    points: Sequence[PricePoint],
+    *,
+    horizon_minutes: int,
+    target_coverage: float = 0.70,
+    lookback_days: int = 30,
+    minimum_calibration_count: int = 20,
+    volatility_scaled: bool = True,
+    volatility_window_minutes: int | None = None,
+) -> LiveRangeEstimate | None:
+    """Estimate a current symmetric price band using only completed past paths.
+
+    The last point is the live anchor. Calibration samples must have completed
+    their full future horizon before that anchor, so the estimate is causal.
+    """
+    if horizon_minutes <= 0:
+        raise ValueError("horizon_minutes must be positive")
+    ordered = sorted(points, key=lambda item: item.timestamp)
+    if len(ordered) < 3:
+        return None
+
+    horizon = timedelta(minutes=horizon_minutes)
+    lookback = timedelta(days=lookback_days)
+    times = [item.timestamp for item in ordered]
+    current_index = len(ordered) - 1
+    current = ordered[current_index]
+    if current.price <= 0:
+        return None
+
+    vol_window = volatility_window_minutes or min(
+        1440,
+        max(60, 4 * horizon_minutes),
+    )
+    volatility = trailing_volatility(ordered, vol_window)
+    current_vol = volatility[current_index]
+    if volatility_scaled and current_vol is None:
+        return None
+
+    calibration: list[float] = []
+    next_anchor = max(0, current_index - 1)
+    # Walk backwards and keep roughly non-overlapping anchors.
+    last_used_time: datetime | None = None
+    while next_anchor >= 0:
+        anchor = ordered[next_anchor]
+        if anchor.timestamp < current.timestamp - lookback:
+            break
+        if anchor.timestamp + horizon > current.timestamp:
+            next_anchor -= 1
+            continue
+        if last_used_time is not None and last_used_time - anchor.timestamp < horizon:
+            next_anchor -= 1
+            continue
+
+        excursion = _future_excursion(ordered, times, next_anchor, horizon)
+        if excursion is not None:
+            if volatility_scaled:
+                anchor_vol = volatility[next_anchor]
+                if anchor_vol is not None and anchor_vol > 0:
+                    calibration.append(excursion / anchor_vol)
+                    last_used_time = anchor.timestamp
+            else:
+                calibration.append(excursion)
+                last_used_time = anchor.timestamp
+        next_anchor -= 1
+
+    if len(calibration) < minimum_calibration_count:
+        return None
+
+    radius = _higher_quantile(calibration, target_coverage)
+    if volatility_scaled:
+        radius *= current_vol
+
+    lower = current.price * exp(-radius)
+    upper = current.price * exp(radius)
+    return LiveRangeEstimate(
+        horizon_minutes=horizon_minutes,
+        target_coverage=target_coverage,
+        lower=lower,
+        upper=upper,
+        radius_pct=((exp(radius) - exp(-radius)) * 50.0),
+        calibration_count=len(calibration),
+        volatility_scaled=volatility_scaled,
     )
