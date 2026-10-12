@@ -15,12 +15,11 @@ from crypto_signal_engine.forecast.range import PricePoint, estimate_live_range
 
 
 def normalize_symbol(text: str) -> str:
-    token = text.strip().upper().replace("/", "").replace("-", "")
+    token = text.strip().upper()
     if token.startswith("/ANALYZE"):
-        token = token.removeprefix("/ANALYZE").strip()
-    if token.startswith("/"):
-        token = token[1:]
-    token = token.replace(" ", "")
+        token = token.removeprefix("/ANALYZE")
+    token = token.split("@", 1)[0]
+    token = token.replace("/", "").replace("-", "").replace(" ", "")
     if not token:
         raise ValueError("coin symbol is required")
     if token.endswith("USDT"):
