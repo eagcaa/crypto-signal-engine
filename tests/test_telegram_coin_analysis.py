@@ -82,6 +82,7 @@ class _FakeCandleClient:
         *,
         interval: str,
         limit: int = 100,
+        start_time=None,
     ):
         step_minutes = {
             "1m": 1,
@@ -153,6 +154,19 @@ async def test_coin_analysis_renders_binance_and_bybit_derivatives() -> None:
 
     result = await analyzer.analyze("btc")
 
+    # Every saved band is centred on the freshest (1m) price and starts now.
+    assert result.forecasts
+    minute_candles = await _FakeCandleClient().fetch_closed(
+        "BTCUSDT",
+        interval="1m",
+        limit=1000,
+    )
+    current = float(minute_candles[-1].close)
+    for forecast in result.forecasts:
+        assert forecast.anchor_price == current
+        assert forecast.anchor_at == result.generated_at
+        assert forecast.lower_price < current < forecast.upper_price
+
     assert "Binance:" in result.text
     assert "OI 5 dk: +1.25%" in result.text
     assert "OI 15 dk: +2.50%" in result.text
@@ -192,3 +206,35 @@ async def test_coin_analysis_survives_bybit_unavailable() -> None:
 
     assert "Binance:" in result.text
     assert "Bybit: veri alınamadı / mevcut değil" in result.text
+
+
+
+def test_live_range_with_wicks_is_wider_than_close_only() -> None:
+    import random
+
+    rng = random.Random(4)
+    points = []
+    extremes = []
+    price = 100.0
+    for index in range(60 * 24 + 1):
+        price *= exp(rng.gauss(0.0, 0.0005))
+        points.append(
+            PricePoint(
+                timestamp=T0 + timedelta(minutes=index),
+                price=price,
+            )
+        )
+        wick = abs(rng.gauss(0.0, 0.0008))
+        extremes.append((price * exp(-wick), price * exp(wick)))
+
+    closes_only = estimate_live_range(points, horizon_minutes=15)
+    with_wicks = estimate_live_range(
+        points,
+        horizon_minutes=15,
+        extremes=extremes,
+    )
+    assert closes_only is not None and with_wicks is not None
+    assert (
+        with_wicks.upper - with_wicks.lower
+        > closes_only.upper - closes_only.lower
+    )
