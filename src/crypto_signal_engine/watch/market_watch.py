@@ -30,6 +30,9 @@ class WatchConfig:
     funding_low: float = -0.0001
     cooldown: timedelta = timedelta(minutes=30)
     whale_cooldown: timedelta = timedelta(minutes=5)
+    # Price levels to report when spot price crosses them (e.g. entry, stop).
+    levels: tuple[float, ...] = ()
+    level_cooldown: timedelta = timedelta(minutes=10)
     summary_every: timedelta = timedelta(hours=1)
 
 
@@ -50,6 +53,14 @@ def _usd(value: float) -> str:
     if value >= 1_000:
         return f"{sign}${value / 1_000:.0f}K"
     return f"{sign}${value:.0f}"
+
+
+def _price(value: float) -> str:
+    if value >= 1_000:
+        return f"{value:,.1f}"
+    if value >= 1:
+        return f"{value:,.4f}"
+    return f"{value:.6f}"
 
 
 def _pct(value: float | None) -> str:
@@ -102,8 +113,10 @@ class MarketWatch:
         signed = notional if trade.side == TradeSide.BUY else -notional
         now = trade.event_time
 
+        alerts: list[WatchAlert] = []
         if trade.market_type == MarketType.SPOT:
             self._spot_flow.add(now, signed)
+            alerts.extend(self._level_alerts(now, self._last_price, price))
             self._record_price(now, price)
         else:
             self._futures_flow.add(now, signed)
@@ -111,7 +124,7 @@ class MarketWatch:
                 self._record_price(now, price)
 
         if notional < self.config.whale_trade_usd:
-            return []
+            return alerts
 
         market = "SPOT" if trade.market_type == MarketType.SPOT else "VADELİ"
         action = "ALDI" if trade.side == TradeSide.BUY else "SATTI"
@@ -121,11 +134,43 @@ class MarketWatch:
             (
                 f"🐋 {self.symbol} büyük işlem\n"
                 f"{market}: piyasa emriyle {_usd(notional)} {action}\n"
-                f"Fiyat: {price:,.1f}"
+                f"Fiyat: {_price(price)}"
             ),
             cooldown=self.config.whale_cooldown,
         )
-        return [alert] if alert else []
+        if alert:
+            alerts.append(alert)
+        return alerts
+
+    def _level_alerts(
+        self,
+        now: datetime,
+        previous: float | None,
+        price: float,
+    ) -> list[WatchAlert]:
+        if previous is None:
+            return []
+        alerts: list[WatchAlert] = []
+        for level in self.config.levels:
+            if previous < level <= price:
+                direction, arrow = "yukarı", "⬆️"
+            elif previous > level >= price:
+                direction, arrow = "aşağı", "⬇️"
+            else:
+                continue
+            alert = self._throttled(
+                f"level_{level}_{direction}",
+                now,
+                (
+                    f"{arrow} {self.symbol} {_price(level)} seviyesini "
+                    f"{direction} kesti\n"
+                    f"Fiyat: {_price(price)}"
+                ),
+                cooldown=self.config.level_cooldown,
+            )
+            if alert:
+                alerts.append(alert)
+        return alerts
 
     def on_liquidation(self, event: LiquidationEvent) -> list[WatchAlert]:
         now = event.event_time
@@ -152,7 +197,7 @@ class MarketWatch:
                 f"💥 {self.symbol} {side} likidasyon dalgası\n"
                 f"Son {self._minutes(self.config.liquidation_window)} dk: "
                 f"{_usd(total)} {side} likide oldu ({meaning}).\n"
-                f"Fiyat: {float(event.price):,.1f}"
+                f"Fiyat: {_price(float(event.price))}"
             ),
         )
         return [alert] if alert else []
@@ -347,7 +392,7 @@ class MarketWatch:
         derivatives = self._last_derivatives
         lines = [
             f"🕐 {self.symbol} saatlik özet",
-            f"Fiyat: {self._last_price:,.1f} (1s {_pct(price_1h)})",
+            f"Fiyat: {_price(self._last_price)} (1s {_pct(price_1h)})",
             (
                 f"Son {self._minutes(self.config.window)} dk net akış: "
                 f"spot {_usd(self.spot_net_flow(now))}, "
