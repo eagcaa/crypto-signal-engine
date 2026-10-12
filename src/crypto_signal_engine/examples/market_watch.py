@@ -36,24 +36,51 @@ from crypto_signal_engine.watch.range_forward import RangeForwardTracker
 def emit(
     alerts: list[WatchAlert],
     dispatcher: TelegramDispatcher | None,
+    *,
+    send_event_alerts: bool = True,
 ) -> None:
     for alert in alerts:
         print(
             f"WATCH_ALERT kind={alert.kind} "
             f"time={alert.timestamp.isoformat()}\n{alert.text}\n"
         )
-        if dispatcher is not None and not dispatcher.enqueue(alert.text):
+        should_send = send_event_alerts or alert.kind == "summary"
+        if (
+            dispatcher is not None
+            and should_send
+            and not dispatcher.enqueue(alert.text)
+        ):
             print("TELEGRAM queue unavailable/full; alert dropped")
 
 
-async def consume_trades(collector, watch, dispatcher) -> None:
+async def consume_trades(
+    collector,
+    watch,
+    dispatcher,
+    *,
+    send_event_alerts: bool,
+) -> None:
     async for trade in collector.trades():
-        emit(watch.on_trade(trade), dispatcher)
+        emit(
+            watch.on_trade(trade),
+            dispatcher,
+            send_event_alerts=send_event_alerts,
+        )
 
 
-async def consume_liquidations(collector, watch, dispatcher) -> None:
+async def consume_liquidations(
+    collector,
+    watch,
+    dispatcher,
+    *,
+    send_event_alerts: bool,
+) -> None:
     async for event in collector.events():
-        emit(watch.on_liquidation(event), dispatcher)
+        emit(
+            watch.on_liquidation(event),
+            dispatcher,
+            send_event_alerts=send_event_alerts,
+        )
 
 
 async def poll_derivatives(
@@ -62,11 +89,16 @@ async def poll_derivatives(
     dispatcher,
     *,
     interval_seconds: float,
+    send_event_alerts: bool,
 ) -> None:
     while True:
         try:
             snapshot = await client.fetch_snapshot(watch.symbol)
-            emit(watch.on_derivatives(snapshot), dispatcher)
+            emit(
+                watch.on_derivatives(snapshot),
+                dispatcher,
+                send_event_alerts=send_event_alerts,
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -106,6 +138,10 @@ async def evaluate_range_forecasts(
 async def run(symbol: str, config: WatchConfig) -> None:
     settings = get_settings()
     dispatcher = None
+    send_event_alerts = (
+        os.getenv("WATCH_EVENT_ALERTS_ENABLED", "true").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
     database_engine = None
     range_tracker = None
 
@@ -157,7 +193,8 @@ async def run(symbol: str, config: WatchConfig) -> None:
         f"oi_move_pct={config.oi_move_pct} "
         f"flow_min_usd={config.flow_min_usd:,.0f} "
         f"liquidation_wave_usd={config.liquidation_wave_usd:,.0f} "
-        f"levels={','.join(str(level) for level in config.levels) or 'none'}"
+        f"levels={','.join(str(level) for level in config.levels) or 'none'} "
+        f"event_alerts={'enabled' if send_event_alerts else 'disabled'}"
     )
 
     if dispatcher is not None:
@@ -193,6 +230,7 @@ async def run(symbol: str, config: WatchConfig) -> None:
                     BinanceSpotTradeCollector(symbols),
                     watch,
                     dispatcher,
+                    send_event_alerts=send_event_alerts,
                 )
             )
             group.create_task(
@@ -200,6 +238,7 @@ async def run(symbol: str, config: WatchConfig) -> None:
                     BinanceFuturesTradeCollector(symbols),
                     watch,
                     dispatcher,
+                    send_event_alerts=send_event_alerts,
                 )
             )
             group.create_task(
@@ -207,6 +246,7 @@ async def run(symbol: str, config: WatchConfig) -> None:
                     BinanceLiquidationCollector(symbols),
                     watch,
                     dispatcher,
+                    send_event_alerts=send_event_alerts,
                 )
             )
             group.create_task(
@@ -215,6 +255,7 @@ async def run(symbol: str, config: WatchConfig) -> None:
                     watch,
                     dispatcher,
                     interval_seconds=60.0,
+                    send_event_alerts=send_event_alerts,
                 )
             )
             group.create_task(
