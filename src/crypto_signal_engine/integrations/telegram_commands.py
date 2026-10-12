@@ -81,6 +81,22 @@ class TelegramCommandPoller:
         if not isinstance(chat, dict) or not isinstance(text, str):
             return
         chat_id = str(chat.get("id", ""))
+        sender = message.get("from")
+        if not isinstance(sender, dict):
+            sender = {}
+        user_id = str(sender.get("id", ""))
+        username = str(sender.get("username", "") or "")
+        first_name = str(sender.get("first_name", "") or "")
+
+        print(
+            "TELEGRAM incoming "
+            f"chat_id={chat_id} "
+            f"user_id={user_id} "
+            f"username={username or '-'} "
+            f"first_name={first_name or '-'} "
+            f"text={text!r}"
+        )
+
         if chat_id not in self._allowed_chat_ids:
             print(f"TELEGRAM command ignored from unauthorized chat {chat_id}")
             return
