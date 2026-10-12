@@ -44,9 +44,23 @@ def _pct(value: Decimal | float | None) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class CoinRangeForecast:
+    horizon_minutes: int
+    anchor_at: datetime
+    anchor_price: float
+    target_coverage: float
+    lower_price: float
+    upper_price: float
+    calibration_count: int
+    volatility_scaled: bool
+
+
+@dataclass(frozen=True, slots=True)
 class CoinAnalysis:
     symbol: str
+    generated_at: datetime
     text: str
+    forecasts: tuple[CoinRangeForecast, ...] = ()
 
 
 class CoinAnalyzer:
@@ -99,6 +113,7 @@ class CoinAnalyzer:
         current_price = float(candle_sets[0][-1].close)
         now = datetime.now(UTC)
         ranges: list[tuple[int, object | None]] = []
+        forecasts: list[CoinRangeForecast] = []
         for (horizon, _, _), candles in zip(specs, candle_sets, strict=True):
             points = [
                 PricePoint(timestamp=candle.close_time, price=float(candle.close))
@@ -112,6 +127,20 @@ class CoinAnalyzer:
                 volatility_scaled=True,
             )
             ranges.append((horizon, estimate))
+            if estimate is not None:
+                anchor = candles[-1]
+                forecasts.append(
+                    CoinRangeForecast(
+                        horizon_minutes=horizon,
+                        anchor_at=anchor.close_time,
+                        anchor_price=float(anchor.close),
+                        target_coverage=estimate.target_coverage,
+                        lower_price=estimate.lower,
+                        upper_price=estimate.upper,
+                        calibration_count=estimate.calibration_count,
+                        volatility_scaled=estimate.volatility_scaled,
+                    )
+                )
 
         hour_candles = candle_sets[-1]
         recent_24h = hour_candles[-24:]
