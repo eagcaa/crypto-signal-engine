@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
+from math import sqrt
 from uuid import UUID, uuid4
 
-from sqlalchemy import Integer, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from crypto_signal_engine.db.models import RangeForecastRow
@@ -38,6 +39,43 @@ class RangeCoverageStat:
     coverage_pct: Decimal
     pending: int
     no_data: int
+    # Forecasts for the same coin/horizon asked shortly after each other share
+    # most of their future path, so they are not independent tests. Counting
+    # only one forecast per horizon-length window gives honest statistics.
+    independent: int = 0
+    independent_covered: int = 0
+
+    @property
+    def independent_coverage_pct(self) -> float | None:
+        if not self.independent:
+            return None
+        return self.independent_covered * 100.0 / self.independent
+
+    @property
+    def margin_pct(self) -> float | None:
+        """Approximate 95% margin of error of the independent coverage."""
+        if not self.independent:
+            return None
+        share = self.independent_covered / self.independent
+        return 196.0 * sqrt(max(share * (1.0 - share), 0.0) / self.independent)
+
+
+def count_independent(
+    outcomes: list[tuple[datetime, bool]],
+    horizon_minutes: int,
+) -> tuple[int, int]:
+    """Keep a forecast only if it starts after the previous kept one ended."""
+    kept = 0
+    kept_covered = 0
+    next_allowed: datetime | None = None
+    window = timedelta(minutes=horizon_minutes)
+    for generated_at, covered in sorted(outcomes, key=lambda item: item[0]):
+        if next_allowed is not None and generated_at < next_allowed:
+            continue
+        kept += 1
+        kept_covered += int(bool(covered))
+        next_allowed = generated_at + window
+    return kept, kept_covered
 
 
 class RangeForecastRepository:
@@ -165,26 +203,32 @@ class RangeForecastRepository:
         async with self._session_factory() as session:
             normalized = symbol.upper() if symbol else None
 
-            evaluated_query = (
-                select(
-                    RangeForecastRow.symbol,
-                    RangeForecastRow.horizon_minutes,
-                    func.count(RangeForecastRow.id),
-                    func.sum(
-                        (RangeForecastRow.covered.is_(True)).cast(Integer)
-                    ),
-                )
-                .where(RangeForecastRow.status == "evaluated")
-                .group_by(
-                    RangeForecastRow.symbol,
-                    RangeForecastRow.horizon_minutes,
-                )
-            )
+            outcome_query = select(
+                RangeForecastRow.symbol,
+                RangeForecastRow.horizon_minutes,
+                RangeForecastRow.generated_at,
+                RangeForecastRow.covered,
+            ).where(RangeForecastRow.status == "evaluated")
             if normalized:
-                evaluated_query = evaluated_query.where(
+                outcome_query = outcome_query.where(
                     RangeForecastRow.symbol == normalized
                 )
-            evaluated_rows = (await session.execute(evaluated_query)).all()
+            outcomes: dict[tuple[str, int], list[tuple[datetime, bool]]] = {}
+            for row_symbol, horizon, generated_at, covered in (
+                await session.execute(outcome_query)
+            ).all():
+                outcomes.setdefault((row_symbol, int(horizon)), []).append(
+                    (generated_at, bool(covered))
+                )
+            evaluated_rows = [
+                (
+                    key[0],
+                    key[1],
+                    len(items),
+                    sum(int(covered) for _, covered in items),
+                )
+                for key, items in outcomes.items()
+            ]
 
             status_query = (
                 select(
@@ -226,6 +270,10 @@ class RangeForecastRepository:
                     if evaluated
                     else Decimal("0")
                 )
+                independent, independent_covered = count_independent(
+                    outcomes[key],
+                    int(horizon),
+                )
                 results.append(
                     RangeCoverageStat(
                         symbol=row_symbol,
@@ -235,6 +283,8 @@ class RangeForecastRepository:
                         coverage_pct=coverage,
                         pending=status_counts.get("pending", 0),
                         no_data=status_counts.get("no_data", 0),
+                        independent=independent,
+                        independent_covered=independent_covered,
                     )
                 )
 
