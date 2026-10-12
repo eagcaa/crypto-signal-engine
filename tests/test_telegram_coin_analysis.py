@@ -13,6 +13,7 @@ def test_normalize_symbol_accepts_plain_and_usdt() -> None:
     assert normalize_symbol("btc") == "BTCUSDT"
     assert normalize_symbol("PYTHUSDT") == "PYTHUSDT"
     assert normalize_symbol("/analyze pendle") == "PENDLEUSDT"
+    assert normalize_symbol("/eth@MyBot") == "ETHUSDT"
 
 
 def test_command_parser_accepts_plain_ticker() -> None:
@@ -20,6 +21,18 @@ def test_command_parser_accepts_plain_ticker() -> None:
     assert TelegramCommandPoller._parse_request("/analyze PYTH") == "PYTH"
     assert TelegramCommandPoller._parse_request("/start") is None
     assert TelegramCommandPoller._parse_request("btc usdt") == "btcusdt"
+    assert TelegramCommandPoller._parse_request("/analyze") is None
+    assert TelegramCommandPoller._parse_request("/pendle@MyBot") == "pendle"
+
+
+def test_command_poller_accepts_extra_allowed_chats() -> None:
+    poller = TelegramCommandPoller(
+        bot_token="token",
+        allowed_chat_id="111",
+        analyzer=None,
+        extra_allowed_chat_ids=("222", " "),
+    )
+    assert poller._allowed_chat_ids == {"111", "222"}
 
 
 def test_live_range_uses_only_completed_history() -> None:
