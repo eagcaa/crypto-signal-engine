@@ -233,7 +233,12 @@ class CoinAnalyzer:
                 f"Güncelleme: {now.strftime('%H:%M UTC')}",
             ]
         )
-        return CoinAnalysis(symbol=symbol, text="\n".join(lines))
+        return CoinAnalysis(
+            symbol=symbol,
+            generated_at=now,
+            text="\n".join(lines),
+            forecasts=tuple(forecasts),
+        )
 
     async def _safe_derivatives(self, symbol: str):
         try:
