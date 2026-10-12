@@ -31,6 +31,10 @@ def load_prices(path: Path) -> list[PricePoint]:
     return sorted(points, key=lambda item: item.timestamp)
 
 
+def _fmt(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.4f}"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -43,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--coverage", type=float, default=0.70)
     parser.add_argument("--lookback-days", type=int, default=30)
     parser.add_argument("--min-calibration", type=int, default=20)
-    parser.add_argument("--horizons", default="60,240,1440")
+    parser.add_argument("--horizons", default="15,60,240,1440")
     return parser.parse_args()
 
 
@@ -57,23 +61,27 @@ def main() -> None:
     )
     for raw in args.horizons.split(","):
         horizon = int(raw.strip())
-        result = evaluate_walk_forward_range(
-            points,
-            horizon_minutes=horizon,
-            target_coverage=args.coverage,
-            lookback_days=args.lookback_days,
-            minimum_calibration_count=args.min_calibration,
-        )
-        print(
-            "RANGE_COVERAGE "
-            f"horizon_min={result.horizon_minutes} "
-            f"target={result.target_coverage:.3f} "
-            f"evaluated={result.evaluated} "
-            f"covered={result.covered} "
-            f"empirical={result.empirical_coverage:.4f} "
-            f"avg_full_width_pct={result.average_full_width_pct:.4f} "
-            f"avg_radius_pct={result.average_radius_pct:.4f}"
-        )
+        for scaled in (False, True):
+            result = evaluate_walk_forward_range(
+                points,
+                horizon_minutes=horizon,
+                target_coverage=args.coverage,
+                lookback_days=args.lookback_days,
+                minimum_calibration_count=args.min_calibration,
+                volatility_scaled=scaled,
+            )
+            print(
+                "RANGE_COVERAGE "
+                f"mode={'vol_scaled' if scaled else 'plain'} "
+                f"horizon_min={result.horizon_minutes} "
+                f"target={result.target_coverage:.3f} "
+                f"evaluated={result.evaluated} "
+                f"empirical={result.empirical_coverage:.4f} "
+                f"calm={_fmt(result.coverage_low_vol)} "
+                f"normal={_fmt(result.coverage_mid_vol)} "
+                f"volatile={_fmt(result.coverage_high_vol)} "
+                f"avg_full_width_pct={result.average_full_width_pct:.4f}"
+            )
 
 
 if __name__ == "__main__":
