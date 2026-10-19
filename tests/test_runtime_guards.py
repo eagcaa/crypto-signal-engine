@@ -38,3 +38,16 @@ def test_running_on_railway_uses_railway_environment(monkeypatch) -> None:
 
     monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
     assert market_watch._running_on_railway() is True
+
+
+def test_railway_postgres_url_is_converted_for_async_engine() -> None:
+    from crypto_signal_engine.db.session import create_database_engine
+
+    railway_url = "postgresql://postgres:pw@postgres.railway.internal:5432/railway"
+    converted = market_watch._async_database_url(railway_url)
+    assert converted.startswith("postgresql+asyncpg://")
+    # Must not raise (a raw postgresql:// URL needs psycopg and fails).
+    create_database_engine(converted)
+    assert market_watch._async_database_url("postgres://a:b@h:5432/d").startswith(
+        "postgresql+asyncpg://"
+    )
