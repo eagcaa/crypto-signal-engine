@@ -11,6 +11,7 @@ class BinanceSpotCandleClient:
     """Fetch closed Binance spot klines for technical/regime features."""
 
     BASE_URL = "https://api.binance.com"
+    MAX_KLINE_LIMIT = 1000
 
     def __init__(self, *, timeout_seconds: float = 10.0) -> None:
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
@@ -23,10 +24,12 @@ class BinanceSpotCandleClient:
         limit: int = 100,
         start_time: datetime | None = None,
     ) -> list[Candle]:
+        requested_limit = max(1, int(limit))
+        api_limit = min(requested_limit + 1, self.MAX_KLINE_LIMIT)
         params = {
             "symbol": symbol.upper(),
             "interval": interval,
-            "limit": str(limit + 1),
+            "limit": str(api_limit),
         }
         if start_time is not None:
             params["startTime"] = str(int(start_time.timestamp() * 1000))
@@ -51,7 +54,7 @@ class BinanceSpotCandleClient:
             for row in payload
             if isinstance(row, list) and len(row) >= 7 and int(row[6]) < now_ms
         ]
-        return candles[-limit:]
+        return candles[-requested_limit:]
 
     @staticmethod
     def _parse_row(
