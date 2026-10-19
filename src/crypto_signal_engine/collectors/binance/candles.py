@@ -16,6 +16,10 @@ class BinanceSpotCandleClient:
     def __init__(self, *, timeout_seconds: float = 10.0) -> None:
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
 
+    @classmethod
+    def _api_limit(cls, requested_limit: int) -> int:
+        return min(max(1, int(requested_limit)) + 1, cls.MAX_KLINE_LIMIT)
+
     async def fetch_closed(
         self,
         symbol: str,
@@ -25,7 +29,7 @@ class BinanceSpotCandleClient:
         start_time: datetime | None = None,
     ) -> list[Candle]:
         requested_limit = max(1, int(limit))
-        api_limit = min(requested_limit + 1, self.MAX_KLINE_LIMIT)
+        api_limit = self._api_limit(requested_limit)
         params = {
             "symbol": symbol.upper(),
             "interval": interval,
