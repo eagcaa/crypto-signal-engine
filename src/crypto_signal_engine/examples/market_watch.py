@@ -17,7 +17,7 @@ from crypto_signal_engine.collectors.binance import (
     BinanceLiquidationCollector,
     BinanceSpotTradeCollector,
 )
-from crypto_signal_engine.config.settings import get_settings
+from crypto_signal_engine.config.settings import Settings, get_settings
 from crypto_signal_engine.db import (
     RangeForecastRepository,
     create_database_engine,
@@ -55,6 +55,11 @@ def _is_local_database_url(database_url: str) -> bool:
     except (TypeError, ValueError):
         return False
     return host in _LOCAL_DATABASE_HOSTS
+
+
+def _async_database_url(database_url: str) -> str:
+    """Railway gives postgresql://...; the async engine needs +asyncpg."""
+    return str(Settings.normalize_database_url(database_url))
 
 
 def _running_on_railway() -> bool:
@@ -280,7 +285,9 @@ async def run(symbol: str, config: WatchConfig) -> None:
             )
         else:
             try:
-                database_engine = create_database_engine(configured_database_url)
+                database_engine = create_database_engine(
+                    _async_database_url(configured_database_url)
+                )
                 await initialize_database(database_engine)
                 range_repository = RangeForecastRepository(
                     create_session_factory(database_engine)
