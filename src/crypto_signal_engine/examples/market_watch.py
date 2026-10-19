@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import os
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlparse
 
 from crypto_signal_engine.collectors.binance import (
     BinanceDerivativesClient,
@@ -31,6 +32,37 @@ from crypto_signal_engine.integrations import (
 from crypto_signal_engine.watch import MarketWatch, WatchAlert, WatchConfig
 from crypto_signal_engine.watch.coin_analysis import CoinAnalyzer
 from crypto_signal_engine.watch.range_forward import RangeForwardTracker
+
+
+_LOCAL_DATABASE_HOSTS = {"localhost", "127.0.0.1", "::1", "host.docker.internal"}
+
+
+def _database_target(database_url: str) -> str:
+    """Return a credential-free database target for startup logs."""
+    try:
+        parsed = urlparse(database_url)
+        host = parsed.hostname or "unknown"
+        port = parsed.port or 5432
+        database = (parsed.path or "").lstrip("/") or "unknown"
+        return f"{host}:{port}/{database}"
+    except (TypeError, ValueError):
+        return "unknown"
+
+
+def _is_local_database_url(database_url: str) -> bool:
+    try:
+        host = (urlparse(database_url).hostname or "").lower()
+    except (TypeError, ValueError):
+        return False
+    return host in _LOCAL_DATABASE_HOSTS
+
+
+def _running_on_railway() -> bool:
+    return bool(
+        os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("RAILWAY_PROJECT_ID")
+        or os.getenv("RAILWAY_SERVICE_ID")
+    )
 
 
 def emit(
@@ -240,22 +272,33 @@ async def run(symbol: str, config: WatchConfig) -> None:
 
     configured_database_url = os.getenv("DATABASE_URL", "").strip()
     if configured_database_url:
-        try:
-            database_engine = create_database_engine(settings.database_url)
-            await initialize_database(database_engine)
-            range_repository = RangeForecastRepository(
-                create_session_factory(database_engine)
-            )
-            range_tracker = RangeForwardTracker(range_repository)
-            print("RANGE_FORECAST database=enabled")
-        except Exception as exc:  # noqa: BLE001
+        if _running_on_railway() and _is_local_database_url(configured_database_url):
             print(
-                "RANGE_FORECAST database unavailable; continuing without persistence: "
-                f"{type(exc).__name__}: {exc}"
+                "RANGE_FORECAST database=disabled "
+                "reason=localhost_database_url "
+                f"target={_database_target(configured_database_url)}"
             )
-            if database_engine is not None:
-                await database_engine.dispose()
-                database_engine = None
+        else:
+            try:
+                database_engine = create_database_engine(configured_database_url)
+                await initialize_database(database_engine)
+                range_repository = RangeForecastRepository(
+                    create_session_factory(database_engine)
+                )
+                range_tracker = RangeForwardTracker(range_repository)
+                print(
+                    "RANGE_FORECAST database=enabled "
+                    f"target={_database_target(configured_database_url)}"
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    "RANGE_FORECAST database unavailable; "
+                    "continuing without persistence: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                if database_engine is not None:
+                    await database_engine.dispose()
+                    database_engine = None
     else:
         print("RANGE_FORECAST database=disabled (DATABASE_URL not set)")
 
