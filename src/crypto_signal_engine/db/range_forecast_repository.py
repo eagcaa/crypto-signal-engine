@@ -44,6 +44,11 @@ class RangeCoverageStat:
     # only one forecast per horizon-length window gives honest statistics.
     independent: int = 0
     independent_covered: int = 0
+    avg_band_radius_pct: float | None = None
+    avg_overshoot_pct: float | None = None
+    max_overshoot_pct: float | None = None
+    upward_breaches: int = 0
+    downward_breaches: int = 0
 
     @property
     def independent_coverage_pct(self) -> float | None:
@@ -76,6 +81,80 @@ def count_independent(
         kept_covered += int(bool(covered))
         next_allowed = generated_at + window
     return kept, kept_covered
+
+
+def _independent_samples(
+    outcomes: list[tuple[
+        datetime,
+        bool,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal | None,
+        Decimal | None,
+    ]],
+    horizon_minutes: int,
+) -> list[tuple[
+    datetime,
+    bool,
+    Decimal,
+    Decimal,
+    Decimal,
+    Decimal | None,
+    Decimal | None,
+]]:
+    kept = []
+    next_allowed: datetime | None = None
+    window = timedelta(minutes=horizon_minutes)
+    for item in sorted(outcomes, key=lambda row: row[0]):
+        generated_at = item[0]
+        if next_allowed is not None and generated_at < next_allowed:
+            continue
+        kept.append(item)
+        next_allowed = generated_at + window
+    return kept
+
+
+def _path_metrics(
+    samples: list[tuple[
+        datetime,
+        bool,
+        Decimal,
+        Decimal,
+        Decimal,
+        Decimal | None,
+        Decimal | None,
+    ]],
+) -> tuple[float | None, float | None, float | None, int, int]:
+    band_radii: list[float] = []
+    overshoots: list[float] = []
+    upward = 0
+    downward = 0
+
+    for _, _, anchor, lower, upper, observed_low, observed_high in samples:
+        anchor_float = float(anchor)
+        if anchor_float <= 0:
+            continue
+        band_radii.append(
+            max(0.0, (float(upper) - float(lower)) / (2.0 * anchor_float) * 100.0)
+        )
+        if observed_low is None or observed_high is None:
+            continue
+
+        down = max(0.0, (float(lower) - float(observed_low)) / anchor_float * 100.0)
+        up = max(0.0, (float(observed_high) - float(upper)) / anchor_float * 100.0)
+        if up > 0:
+            upward += 1
+        if down > 0:
+            downward += 1
+        overshoot = max(up, down)
+        if overshoot > 0:
+            overshoots.append(overshoot)
+
+    avg_band = sum(band_radii) / len(band_radii) if band_radii else None
+    avg_overshoot = sum(overshoots) / len(overshoots) if overshoots else 0.0
+    max_overshoot = max(overshoots) if overshoots else 0.0
+    return avg_band, avg_overshoot, max_overshoot, upward, downward
 
 
 class RangeForecastRepository:
@@ -208,24 +287,56 @@ class RangeForecastRepository:
                 RangeForecastRow.horizon_minutes,
                 RangeForecastRow.generated_at,
                 RangeForecastRow.covered,
+                RangeForecastRow.anchor_price,
+                RangeForecastRow.lower_price,
+                RangeForecastRow.upper_price,
+                RangeForecastRow.observed_low,
+                RangeForecastRow.observed_high,
             ).where(RangeForecastRow.status == "evaluated")
             if normalized:
                 outcome_query = outcome_query.where(
                     RangeForecastRow.symbol == normalized
                 )
-            outcomes: dict[tuple[str, int], list[tuple[datetime, bool]]] = {}
-            for row_symbol, horizon, generated_at, covered in (
-                await session.execute(outcome_query)
-            ).all():
+            outcomes: dict[
+                tuple[str, int],
+                list[tuple[
+                    datetime,
+                    bool,
+                    Decimal,
+                    Decimal,
+                    Decimal,
+                    Decimal | None,
+                    Decimal | None,
+                ]],
+            ] = {}
+            for (
+                row_symbol,
+                horizon,
+                generated_at,
+                covered,
+                anchor_price,
+                lower_price,
+                upper_price,
+                observed_low,
+                observed_high,
+            ) in (await session.execute(outcome_query)).all():
                 outcomes.setdefault((row_symbol, int(horizon)), []).append(
-                    (generated_at, bool(covered))
+                    (
+                        generated_at,
+                        bool(covered),
+                        anchor_price,
+                        lower_price,
+                        upper_price,
+                        observed_low,
+                        observed_high,
+                    )
                 )
             evaluated_rows = [
                 (
                     key[0],
                     key[1],
                     len(items),
-                    sum(int(covered) for _, covered in items),
+                    sum(int(item[1]) for item in items),
                 )
                 for key, items in outcomes.items()
             ]
@@ -270,10 +381,16 @@ class RangeForecastRepository:
                     if evaluated
                     else Decimal("0")
                 )
-                independent, independent_covered = count_independent(
-                    outcomes[key],
-                    int(horizon),
-                )
+                samples = _independent_samples(outcomes[key], int(horizon))
+                independent = len(samples)
+                independent_covered = sum(int(item[1]) for item in samples)
+                (
+                    avg_band_radius_pct,
+                    avg_overshoot_pct,
+                    max_overshoot_pct,
+                    upward_breaches,
+                    downward_breaches,
+                ) = _path_metrics(samples)
                 results.append(
                     RangeCoverageStat(
                         symbol=row_symbol,
@@ -285,6 +402,11 @@ class RangeForecastRepository:
                         no_data=status_counts.get("no_data", 0),
                         independent=independent,
                         independent_covered=independent_covered,
+                        avg_band_radius_pct=avg_band_radius_pct,
+                        avg_overshoot_pct=avg_overshoot_pct,
+                        max_overshoot_pct=max_overshoot_pct,
+                        upward_breaches=upward_breaches,
+                        downward_breaches=downward_breaches,
                     )
                 )
 
