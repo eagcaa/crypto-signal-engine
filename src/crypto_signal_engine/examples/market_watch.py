@@ -177,6 +177,84 @@ async def evaluate_range_forecasts(
         await asyncio.sleep(interval_seconds)
 
 
+DEFAULT_AUTO_FORECAST_SYMBOLS = (
+    "BTCUSDT",
+    "ETHUSDT",
+    "ADAUSDT",
+    "PENDLEUSDT",
+    "PYTHUSDT",
+)
+
+
+def auto_forecast_settings() -> tuple[tuple[str, ...], float]:
+    """Symbols and interval for silent scheduled forecasts (env-configurable).
+
+    AUTO_FORECAST_SYMBOLS="BTC,ETH,..." ("" or "off" disables)
+    AUTO_FORECAST_MINUTES=60
+    """
+    raw = os.getenv("AUTO_FORECAST_SYMBOLS")
+    if raw is None:
+        symbols = DEFAULT_AUTO_FORECAST_SYMBOLS
+    elif raw.strip().lower() in {"", "off", "false", "0", "none"}:
+        symbols = ()
+    else:
+        symbols = tuple(
+            dict.fromkeys(
+                item.strip().upper()
+                if item.strip().upper().endswith("USDT")
+                else item.strip().upper() + "USDT"
+                for item in raw.split(",")
+                if item.strip()
+            )
+        )
+    minutes = float(os.getenv("AUTO_FORECAST_MINUTES", "60") or 60)
+    return symbols, max(minutes, 5.0) * 60.0
+
+
+async def auto_forecast_once(
+    analyzer,
+    tracker,
+    symbols: tuple[str, ...],
+    *,
+    pause_seconds: float = 2.0,
+) -> int:
+    """Generate and store forecasts for each symbol; nothing is sent to Telegram."""
+    saved = 0
+    for symbol in symbols:
+        try:
+            analysis = await analyzer.analyze(symbol)
+            await tracker.persist_analysis(analysis)
+            saved += 1
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            print(
+                "AUTO_FORECAST failed "
+                f"symbol={symbol}: {type(exc).__name__}: {exc}"
+            )
+        if pause_seconds:
+            await asyncio.sleep(pause_seconds)
+    return saved
+
+
+async def run_auto_forecasts(
+    analyzer,
+    tracker,
+    symbols: tuple[str, ...],
+    *,
+    interval_seconds: float,
+) -> None:
+    print(
+        "AUTO_FORECAST enabled "
+        f"symbols={','.join(symbols)} "
+        f"every_min={interval_seconds / 60:.0f}"
+    )
+    while True:
+        saved = await auto_forecast_once(analyzer, tracker, symbols)
+        print(f"AUTO_FORECAST cycle saved={saved}/{len(symbols)}")
+        await asyncio.sleep(interval_seconds)
+
+
 def _calibration_label(sample_count: int) -> str:
     if sample_count < 20:
         return "Az veri"
@@ -653,6 +731,18 @@ async def run(symbol: str, config: WatchConfig) -> None:
                 group.create_task(command_poller.run())
             if range_tracker is not None:
                 group.create_task(evaluate_range_forecasts(range_tracker))
+                auto_symbols, auto_interval = auto_forecast_settings()
+                if auto_symbols:
+                    group.create_task(
+                        run_auto_forecasts(
+                            CoinAnalyzer(),
+                            range_tracker,
+                            auto_symbols,
+                            interval_seconds=auto_interval,
+                        )
+                    )
+                else:
+                    print("AUTO_FORECAST disabled")
     finally:
         if dispatcher is not None:
             await dispatcher.stop()
