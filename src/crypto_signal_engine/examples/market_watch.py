@@ -342,6 +342,73 @@ async def format_range_scorecard(
     return "\n".join(lines)
 
 
+def _aggregate_horizon_stats(stats: list) -> list:
+    from types import SimpleNamespace
+
+    buckets: dict[int, list] = {}
+    for item in stats:
+        buckets.setdefault(item.horizon_minutes, []).append(item)
+
+    aggregated = []
+    for horizon, items in sorted(buckets.items()):
+        independent = sum(item.independent for item in items)
+        independent_covered = sum(item.independent_covered for item in items)
+        evaluated = sum(item.evaluated for item in items)
+        pending = sum(item.pending for item in items)
+        no_data = sum(item.no_data for item in items)
+        upward = sum(item.upward_breaches for item in items)
+        downward = sum(item.downward_breaches for item in items)
+
+        weighted_band = [
+            (item.avg_band_radius_pct, item.independent)
+            for item in items
+            if item.avg_band_radius_pct is not None and item.independent > 0
+        ]
+        avg_band = (
+            sum(value * weight for value, weight in weighted_band)
+            / sum(weight for _, weight in weighted_band)
+            if weighted_band
+            else None
+        )
+
+        weighted_overshoot = [
+            (item.avg_overshoot_pct, item.independent - item.independent_covered)
+            for item in items
+            if item.avg_overshoot_pct is not None
+            and item.independent > item.independent_covered
+        ]
+        avg_overshoot = (
+            sum(value * weight for value, weight in weighted_overshoot)
+            / sum(weight for _, weight in weighted_overshoot)
+            if weighted_overshoot
+            else 0.0
+        )
+        max_overshoot_values = [
+            item.max_overshoot_pct
+            for item in items
+            if item.max_overshoot_pct is not None
+        ]
+        max_overshoot = max(max_overshoot_values) if max_overshoot_values else 0.0
+
+        aggregated.append(
+            SimpleNamespace(
+                symbol="TÜM COİNLER",
+                horizon_minutes=horizon,
+                evaluated=evaluated,
+                pending=pending,
+                no_data=no_data,
+                independent=independent,
+                independent_covered=independent_covered,
+                avg_band_radius_pct=avg_band,
+                avg_overshoot_pct=avg_overshoot,
+                max_overshoot_pct=max_overshoot,
+                upward_breaches=upward,
+                downward_breaches=downward,
+            )
+        )
+    return aggregated
+
+
 async def format_range_stats(
     repository: RangeForecastRepository,
     symbol: str | None,
@@ -362,6 +429,18 @@ async def format_range_stats(
         grouped.setdefault(item.symbol, []).append(item)
 
     lines: list[str] = []
+    if symbol is None and len(grouped) > 1:
+        lines.append("🌐 Tüm Coinler · Yöntem Özeti")
+        for index, item in enumerate(_aggregate_horizon_stats(stats)):
+            if index:
+                lines.append("")
+            label = labels.get(
+                item.horizon_minutes,
+                f"{item.horizon_minutes} Dakikalık",
+            )
+            lines.extend(_scorecard_lines(item, label))
+        lines.extend(["", "════════════", ""])
+
     for stat_symbol in sorted(grouped):
         if lines:
             lines.extend(["", "────────────", ""])
