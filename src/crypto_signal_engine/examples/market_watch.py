@@ -185,13 +185,40 @@ def _calibration_label(sample_count: int) -> str:
     return "Güçlü veri"
 
 
+def _coverage_interval(covered: int, total: int) -> tuple[float, float]:
+    """95% Wilson interval of the coverage, in percent."""
+    if total <= 0:
+        return 0.0, 100.0
+    z = 1.96
+    share = covered / total
+    denominator = 1 + z * z / total
+    centre = (share + z * z / (2 * total)) / denominator
+    half = (
+        z
+        * ((share * (1 - share) / total + z * z / (4 * total * total)) ** 0.5)
+        / denominator
+    )
+    return (centre - half) * 100.0, (centre + half) * 100.0
+
+
 def _scorecard_score(item) -> int:
+    """Quality of the bands only; sample size limits the score, never adds to it.
+
+    - Coverage fit: full marks while the 70% target is inside the 95% interval
+      of the measured coverage; otherwise the score drops with the statistically
+      meaningful distance from the target.
+    - Overshoot: how far price went outside the band relative to its width.
+    - Few samples cap the score, so a short record cannot look excellent.
+    """
     if not item.independent:
         return 0
 
-    coverage = item.independent_covered * 100.0 / item.independent
-    coverage_fit = max(0.0, 100.0 - abs(coverage - 70.0) * 3.0)
-    sample_score = min(item.independent / 50.0, 1.0) * 100.0
+    low, high = _coverage_interval(item.independent_covered, item.independent)
+    if low <= 70.0 <= high:
+        coverage_fit = 100.0
+    else:
+        gap = (low - 70.0) if low > 70.0 else (70.0 - high)
+        coverage_fit = max(0.0, 70.0 - gap * 5.0)
 
     if item.avg_band_radius_pct and item.avg_band_radius_pct > 0:
         overshoot_ratio = (item.avg_overshoot_pct or 0.0) / item.avg_band_radius_pct
@@ -199,13 +226,8 @@ def _scorecard_score(item) -> int:
     else:
         overshoot_score = 100.0
 
-    score = round(
-        coverage_fit * 0.45
-        + sample_score * 0.40
-        + overshoot_score * 0.15
-    )
+    score = round(coverage_fit * 0.75 + overshoot_score * 0.25)
 
-    # A tiny sample must never look as authoritative as a mature track record.
     if item.independent < 10:
         score = min(score, 59)
     elif item.independent < 20:
@@ -268,14 +290,24 @@ def _scorecard_lines(item, label: str) -> list[str]:
         ]
     )
 
+    low, high = _coverage_interval(item.independent_covered, item.independent)
     if item.independent < 20:
         comment = "Henüz erken; örnek sayısı arttıkça karne daha anlamlı olacak."
-    elif coverage < 65:
-        comment = "Bantlar hedeflenen %70 kapsama göre dar kalıyor."
-    elif coverage > 78:
-        comment = "Bantlar hedeflenen %70 kapsama göre geniş olabilir."
+    elif high < 70.0:
+        comment = (
+            f"Bantlar dar: gerçek kapsama büyük ihtimalle %{low:.0f}–%{high:.0f}, "
+            "hedef %70."
+        )
+    elif low > 70.0:
+        comment = (
+            f"Bantlar gereğinden geniş: gerçek kapsama büyük ihtimalle "
+            f"%{low:.0f}–%{high:.0f}, hedef %70."
+        )
     else:
-        comment = "Bantlar hedeflenen %70 kapsama oranına yakın çalışıyor."
+        comment = (
+            f"Bantlar hedefle uyumlu (kapsama %{low:.0f}–%{high:.0f} "
+            "aralığında, %70 bunun içinde)."
+        )
     lines.extend(["", f"Yorum: {comment}"])
     return lines
 
