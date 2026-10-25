@@ -177,23 +177,137 @@ async def evaluate_range_forecasts(
         await asyncio.sleep(interval_seconds)
 
 
-def _coverage_line(
-    label: str,
-    independent: int,
-    covered: int,
-    raw: int,
-) -> str:
-    if not independent:
-        return f"{label}: henüz değerlendirme yok"
-    share = covered / independent
-    margin = 196.0 * (max(share * (1.0 - share), 0.0) / independent) ** 0.5
-    line = (
-        f"{label}: %{share * 100:.0f} tuttu ({covered}/{independent}"
-        f", ±{margin:.0f} puan)"
+def _calibration_label(sample_count: int) -> str:
+    if sample_count < 20:
+        return "Az veri"
+    if sample_count < 50:
+        return "Orta veri"
+    return "Güçlü veri"
+
+
+def _scorecard_score(item) -> int:
+    if not item.independent:
+        return 0
+
+    coverage = item.independent_covered * 100.0 / item.independent
+    coverage_fit = max(0.0, 100.0 - abs(coverage - 70.0) * 3.0)
+    sample_score = min(item.independent / 50.0, 1.0) * 100.0
+
+    if item.avg_band_radius_pct and item.avg_band_radius_pct > 0:
+        overshoot_ratio = (item.avg_overshoot_pct or 0.0) / item.avg_band_radius_pct
+        overshoot_score = max(0.0, 100.0 - overshoot_ratio * 100.0)
+    else:
+        overshoot_score = 100.0
+
+    score = round(
+        coverage_fit * 0.45
+        + sample_score * 0.40
+        + overshoot_score * 0.15
     )
-    if raw > independent:
-        line += f" [toplam {raw} kayıt]"
-    return line
+
+    # A tiny sample must never look as authoritative as a mature track record.
+    if item.independent < 10:
+        score = min(score, 59)
+    elif item.independent < 20:
+        score = min(score, 69)
+    elif item.independent < 50:
+        score = min(score, 84)
+    return max(0, min(100, score))
+
+
+def _score_label(score: int, sample_count: int) -> str:
+    if sample_count < 20:
+        return "Ön değerlendirme"
+    if score >= 85:
+        return "Çok iyi"
+    if score >= 70:
+        return "İyi"
+    if score >= 55:
+        return "İzle"
+    return "Zayıf"
+
+
+def _scorecard_lines(item, label: str) -> list[str]:
+    if not item.independent:
+        return [
+            f"📊 {label} Tahmin Karnesi",
+            "Henüz değerlendirilmiş bağımsız tahmin yok.",
+        ]
+
+    coverage = item.independent_covered * 100.0 / item.independent
+    score = _scorecard_score(item)
+    lines = [
+        f"📊 {label} Tahmin Karnesi",
+        f"{score}/100 — {_score_label(score, item.independent)}",
+        "",
+        "Geçmiş performans",
+        f"• {item.independent} bağımsız tahmin",
+        (
+            f"• {item.independent_covered} tanesi bant içinde kaldı "
+            f"(%{coverage:.0f})"
+        ),
+    ]
+    if item.avg_band_radius_pct is not None:
+        lines.append(f"• Ortalama bant: ±%{item.avg_band_radius_pct:.2f}")
+    if item.avg_overshoot_pct is not None:
+        lines.append(
+            "• Bant dışına çıkanlarda ortalama taşma: "
+            f"%{item.avg_overshoot_pct:.2f}"
+        )
+    if item.max_overshoot_pct is not None:
+        lines.append(f"• En kötü taşma: %{item.max_overshoot_pct:.2f}")
+
+    lines.extend(
+        [
+            "",
+            f"Kalibrasyon: {_calibration_label(item.independent)}",
+            (
+                f"Taşma yönü: ↑ {item.upward_breaches} · "
+                f"↓ {item.downward_breaches}"
+            ),
+        ]
+    )
+
+    if item.independent < 20:
+        comment = "Henüz erken; örnek sayısı arttıkça karne daha anlamlı olacak."
+    elif coverage < 65:
+        comment = "Bantlar hedeflenen %70 kapsama göre dar kalıyor."
+    elif coverage > 78:
+        comment = "Bantlar hedeflenen %70 kapsama göre geniş olabilir."
+    else:
+        comment = "Bantlar hedeflenen %70 kapsama oranına yakın çalışıyor."
+    lines.extend(["", f"Yorum: {comment}"])
+    return lines
+
+
+async def format_range_scorecard(
+    repository: RangeForecastRepository,
+    symbol: str,
+) -> str | None:
+    stats = await repository.coverage_stats(symbol=symbol)
+    evaluated = [item for item in stats if item.independent > 0]
+    if not evaluated:
+        return None
+
+    preferred = next(
+        (item for item in evaluated if item.horizon_minutes == 60),
+        evaluated[0],
+    )
+    label = {
+        15: "15 Dakikalık",
+        60: "1 Saatlik",
+        240: "4 Saatlik",
+        1440: "24 Saatlik",
+    }.get(preferred.horizon_minutes, f"{preferred.horizon_minutes} Dakikalık")
+    lines = _scorecard_lines(preferred, f"{preferred.symbol} · {label}")
+    lines.extend(
+        [
+            "",
+            f"Tüm ufuklar için: /stats {preferred.symbol.removesuffix('USDT')}",
+            "ℹ️ Geçmiş performans gelecekteki sonucu garanti etmez.",
+        ]
+    )
+    return "\n".join(lines)
 
 
 async def format_range_stats(
@@ -206,60 +320,46 @@ async def format_range_stats(
         return f"📊 {target} için forward sonuç yok."
 
     labels = {
-        15: "15 dk",
-        60: "1 saat",
-        240: "4 saat",
-        1440: "24 saat",
+        15: "15 Dakikalık",
+        60: "1 Saatlik",
+        240: "4 Saatlik",
+        1440: "24 Saatlik",
     }
     grouped: dict[str, list] = {}
-    totals: dict[int, list[int]] = {}
     for item in stats:
         grouped.setdefault(item.symbol, []).append(item)
-        bucket = totals.setdefault(item.horizon_minutes, [0, 0, 0])
-        bucket[0] += item.independent
-        bucket[1] += item.independent_covered
-        bucket[2] += item.evaluated
 
-    lines = ["📊 Aralık tahminleri ne kadar tuttu? (hedef %70)", ""]
-    if len(grouped) > 1:
-        lines.append("Tüm coinler")
-        for horizon in sorted(totals):
-            independent, covered, raw = totals[horizon]
-            label = labels.get(horizon, f"{horizon} dk")
-            lines.append(_coverage_line(label, independent, covered, raw))
-        lines.append("")
-
+    lines: list[str] = []
     for stat_symbol in sorted(grouped):
-        lines.append(stat_symbol)
-        for item in sorted(
+        if lines:
+            lines.extend(["", "────────────", ""])
+        symbol_rows = sorted(
             grouped[stat_symbol],
             key=lambda row: row.horizon_minutes,
-        ):
+        )
+        for index, item in enumerate(symbol_rows):
+            if index:
+                lines.append("")
             label = labels.get(
                 item.horizon_minutes,
-                f"{item.horizon_minutes} dk",
+                f"{item.horizon_minutes} Dakikalık",
             )
-            lines.append(
-                _coverage_line(
-                    label,
-                    item.independent,
-                    item.independent_covered,
-                    item.evaluated,
-                )
-            )
+            lines.extend(_scorecard_lines(item, f"{stat_symbol} · {label}"))
             if item.pending or item.no_data:
-                extra = []
+                status = []
                 if item.pending:
-                    extra.append(f"{item.pending} bekliyor")
+                    status.append(f"{item.pending} bekliyor")
                 if item.no_data:
-                    extra.append(f"{item.no_data} veri yok")
-                lines.append("  " + ", ".join(extra))
-        lines.append("")
+                    status.append(f"{item.no_data} veri yok")
+                lines.append("Durum: " + ", ".join(status))
 
-    lines.append(
-        "Aynı coin için kısa aralıklarla sorulan tahminler tek sayılır. "
-        "± payı küçüldükçe sonuç güvenilir olur; ~50 tahminden önce "
-        "yorum yapmayın."
+    lines.extend(
+        [
+            "",
+            "Karne skoru yalnız isabet yüzdesi değildir; hedef %70 kapsama, "
+            "bağımsız örnek sayısı ve taşma büyüklüğü birlikte değerlendirilir.",
+            "ℹ️ Geçmiş performans gelecekteki sonucu garanti etmez.",
+        ]
     )
     return "\n".join(lines).rstrip()
 
