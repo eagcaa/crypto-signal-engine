@@ -468,6 +468,16 @@ async def run(symbol: str, config: WatchConfig) -> None:
                 if range_repository is not None
                 else None
             ),
+            scorecard_provider=(
+                (
+                    lambda requested_symbol: format_range_scorecard(
+                        range_repository,
+                        requested_symbol,
+                    )
+                )
+                if range_repository is not None
+                else None
+            ),
             extra_allowed_chat_ids=tuple(
                 dict.fromkeys(
                     (
