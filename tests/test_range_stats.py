@@ -142,3 +142,99 @@ def test_count_independent_drops_overlapping_requests() -> None:
     ]
     assert count_independent(outcomes, 15) == (3, 2)
     assert count_independent(outcomes, 60) == (1, 1)
+
+
+
+def test_score_does_not_reward_sample_size_for_bad_bands() -> None:
+    from types import SimpleNamespace
+
+    from crypto_signal_engine.examples.market_watch import (
+        _score_label,
+        _scorecard_lines,
+        _scorecard_score,
+    )
+
+    def item(
+        count: int,
+        coverage_pct: int,
+        band: float = 0.8,
+        over: float = 0.2,
+    ):
+        return SimpleNamespace(
+            independent=count,
+            independent_covered=round(count * coverage_pct / 100),
+            avg_band_radius_pct=band,
+            avg_overshoot_pct=over,
+            max_overshoot_pct=0.6,
+            upward_breaches=5,
+            downward_breaches=5,
+        )
+
+    narrow = item(150, 55)
+    calibrated = item(150, 70)
+    too_wide = item(150, 95, band=3.0, over=0.05)
+
+    assert _score_label(_scorecard_score(narrow), 150) not in {"İyi", "Çok iyi"}
+    assert _scorecard_score(narrow) < _scorecard_score(item(60, 55)) + 1
+    assert _scorecard_score(calibrated) >= 85
+    assert _score_label(_scorecard_score(too_wide), 150) == "Zayıf"
+
+    narrow_comment = next(
+        line for line in _scorecard_lines(narrow, "x") if line.startswith("Yorum")
+    )
+    assert "dar" in narrow_comment
+    calibrated_comment = next(
+        line
+        for line in _scorecard_lines(calibrated, "x")
+        if line.startswith("Yorum")
+    )
+    assert "uyumlu" in calibrated_comment
+
+
+@pytest.mark.asyncio
+async def test_all_coins_summary_is_restored() -> None:
+    class MultiCoinRepository:
+        async def coverage_stats(self, *, symbol=None):
+            assert symbol is None
+            return [
+                RangeCoverageStat(
+                    symbol="BTCUSDT",
+                    horizon_minutes=60,
+                    evaluated=60,
+                    covered=42,
+                    coverage_pct=Decimal("70"),
+                    pending=0,
+                    no_data=0,
+                    independent=60,
+                    independent_covered=42,
+                    avg_band_radius_pct=0.8,
+                    avg_overshoot_pct=0.15,
+                    max_overshoot_pct=0.4,
+                    upward_breaches=7,
+                    downward_breaches=6,
+                ),
+                RangeCoverageStat(
+                    symbol="ETHUSDT",
+                    horizon_minutes=60,
+                    evaluated=40,
+                    covered=28,
+                    coverage_pct=Decimal("70"),
+                    pending=0,
+                    no_data=0,
+                    independent=40,
+                    independent_covered=28,
+                    avg_band_radius_pct=0.9,
+                    avg_overshoot_pct=0.20,
+                    max_overshoot_pct=0.5,
+                    upward_breaches=4,
+                    downward_breaches=5,
+                ),
+            ]
+
+    text = await format_range_stats(MultiCoinRepository(), None)
+
+    assert "🌐 Tüm Coinler · Yöntem Özeti" in text
+    assert "100 bağımsız tahmin" in text
+    assert "70 tanesi bant içinde kaldı (%70)" in text
+    assert "BTCUSDT · 1 Saatlik Tahmin Karnesi" in text
+    assert "ETHUSDT · 1 Saatlik Tahmin Karnesi" in text
