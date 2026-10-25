@@ -23,6 +23,7 @@ class TelegramCommandPoller:
         extra_allowed_chat_ids: tuple[str, ...] = (),
         on_analysis: Callable[[CoinAnalysis], Awaitable[None]] | None = None,
         stats_provider: Callable[[str | None], Awaitable[str]] | None = None,
+        scorecard_provider: Callable[[str], Awaitable[str | None]] | None = None,
         timeout_seconds: float = 35.0,
     ) -> None:
         self._bot_token = bot_token.strip()
@@ -34,6 +35,7 @@ class TelegramCommandPoller:
         self._analyzer = analyzer
         self._on_analysis = on_analysis
         self._stats_provider = stats_provider
+        self._scorecard_provider = scorecard_provider
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._offset: int | None = None
 
@@ -136,7 +138,18 @@ class TelegramCommandPoller:
                         "RANGE forecast persistence unavailable: "
                         f"{type(exc).__name__}: {exc}"
                     )
-            await self._send(chat_id, analysis.text)
+            response_text = analysis.text
+            if self._scorecard_provider is not None:
+                try:
+                    scorecard = await self._scorecard_provider(analysis.symbol)
+                    if scorecard:
+                        response_text += "\n\n" + scorecard
+                except Exception as exc:  # noqa: BLE001
+                    print(
+                        "RANGE scorecard unavailable: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+            await self._send(chat_id, response_text)
         except Exception as exc:  # noqa: BLE001
             await self._send(
                 chat_id,
