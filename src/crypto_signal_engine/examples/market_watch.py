@@ -180,7 +180,14 @@ async def evaluate_range_forecasts(
 DEFAULT_AUTO_FORECAST_SYMBOLS = (
     "BTCUSDT",
     "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT",
     "ADAUSDT",
+    "DOGEUSDT",
+    "LINKUSDT",
+    "AVAXUSDT",
+    "SUIUSDT",
     "PENDLEUSDT",
     "PYTHUSDT",
 )
