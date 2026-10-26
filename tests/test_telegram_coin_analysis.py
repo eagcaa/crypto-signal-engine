@@ -102,7 +102,9 @@ class _FakeCandleClient:
                     close=Decimal(str(price)),
                     high=Decimal(str(price * 1.001)),
                     low=Decimal(str(price * 0.999)),
+                    volume=Decimal("10"),
                     quote_volume=Decimal("1000000"),
+                    taker_buy_base_volume=Decimal("6"),
                     taker_buy_quote_volume=Decimal("600000"),
                 )
             )
@@ -292,14 +294,23 @@ async def test_coin_analysis_renders_nine_kline_flow_windows_and_price_zones() -
 
     result = await analyzer.analyze("btc")
 
-    assert "Agresif alım / satım akışı (Binance Spot)" in result.text
+    assert "Agresif alım / satım akışı (Binance Spot, mum verisi)" in result.text
     for label in ("24s", "12s", "6s", "4s", "1s", "15dk", "5dk", "3dk", "1dk"):
         assert f"{label}:" in result.text
 
-    assert "15dk: alım $9.0M · satım $6.0M · net $3.0M · alım %60" in result.text
-    assert "1dk: alım $600K · satım $400K · net $200K · alım %60" in result.text
+    assert (
+        "15dk: agresif alım 90.0000 BTC ($9.0M) · "
+        "agresif satım 60.0000 BTC ($6.0M) · "
+        "net 30.0000 BTC ($3.0M) · alım %60"
+    ) in result.text
+    assert (
+        "1dk: agresif alım 6.0000 BTC ($600K) · "
+        "agresif satım 4.0000 BTC ($400K) · "
+        "net 2.0000 BTC ($200K) · alım %60"
+    ) in result.text
     assert "agresif alım baskısı" in result.text
     assert "Son 1s yoğun fiyat bölgeleri (1dk mum bazlı yaklaşık)" in result.text
+    assert "Not: Large/Medium/Small sınıflaması değildir." in result.text
     assert "Agresif alım:" in result.text
     assert "Agresif satım:" in result.text
 
