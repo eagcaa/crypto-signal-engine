@@ -427,6 +427,29 @@ async def format_range_scorecard(
     return "\n".join(lines)
 
 
+async def format_range_scorecard_line(
+    repository: RangeForecastRepository,
+    symbol: str,
+) -> str | None:
+    """One-line scorecard for the short analysis reply."""
+    stats = await repository.coverage_stats(symbol=symbol)
+    evaluated = [item for item in stats if item.independent > 0]
+    if not evaluated:
+        return None
+    item = next(
+        (stat for stat in evaluated if stat.horizon_minutes == 60),
+        evaluated[0],
+    )
+    label = {15: "15dk", 60: "1s", 240: "4s", 1440: "24s"}.get(
+        item.horizon_minutes, f"{item.horizon_minutes}dk"
+    )
+    coverage = item.independent_covered * 100.0 / item.independent
+    return (
+        f"Karne ({label}): bant içinde %{coverage:.0f} (hedef %70) · "
+        f"{item.independent} tahmin · {_calibration_label(item.independent).lower()}"
+    )
+
+
 def _aggregate_horizon_stats(stats: list) -> list:
     from types import SimpleNamespace
 
@@ -674,18 +697,15 @@ async def run(symbol: str, config: WatchConfig) -> None:
                 if range_repository is not None
                 else None
             ),
-            summary_provider=(
-                lambda requested_symbol: asyncio.sleep(
-                    0,
-                    result=(
-                        watch.summary(datetime.now(UTC)).text
-                        if (
-                            requested_symbol.strip().upper().removesuffix("USDT")
-                            == watch.symbol.removesuffix("USDT")
-                        )
-                        else None
-                    ),
+            scorecard_line_provider=(
+                (
+                    lambda requested_symbol: format_range_scorecard_line(
+                        range_repository,
+                        requested_symbol,
+                    )
                 )
+                if range_repository is not None
+                else None
             ),
             extra_allowed_chat_ids=tuple(
                 dict.fromkeys(
