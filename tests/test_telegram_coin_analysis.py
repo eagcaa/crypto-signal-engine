@@ -299,20 +299,20 @@ async def test_coin_analysis_renders_nine_kline_flow_windows_and_price_zones() -
         assert f"{label}:" in result.text
 
     assert (
-        "15dk: agresif alım 90.0000 BTC ($9.0M) · "
-        "agresif satım 60.0000 BTC ($6.0M) · "
-        "net 30.0000 BTC ($3.0M) · alım %60"
+        "15dk: net 30.00 BTC ($3.0M) · alım %60 · agresif alım baskısı"
     ) in result.text
     assert (
-        "1dk: agresif alım 6.0000 BTC ($600K) · "
-        "agresif satım 4.0000 BTC ($400K) · "
-        "net 2.0000 BTC ($200K) · alım %60"
+        "Detay: agresif alım 90.00 BTC ($9.0M) · "
+        "agresif satım 60.00 BTC ($6.0M)"
+    ) in result.text
+    assert (
+        "1dk: net 2.00 BTC ($200K) · alım %60 · agresif alım baskısı"
     ) in result.text
     assert "agresif alım baskısı" in result.text
     assert "Son 1s yoğun fiyat bölgeleri (1dk mum bazlı yaklaşık)" in result.text
     assert "Not: Large/Medium/Small sınıflaması değildir." in result.text
-    assert "Agresif alım:" in result.text
-    assert "Agresif satım:" in result.text
+    assert "Net alıcı bölge:" in result.text
+    assert "Net satıcı bölge:" in result.text
 
 
 def test_binance_kline_parser_captures_taker_buy_quote_volume() -> None:
@@ -338,3 +338,38 @@ def test_binance_kline_parser_captures_taker_buy_quote_volume() -> None:
     assert candle.taker_buy_base_volume == Decimal("7")
     assert candle.taker_buy_quote_volume == Decimal("760")
     assert candle.trade_count == 42
+
+
+
+def test_flow_zones_rank_net_buyers_and_sellers_separately() -> None:
+    from crypto_signal_engine.watch.coin_analysis import _flow_zones
+
+    candles = [
+        SimpleNamespace(
+            high=Decimal("100"),
+            low=Decimal("100"),
+            close=Decimal("100"),
+            quote_volume=Decimal("1000"),
+            taker_buy_quote_volume=Decimal("900"),
+        ),
+        SimpleNamespace(
+            high=Decimal("101"),
+            low=Decimal("101"),
+            close=Decimal("101"),
+            quote_volume=Decimal("1000"),
+            taker_buy_quote_volume=Decimal("100"),
+        ),
+    ]
+
+    buyers, sellers = _flow_zones(
+        candles,
+        100.0,
+        lookback_minutes=2,
+        bucket_pct=0.5,
+        top_n=3,
+    )
+
+    assert buyers and sellers
+    assert buyers[0][2] == Decimal("800")
+    assert sellers[0][2] == Decimal("800")
+    assert buyers[0][:2] != sellers[0][:2]
