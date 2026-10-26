@@ -183,6 +183,96 @@ def _coin_amount(value: Decimal, asset: str, current_price: float | None = None)
     return f"{rendered} {asset}"
 
 
+def _signed_coin(value: Decimal, asset: str, current_price: float) -> str:
+    rendered = _coin_amount(value, asset, current_price)
+    return rendered if value < 0 else f"+{rendered}"
+
+
+_COMPACT_FLOW = ("15dk", "1s", "4s", "1g")
+_COMPACT_RANGE = {15: "15dk", 60: "1s", 240: "4s", 1440: "24s"}
+
+
+def _compact_summary(
+    *,
+    symbol: str,
+    base_asset: str,
+    current_price: float,
+    ranges,
+    high_24h: float,
+    low_24h: float,
+    flow_rows,
+    zones,
+    derivatives,
+    bybit_derivatives,
+    now: datetime,
+) -> str:
+    """Short mobile-friendly reply; the long report stays available as 'detay'."""
+    lines = [f"🔎 {symbol} — {_price(current_price)}"]
+
+    parts = [
+        f"{_COMPACT_RANGE[horizon]} {_price(estimate.lower)}–{_price(estimate.upper)}"
+        for horizon, estimate in ranges
+        if estimate is not None and horizon in _COMPACT_RANGE
+    ]
+    if parts:
+        lines.append("Aralık (%70 hedef): " + " · ".join(parts[:2]))
+        if len(parts) > 2:
+            lines.append("  " + " · ".join(parts[2:]))
+    lines.append(f"24s yüksek/düşük: {_price(high_24h)} / {_price(low_24h)}")
+
+    rows = {row[0]: row for row in flow_rows}
+    nets = []
+    shares = []
+    for label in _COMPACT_FLOW:
+        row = rows.get(label)
+        if row is None or row[1] + row[2] <= 0 or row[5] is None:
+            continue
+        nets.append(
+            f"{label} {_signed_coin(row[1] - row[2], base_asset, current_price)}"
+        )
+        shares.append(f"{label} %{row[5]:.0f}")
+    if nets:
+        lines.append("Taker akışı (net): " + " · ".join(nets))
+        lines.append("Alım payı: " + " · ".join(shares))
+
+    buy_zones, sell_zones = zones
+    zone_parts = []
+    if buy_zones:
+        low, high, _ = buy_zones[0]
+        zone_parts.append(f"alıcı {_price(low)}–{_price(high)}")
+    if sell_zones:
+        low, high, _ = sell_zones[0]
+        zone_parts.append(f"satıcı {_price(low)}–{_price(high)}")
+    if zone_parts:
+        lines.append("Son 1s bölge: " + " · ".join(zone_parts))
+
+    label, snapshot = ("Vadeli", derivatives)
+    if snapshot is None and bybit_derivatives is not None:
+        label, snapshot = ("Vadeli (Bybit)", bybit_derivatives)
+    if snapshot is not None:
+        funding = (
+            "n/a"
+            if snapshot.funding_rate is None
+            else f"{float(snapshot.funding_rate) * 100:.4f}%"
+        )
+        long_short = (
+            "n/a"
+            if snapshot.long_short_ratio is None
+            else f"{float(snapshot.long_short_ratio):.2f}"
+        )
+        lines.append(
+            f"{label}: OI 15dk {_pct(snapshot.oi_change_15m_pct)} · "
+            f"Funding {funding} · L/S {long_short}"
+        )
+
+    short = base_asset or symbol
+    lines.append(
+        f"Yön tahmini değildir · Uzun rapor: {short} detay · "
+        f"{now.strftime('%H:%M UTC')}"
+    )
+    return "\n".join(lines)
+
+
 @dataclass(frozen=True, slots=True)
 class CoinRangeForecast:
     horizon_minutes: int
@@ -201,6 +291,7 @@ class CoinAnalysis:
     generated_at: datetime
     text: str
     forecasts: tuple[CoinRangeForecast, ...] = ()
+    summary: str = ""
 
 
 class CoinAnalyzer:
@@ -327,10 +418,19 @@ class CoinAnalyzer:
             ]
         )
 
+        base_asset = symbol.removesuffix("USDT")
+        flow_rows = (
+            _flow_windows(candle_sets[0], candle_sets[1])
+            if self._flow_enabled
+            else []
+        )
+        zones = (
+            _flow_zones(candle_sets[0], current_price)
+            if self._flow_enabled
+            else ([], [])
+        )
+
         if self._flow_enabled:
-            minute_candles = candle_sets[0]
-            five_minute_candles = candle_sets[1]
-            base_asset = symbol.removesuffix("USDT")
             lines.extend(
                 [
                     "",
@@ -345,7 +445,7 @@ class CoinAnalyzer:
                 buy_quote,
                 sell_quote,
                 buy_share,
-            ) in _flow_windows(minute_candles, five_minute_candles):
+            ) in flow_rows:
                 total = buy_base + sell_base
                 if total <= 0:
                     lines.append(f"{label}: veri yok")
@@ -366,7 +466,7 @@ class CoinAnalyzer:
                         f"({_usd(sell_quote)})"
                     )
 
-            buy_zones, sell_zones = _flow_zones(minute_candles, current_price)
+            buy_zones, sell_zones = zones
             lines.extend(
                 [
                     "",
@@ -458,11 +558,25 @@ class CoinAnalyzer:
                 f"Güncelleme: {now.strftime('%H:%M UTC')}",
             ]
         )
+        summary = _compact_summary(
+            symbol=symbol,
+            base_asset=base_asset,
+            current_price=current_price,
+            ranges=ranges,
+            high_24h=high_24h,
+            low_24h=low_24h,
+            flow_rows=flow_rows,
+            zones=zones,
+            derivatives=derivatives,
+            bybit_derivatives=bybit_derivatives,
+            now=now,
+        )
         return CoinAnalysis(
             symbol=symbol,
             generated_at=now,
             text="\n".join(lines),
             forecasts=tuple(forecasts),
+            summary=summary,
         )
 
     async def _safe_derivatives(self, symbol: str):
