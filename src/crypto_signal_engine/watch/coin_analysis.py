@@ -67,23 +67,44 @@ def _flow_comment(buy_share: float | None) -> str:
     return "dengeli"
 
 
-def _candle_flow(candles, count: int) -> tuple[Decimal, Decimal, float | None]:
+def _candle_flow(
+    candles,
+    count: int,
+) -> tuple[Decimal, Decimal, Decimal, Decimal, float | None]:
     selected = candles[-count:] if count > 0 else []
-    buy = sum(
-        (Decimal(str(getattr(candle, "taker_buy_quote_volume", 0))) for candle in selected),
+
+    buy_base = sum(
+        (
+            Decimal(str(getattr(candle, "taker_buy_base_volume", 0)))
+            for candle in selected
+        ),
         Decimal("0"),
     )
-    quote = sum(
+    total_base = sum(
+        (Decimal(str(getattr(candle, "volume", 0))) for candle in selected),
+        Decimal("0"),
+    )
+    sell_base = max(Decimal("0"), total_base - buy_base)
+
+    buy_quote = sum(
+        (
+            Decimal(str(getattr(candle, "taker_buy_quote_volume", 0)))
+            for candle in selected
+        ),
+        Decimal("0"),
+    )
+    total_quote = sum(
         (Decimal(str(getattr(candle, "quote_volume", 0))) for candle in selected),
         Decimal("0"),
     )
-    sell = max(Decimal("0"), quote - buy)
-    total = buy + sell
-    buy_share = float(buy / total * Decimal("100")) if total > 0 else None
-    return buy, sell, buy_share
+    sell_quote = max(Decimal("0"), total_quote - buy_quote)
+
+    total = buy_base + sell_base
+    buy_share = float(buy_base / total * Decimal("100")) if total > 0 else None
+    return buy_base, sell_base, buy_quote, sell_quote, buy_share
 
 
-def _flow_windows(minute_candles, five_minute_candles) -> list[tuple[str, Decimal, Decimal, float | None]]:
+def _flow_windows(minute_candles, five_minute_candles):
     specs = (
         ("24s", five_minute_candles, 288),
         ("12s", five_minute_candles, 144),
@@ -139,6 +160,19 @@ def _flow_zones(
 
 def _format_zone(low: float, high: float, amount: Decimal) -> str:
     return f"{_price(low)}–{_price(high)} ({_usd(amount)})"
+
+
+def _coin_amount(value: Decimal, asset: str) -> str:
+    amount = float(value)
+    if abs(amount) >= 100_000:
+        rendered = f"{amount:,.0f}"
+    elif abs(amount) >= 1_000:
+        rendered = f"{amount:,.1f}"
+    elif abs(amount) >= 1:
+        rendered = f"{amount:,.4f}"
+    else:
+        rendered = f"{amount:.6f}"
+    return f"{rendered} {asset}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,24 +322,45 @@ class CoinAnalyzer:
         if self._flow_enabled:
             minute_candles = candle_sets[0]
             five_minute_candles = candle_sets[1]
-            lines.extend(["", "Agresif alım / satım akışı (Binance Spot)"])
-            for label, buy, sell, buy_share in _flow_windows(
-                minute_candles,
-                five_minute_candles,
-            ):
-                total = buy + sell
+            base_asset = symbol.removesuffix("USDT")
+            lines.extend(
+                [
+                    "",
+                    "Agresif alım / satım akışı (Binance Spot, mum verisi)",
+                ]
+            )
+            for (
+                label,
+                buy_base,
+                sell_base,
+                buy_quote,
+                sell_quote,
+                buy_share,
+            ) in _flow_windows(minute_candles, five_minute_candles):
+                total = buy_base + sell_base
                 if total <= 0:
                     lines.append(f"{label}: veri yok")
                     continue
-                net = buy - sell
+                net_base = buy_base - sell_base
+                net_quote = buy_quote - sell_quote
                 lines.append(
-                    f"{label}: alım {_usd(buy)} · satım {_usd(sell)} · "
-                    f"net {_usd(net)} · alım %{buy_share:.0f} "
+                    f"{label}: agresif alım {_coin_amount(buy_base, base_asset)} "
+                    f"({_usd(buy_quote)}) · "
+                    f"agresif satım {_coin_amount(sell_base, base_asset)} "
+                    f"({_usd(sell_quote)}) · "
+                    f"net {_coin_amount(net_base, base_asset)} "
+                    f"({_usd(net_quote)}) · alım %{buy_share:.0f} "
                     f"({_flow_comment(buy_share)})"
                 )
 
             buy_zones, sell_zones = _flow_zones(minute_candles, current_price)
-            lines.extend(["", "Son 1s yoğun fiyat bölgeleri (1dk mum bazlı yaklaşık)"])
+            lines.extend(
+                [
+                    "",
+                    "Son 1s yoğun fiyat bölgeleri (1dk mum bazlı yaklaşık)",
+                    "Not: Large/Medium/Small sınıflaması değildir.",
+                ]
+            )
             if buy_zones:
                 lines.append(
                     "Agresif alım: "
