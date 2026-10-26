@@ -378,79 +378,122 @@ def test_flow_zones_rank_net_buyers_and_sellers_separately() -> None:
 
 
 
+def test_detail_flag_is_split_from_request() -> None:
+    split = TelegramCommandPoller._split_detail_flag
+    assert split("BTC") == ("BTC", False)
+    assert split("BTC detay") == ("BTC", True)
+    assert split("/analyze eth DETAY") == ("/analyze eth", True)
+    assert split("detay") == ("detay", False)
+    command, detailed = split("pendle uzun")
+    assert detailed
+    assert TelegramCommandPoller._parse_request(command) == "pendle"
+
+
 @pytest.mark.asyncio
-async def test_plain_ticker_uses_compact_summary_before_long_analysis() -> None:
+async def test_coin_analysis_has_short_mobile_summary() -> None:
+    from crypto_signal_engine.watch.coin_analysis import CoinAnalyzer
+
+    analyzer = CoinAnalyzer(
+        candle_client=_FakeCandleClient(),
+        derivatives_client=_FakeDerivativesClient(
+            oi_5m="0.10",
+            oi_15m="0.20",
+            funding="0.0001",
+            long_short="1.00",
+        ),
+        bybit_enabled=False,
+        flow_enabled=True,
+    )
+
+    result = await analyzer.analyze("btc")
+    summary = result.summary
+
+    assert summary.startswith("🔎 BTCUSDT — ")
+    assert len(summary.splitlines()) <= 11
+    assert len(summary) < len(result.text) / 2
+    assert "Aralık (%70 hedef):" in summary
+    assert "Taker akışı (net): 15dk +30.00 BTC" in summary
+    assert "Alım payı: 15dk %60" in summary
+    assert "Vadeli: OI 15dk +0.20% · Funding 0.0100% · L/S 1.00" in summary
+    assert "Uzun rapor: BTC detay" in summary
+    assert "Agresif taker akışı" not in summary
+
+
+class _FakeAnalyzer:
+    def __init__(self) -> None:
+        self.requests: list[str] = []
+
+    async def analyze(self, request: str):
+        from crypto_signal_engine.watch.coin_analysis import CoinAnalysis
+
+        self.requests.append(request)
+        return CoinAnalysis(
+            symbol="BTCUSDT",
+            generated_at=T0,
+            text="UZUN RAPOR",
+            summary="KISA\nalt satır",
+        )
+
+
+@pytest.mark.asyncio
+async def test_poller_sends_summary_by_default_and_full_on_detay() -> None:
+    analyzer = _FakeAnalyzer()
     sent: list[str] = []
-    analyzed: list[str] = []
+    persisted: list[str] = []
 
-    class Analyzer:
-        async def analyze(self, request: str):
-            analyzed.append(request)
-            return SimpleNamespace(symbol="BTCUSDT", text="LONG", forecasts=())
+    async def line(symbol: str) -> str:
+        return "KARNE SATIRI"
 
-    async def summary_provider(request: str):
-        return "SHORT" if request.upper() == "BTC" else None
+    async def full(symbol: str) -> str:
+        return "KARNE UZUN"
+
+    async def persist(analysis) -> None:
+        persisted.append(analysis.symbol)
 
     poller = TelegramCommandPoller(
         bot_token="token",
-        allowed_chat_id="111",
-        analyzer=Analyzer(),
-        summary_provider=summary_provider,
+        allowed_chat_id="1",
+        analyzer=analyzer,
+        on_analysis=persist,
+        scorecard_provider=full,
+        scorecard_line_provider=line,
     )
 
-    async def fake_send(chat_id: str, text: str):
+    async def fake_send(chat_id: str, text: str) -> None:
         sent.append(text)
 
     poller._send = fake_send  # type: ignore[method-assign]
-    await poller._handle(
-        {
-            "update_id": 1,
-            "message": {
-                "chat": {"id": 111},
-                "from": {"id": 111},
-                "text": "BTC",
-            },
-        }
-    )
 
-    assert sent == ["SHORT"]
-    assert analyzed == []
+    def update(text: str) -> dict:
+        return {"message": {"chat": {"id": 1}, "from": {}, "text": text}}
+
+    await poller._handle(update("BTC"))
+    await poller._handle(update("BTC detay"))
+
+    assert analyzer.requests == ["BTC", "BTC"]
+    assert persisted == ["BTCUSDT", "BTCUSDT"]
+    assert sent[0] == "KISA\nKARNE SATIRI\nalt satır"
+    assert sent[1] == "UZUN RAPOR\n\nKARNE UZUN"
 
 
 @pytest.mark.asyncio
 async def test_analyze_command_keeps_detailed_analysis_path() -> None:
+    analyzer = _FakeAnalyzer()
     sent: list[str] = []
-    analyzed: list[str] = []
-
-    class Analyzer:
-        async def analyze(self, request: str):
-            analyzed.append(request)
-            return SimpleNamespace(symbol="BTCUSDT", text="LONG", forecasts=())
-
-    async def summary_provider(request: str):
-        return "SHORT"
 
     poller = TelegramCommandPoller(
         bot_token="token",
         allowed_chat_id="111",
-        analyzer=Analyzer(),
-        summary_provider=summary_provider,
+        analyzer=analyzer,
     )
 
-    async def fake_send(chat_id: str, text: str):
+    async def fake_send(chat_id: str, text: str) -> None:
         sent.append(text)
 
     poller._send = fake_send  # type: ignore[method-assign]
     await poller._handle(
-        {
-            "update_id": 2,
-            "message": {
-                "chat": {"id": 111},
-                "from": {"id": 111},
-                "text": "/analyze BTC",
-            },
-        }
+        {"message": {"chat": {"id": 111}, "from": {}, "text": "/analyze BTC"}}
     )
 
-    assert sent == ["LONG"]
-    assert analyzed == ["BTC"]
+    assert sent == ["UZUN RAPOR"]
+    assert analyzer.requests == ["BTC"]
