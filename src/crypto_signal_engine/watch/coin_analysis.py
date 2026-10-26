@@ -384,6 +384,10 @@ class CoinAnalyzer:
                         for low, high, amount in buy_zones
                     )
                 )
+            else:
+                lines.append(
+                    "Net alıcı bölge: yok (son 1 saatte her bölgede satış ağır)"
+                )
             if sell_zones:
                 lines.append(
                     "Net satıcı bölge: "
@@ -391,6 +395,10 @@ class CoinAnalyzer:
                         _format_zone(low, high, amount)
                         for low, high, amount in sell_zones
                     )
+                )
+            else:
+                lines.append(
+                    "Net satıcı bölge: yok (son 1 saatte her bölgede alım ağır)"
                 )
 
         lines.extend(["", "Vadeli piyasa"])
