@@ -742,7 +742,7 @@ async def run(symbol: str, config: WatchConfig) -> None:
                 if auto_symbols:
                     group.create_task(
                         run_auto_forecasts(
-                            CoinAnalyzer(),
+                            CoinAnalyzer(flow_enabled=False),
                             range_tracker,
                             auto_symbols,
                             interval_seconds=auto_interval,
