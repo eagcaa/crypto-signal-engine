@@ -575,8 +575,7 @@ class CoinAnalyzer:
         decision = market_decision_report(
             symbol, candle_sets, derivatives, flow_rows, ranges
         )
-        lines.append(decision)
-        summary += "\n" + decision
+        lines[-2:-2] = [decision]
         return CoinAnalysis(
             symbol=symbol,
             generated_at=now,
