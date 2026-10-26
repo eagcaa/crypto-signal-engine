@@ -24,7 +24,8 @@ class TelegramCommandPoller:
         on_analysis: Callable[[CoinAnalysis], Awaitable[None]] | None = None,
         stats_provider: Callable[[str | None], Awaitable[str]] | None = None,
         scorecard_provider: Callable[[str], Awaitable[str | None]] | None = None,
-        summary_provider: Callable[[str], Awaitable[str | None]] | None = None,
+        scorecard_line_provider: Callable[[str], Awaitable[str | None]]
+        | None = None,
         timeout_seconds: float = 35.0,
     ) -> None:
         self._bot_token = bot_token.strip()
@@ -37,7 +38,7 @@ class TelegramCommandPoller:
         self._on_analysis = on_analysis
         self._stats_provider = stats_provider
         self._scorecard_provider = scorecard_provider
-        self._summary_provider = summary_provider
+        self._scorecard_line_provider = scorecard_line_provider
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._offset: int | None = None
 
@@ -126,22 +127,11 @@ class TelegramCommandPoller:
                 )
             return
 
-        request = self._parse_request(text)
+        command_text, detailed = self._split_detail_flag(text)
+        detailed = detailed or command_text.strip().lower().startswith("/analyze ")
+        request = self._parse_request(command_text)
         if request is None:
             return
-
-        detailed = text.strip().lower().startswith("/analyze ")
-        if not detailed and self._summary_provider is not None:
-            try:
-                summary = await self._summary_provider(request)
-                if summary:
-                    await self._send(chat_id, summary)
-                    return
-            except Exception as exc:  # noqa: BLE001
-                print(
-                    "WATCH summary unavailable: "
-                    f"{type(exc).__name__}: {exc}"
-                )
 
         try:
             analysis = await self._analyzer.analyze(request)
@@ -153,11 +143,20 @@ class TelegramCommandPoller:
                         "RANGE forecast persistence unavailable: "
                         f"{type(exc).__name__}: {exc}"
                     )
-            response_text = analysis.text
-            if self._scorecard_provider is not None:
+            summary = getattr(analysis, "summary", "")
+            compact = not detailed and bool(summary)
+            response_text = summary if compact else analysis.text
+            provider = (
+                self._scorecard_line_provider if compact else self._scorecard_provider
+            )
+            if provider is not None:
                 try:
-                    scorecard = await self._scorecard_provider(analysis.symbol)
-                    if scorecard:
+                    scorecard = await provider(analysis.symbol)
+                    if scorecard and compact:
+                        lines = response_text.split("\n")
+                        lines.insert(len(lines) - 1, scorecard)
+                        response_text = "\n".join(lines)
+                    elif scorecard:
                         response_text += "\n\n" + scorecard
                 except Exception as exc:  # noqa: BLE001
                     print(
@@ -215,6 +214,17 @@ class TelegramCommandPoller:
                         raise RuntimeError(
                             f"Telegram HTTP {response.status}: {payload}"
                         )
+
+    DETAIL_WORDS = frozenset({"detay", "detail", "uzun", "full"})
+
+    @classmethod
+    def _split_detail_flag(cls, request: str) -> tuple[str, bool]:
+        """'BTC detay' -> ('BTC', True); plain 'BTC' -> ('BTC', False)."""
+        if request.strip().lower() in cls.DETAIL_WORDS:
+            return request, False
+        words = request.split()
+        kept = [word for word in words if word.lower() not in cls.DETAIL_WORDS]
+        return " ".join(kept), len(kept) != len(words)
 
     @staticmethod
     def _parse_request(text: str) -> str | None:
