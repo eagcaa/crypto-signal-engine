@@ -56,3 +56,35 @@ def test_predictive_flow_is_detected() -> None:
     found = candidates(results)
     assert any(r.window == "15dk" and r.horizon == "15dk" for r in found)
     assert "ADAY" in render(results, correlations)
+
+
+def test_gap_and_duplicate_timestamps_are_rejected() -> None:
+    bars = _bars(400, predictive=False)
+    for damaged in (
+        bars[:100] + bars[101:],
+        bars[:100] + [bars[99]] + bars[100:],
+    ):
+        gaps: list[int] = []
+        samples = build_samples(damaged, window=3, horizon=12, gaps=gaps)
+        assert gaps
+        assert len(samples) < len(build_samples(bars, window=3, horizon=12))
+        for sample in samples:
+            idx = next(i for i, bar in enumerate(damaged) if bar.open_time == sample.time)
+            assert (
+                damaged[idx + 12].open_time - damaged[idx].open_time
+                == timedelta(minutes=60)
+            )
+
+
+def test_up_down_and_no_call_counts_are_consistent() -> None:
+    results, correlations = analyze("SIGUSDT", _bars(20_000, predictive=True))
+    for row in results:
+        assert row.up_calls + row.down_calls == row.calls
+        assert row.up_hits + row.down_hits == row.hits
+        assert row.no_calls >= 0
+        assert row.total_samples >= row.calls + row.no_calls
+        assert 0 <= row.base_up <= 1
+    report = render(results, correlations)
+    assert "↑ " in report and "↓ " in report
+    assert "çağrısız (hareketli)" in report
+    assert "Denenen kombinasyon sayısı: 18." in report

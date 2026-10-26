@@ -61,6 +61,13 @@ class FlowResult:
     z: float
     ci_low: float
     ci_high: float
+    up_calls: int = 0
+    up_hits: int = 0
+    down_calls: int = 0
+    down_hits: int = 0
+    no_calls: int = 0
+    base_up: float = 0.5
+    total_samples: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +78,7 @@ class CorrelationResult:
     samples: int
     predictive: float
     contemporaneous: float
+    skipped_gaps: int = 0
 
 
 def _wilson(hits: int, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -111,10 +119,29 @@ class _Sample:
     forward: float
 
 
-def build_samples(bars: Sequence[Bar], window: int, horizon: int) -> list[_Sample]:
+def _contiguous(bars: Sequence[Bar], start: int, end: int) -> bool:
+    """Check every adjacent timestamp, including duplicates and out-of-order bars."""
+    step = timedelta(minutes=BAR_MINUTES)
+    return all(
+        bars[i + 1].open_time - bars[i].open_time == step
+        for i in range(start, end)
+    )
+
+
+def build_samples(
+    bars: Sequence[Bar],
+    window: int,
+    horizon: int,
+    gaps: list[int] | None = None,
+) -> list[_Sample]:
     samples: list[_Sample] = []
     index = window
     while index + horizon < len(bars):
+        if not _contiguous(bars, index - window, index + horizon):
+            if gaps is not None:
+                gaps.append(index)
+            index += horizon
+            continue
         chunk = bars[index - window + 1 : index + 1]
         volume = sum(bar.volume for bar in chunk)
         anchor = bars[index].close
@@ -133,28 +160,44 @@ def build_samples(bars: Sequence[Bar], window: int, horizon: int) -> list[_Sampl
     return samples
 
 
-def _score(
-    samples: Sequence[_Sample],
-    high: float,
-    low: float,
-) -> tuple[int, int, float]:
-    moving = [s for s in samples if s.forward != 0]
+@dataclass(frozen=True, slots=True)
+class _Score:
+    calls: int
+    hits: int
+    expected: float
+    up_calls: int
+    up_hits: int
+    down_calls: int
+    down_hits: int
+    no_calls: int
+    base_up: float
+    total_samples: int
+
+
+def _score(samples: Sequence[_Sample], high: float, low: float) -> _Score:
+    """Calls determine hit rate; all moving samples determine the base rate."""
+    moving = [item for item in samples if item.forward != 0]
     if not moving:
-        return 0, 0, 0.5
-    up_rate = sum(s.forward > 0 for s in moving) / len(moving)
-    calls = hits = 0
-    expected_hits = 0.0
+        return _Score(0, 0, 0.5, 0, 0, 0, 0, 0, 0.5, len(samples))
+    up_rate = sum(item.forward > 0 for item in moving) / len(moving)
+    up_calls = up_hits = down_calls = down_hits = 0
     for sample in moving:
         if sample.share >= high:
-            calls += 1
-            hits += int(sample.forward > 0)
-            expected_hits += up_rate
+            up_calls += 1
+            up_hits += int(sample.forward > 0)
         elif sample.share <= low:
-            calls += 1
-            hits += int(sample.forward < 0)
-            expected_hits += 1 - up_rate
-    expected = expected_hits / calls if calls else 0.5
-    return calls, hits, expected
+            down_calls += 1
+            down_hits += int(sample.forward < 0)
+    calls = up_calls + down_calls
+    expected = (
+        (up_calls * up_rate + down_calls * (1 - up_rate)) / calls
+        if calls else 0.5
+    )
+    return _Score(
+        calls, up_hits + down_hits, expected,
+        up_calls, up_hits, down_calls, down_hits,
+        len(moving) - calls, up_rate, len(samples),
+    )
 
 
 def _result(
@@ -167,7 +210,8 @@ def _result(
     high: float,
     low: float,
 ) -> FlowResult:
-    calls, hits, expected = _score(samples, high, low)
+    score = _score(samples, high, low)
+    calls, hits, expected = score.calls, score.hits, score.expected
     rate = hits / calls if calls else 0.0
     spread = sqrt(calls * expected * (1 - expected)) if calls else 0.0
     z = (hits - calls * expected) / spread if spread > 0 else 0.0
@@ -186,6 +230,13 @@ def _result(
         z=z,
         ci_low=ci_low,
         ci_high=ci_high,
+        up_calls=score.up_calls,
+        up_hits=score.up_hits,
+        down_calls=score.down_calls,
+        down_hits=score.down_hits,
+        no_calls=score.no_calls,
+        base_up=score.base_up,
+        total_samples=score.total_samples,
     )
 
 
@@ -197,7 +248,8 @@ def analyze(
     correlations: list[CorrelationResult] = []
     for window_label, window in WINDOWS.items():
         for horizon_label, horizon in HORIZONS.items():
-            samples = build_samples(bars, window, horizon)
+            gaps: list[int] = []
+            samples = build_samples(bars, window, horizon, gaps)
             if len(samples) < 40:
                 continue
             middle = len(samples) // 2
@@ -215,6 +267,7 @@ def analyze(
                     contemporaneous=_corr(
                         [s.share for s in samples], [s.past for s in samples]
                     ),
+                    skipped_gaps=len(gaps),
                 )
             )
 
@@ -254,6 +307,15 @@ def candidates(results: Sequence[FlowResult]) -> list[FlowResult]:
     return found
 
 
+def _direction_part(arrow: str, hits: int, calls: int, chance: float) -> str:
+    if not calls:
+        return f"{arrow} 0 çağrı"
+    return (
+        f"{arrow} {calls} çağrı, isabet %{hits / calls * 100:.1f} "
+        f"(şans %{chance * 100:.1f})"
+    )
+
+
 def render(
     results: Sequence[FlowResult],
     correlations: Sequence[CorrelationResult],
@@ -269,9 +331,14 @@ def render(
         lines.append("Korelasyon (akış ↔ sonraki hareket | akış ↔ zaten olan hareket)")
         for c in correlations:
             if c.symbol == symbol:
+                gap_note = (
+                    f", boşluk nedeniyle atlanan {c.skipped_gaps}"
+                    if c.skipped_gaps else ""
+                )
                 lines.append(
                     f"  akış {c.window:>4} → sonraki {c.horizon:>4}: "
-                    f"{c.predictive:+.3f} | {c.contemporaneous:+.3f}  (n={c.samples})"
+                    f"{c.predictive:+.3f} | {c.contemporaneous:+.3f}  "
+                    f"(n={c.samples}{gap_note})"
                 )
         lines.append("Test yarısı (eşikler eğitim yarısından):")
         for r in results:
@@ -284,8 +351,17 @@ def render(
                 f"(%{r.ci_low * 100:.0f}–{r.ci_high * 100:.0f}) · "
                 f"şans %{r.expected * 100:4.1f} · z {r.z:+.1f}{flag}"
             )
+            lines.append(
+                "      "
+                + _direction_part("↑", r.up_hits, r.up_calls, r.base_up)
+                + " · "
+                + _direction_part("↓", r.down_hits, r.down_calls, 1 - r.base_up)
+                + f" · çağrısız (hareketli) {r.no_calls}"
+                + f" · toplam örnek {r.total_samples}"
+            )
 
-    lines.extend(["", "SONUÇ"])
+    tested = sum(1 for r in results if r.period == "test")
+    lines.extend(["", "SONUÇ", f"Denenen kombinasyon sayısı: {tested}."])
     if not found:
         lines.append(
             "Aday yok: akış, sonraki fiyat yönünü şanstan anlamlı biçimde "
