@@ -674,6 +674,19 @@ async def run(symbol: str, config: WatchConfig) -> None:
                 if range_repository is not None
                 else None
             ),
+            summary_provider=(
+                lambda requested_symbol: asyncio.sleep(
+                    0,
+                    result=(
+                        watch.summary(datetime.now(UTC)).text
+                        if (
+                            requested_symbol.strip().upper().removesuffix("USDT")
+                            == watch.symbol.removesuffix("USDT")
+                        )
+                        else None
+                    ),
+                )
+            ),
             extra_allowed_chat_ids=tuple(
                 dict.fromkeys(
                     (
