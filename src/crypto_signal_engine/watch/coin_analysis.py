@@ -10,6 +10,7 @@ from math import exp, log
 
 from crypto_signal_engine.collectors.binance import (
     BinanceDerivativesClient,
+    BinanceRecentFlowClient,
     BinanceSpotCandleClient,
 )
 from crypto_signal_engine.collectors.bybit import BybitDerivativesClient
@@ -44,6 +45,29 @@ def _pct(value: Decimal | float | None) -> str:
     return f"{float(value):+.2f}%"
 
 
+def _usd(value: Decimal | float) -> str:
+    amount = float(value)
+    sign = "-" if amount < 0 else ""
+    amount = abs(amount)
+    if amount >= 1_000_000_000:
+        return f"{sign}${amount / 1_000_000_000:.2f}B"
+    if amount >= 1_000_000:
+        return f"{sign}${amount / 1_000_000:.1f}M"
+    if amount >= 1_000:
+        return f"{sign}${amount / 1_000:.0f}K"
+    return f"{sign}${amount:.0f}"
+
+
+def _flow_comment(buy_share: float | None) -> str:
+    if buy_share is None:
+        return "yeterli işlem yok"
+    if buy_share >= 55:
+        return "alım baskısı baskın"
+    if buy_share <= 45:
+        return "satım baskısı baskın"
+    return "alım/satım dengeli"
+
+
 @dataclass(frozen=True, slots=True)
 class CoinRangeForecast:
     horizon_minutes: int
@@ -73,7 +97,9 @@ class CoinAnalyzer:
         candle_client: BinanceSpotCandleClient | None = None,
         derivatives_client: BinanceDerivativesClient | None = None,
         bybit_derivatives_client: BybitDerivativesClient | None = None,
+        flow_client: BinanceRecentFlowClient | None = None,
         bybit_enabled: bool | None = None,
+        flow_enabled: bool = True,
     ) -> None:
         settings = get_settings()
         self._candles = candle_client or BinanceSpotCandleClient()
@@ -81,6 +107,8 @@ class CoinAnalyzer:
         self._bybit_derivatives = (
             bybit_derivatives_client or BybitDerivativesClient()
         )
+        self._flow_client = flow_client or BinanceRecentFlowClient()
+        self._flow_enabled = flow_enabled
         self._bybit_enabled = (
             settings.bybit_enabled if bybit_enabled is None else bybit_enabled
         )
@@ -99,6 +127,11 @@ class CoinAnalyzer:
             for _, interval, limit in specs
         ]
         derivative_task = asyncio.create_task(self._safe_derivatives(symbol))
+        flow_task = (
+            asyncio.create_task(self._flow_client.fetch_pair(symbol, minutes=15))
+            if self._flow_enabled
+            else None
+        )
         bybit_task = (
             asyncio.create_task(self._safe_bybit_derivatives(symbol))
             if self._bybit_enabled
@@ -106,6 +139,7 @@ class CoinAnalyzer:
         )
         candle_sets = await asyncio.gather(*candle_tasks)
         derivatives = await derivative_task
+        recent_flow = await flow_task if flow_task is not None else (None, None)
         bybit_derivatives = await bybit_task if bybit_task is not None else None
 
         if not candle_sets or not candle_sets[0]:
@@ -185,6 +219,33 @@ class CoinAnalyzer:
                 f"24s düşük: {_price(low_24h)}",
             ]
         )
+
+        if self._flow_enabled:
+            spot_flow, futures_flow = recent_flow
+            lines.extend(["", "Son 15 dk alım / satım"])
+            for label, flow in (("Spot", spot_flow), ("Vadeli", futures_flow)):
+                if flow is None:
+                    lines.append(f"{label}: veri alınamadı")
+                    continue
+                buy_share = flow.buy_share_pct
+                suffix = "" if flow.complete else " (kısmi veri)"
+                lines.extend(
+                    [
+                        f"{label}{suffix}:",
+                        f"  Alım: {_usd(flow.buy_usd)}",
+                        f"  Satım: {_usd(flow.sell_usd)}",
+                        f"  Net: {_usd(flow.net_usd)}",
+                        (
+                            "  Alım oranı: "
+                            + (
+                                "n/a"
+                                if buy_share is None
+                                else f"%{buy_share:.0f}"
+                            )
+                            + f" — {_flow_comment(buy_share)}"
+                        ),
+                    ]
+                )
 
         lines.extend(["", "Vadeli piyasa"])
 
