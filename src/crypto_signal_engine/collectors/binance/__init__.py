@@ -12,6 +12,10 @@ from crypto_signal_engine.collectors.binance.futures_trades import (
 from crypto_signal_engine.collectors.binance.orderbook import (
     BinanceSpotOrderBookCollector,
 )
+from crypto_signal_engine.collectors.binance.recent_flow import (
+    BinanceRecentFlowClient,
+    TradeFlowSnapshot,
+)
 from crypto_signal_engine.collectors.binance.spot_trades import BinanceSpotTradeCollector
 
 __all__ = [
@@ -20,6 +24,8 @@ __all__ = [
     "BinanceLiquidationCollector",
     "BinanceSpotCandleClient",
     "BinanceSpotHistoricalTradeClient",
+    "BinanceRecentFlowClient",
     "BinanceSpotOrderBookCollector",
     "BinanceSpotTradeCollector",
+    "TradeFlowSnapshot",
 ]
