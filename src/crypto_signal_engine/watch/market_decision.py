@@ -72,66 +72,45 @@ def market_decision_report(
     if not all(x is not None for x in (ema20, ema50, ema200, rsi, atr)):
         return "🧭 Karar desteği: indikatör hesaplamak için yeterli geçmiş yok."
 
-    positives: list[str] = []
-    negatives: list[str] = []
+    notes: list[str] = []
+    risks: list[str] = []
     if price > ema20 > ema50 > ema200:
-        positives.append("Fiyat ve EMA20/50/200 yükseliş sıralamasında")
+        notes.append("EMA sıralaması yükseliş yönünde (tahmin değil)")
     elif price < ema20 < ema50 < ema200:
-        negatives.append("Fiyat ve EMA20/50/200 düşüş sıralamasında")
+        notes.append("EMA sıralaması düşüş yönünde (tahmin değil)")
     else:
-        positives.append("EMA dizilimi karışık: trend teyidi zayıf")
+        risks.append("EMA sıralaması karışık; trend teyidi zayıf")
 
-    if 52 <= rsi <= 70:
-        positives.append(f"15dk RSI {rsi:.1f}: pozitif momentum")
-    elif 30 <= rsi <= 48:
-        negatives.append(f"15dk RSI {rsi:.1f}: negatif momentum")
-    elif rsi > 70:
-        negatives.append(f"15dk RSI {rsi:.1f}: aşırı alım riski")
+    if rsi > 70:
+        risks.append(f"RSI {rsi:.1f}: aşırı alım")
     elif rsi < 30:
-        positives.append(f"15dk RSI {rsi:.1f}: aşırı satım, dönüş teyidi gerekli")
+        risks.append(f"RSI {rsi:.1f}: aşırı satım")
+    else:
+        notes.append(f"RSI {rsi:.1f}: momentum ölçümü")
 
     flows = {row[0]: row for row in flow_rows}
     hour_flow = flows.get("1s")
     if hour_flow is not None and hour_flow[5] is not None:
-        buy_share = hour_flow[5]
-        if buy_share >= 55:
-            positives.append(f"Spot taker alım payı %{buy_share:.0f}")
-        elif buy_share <= 45:
-            negatives.append(f"Spot taker alım payı %{buy_share:.0f}")
+        notes.append(f"Son 1 saat spot taker alım payı %{hour_flow[5]:.0f}")
 
     oi = _float(getattr(derivatives, "oi_change_15m_pct", None))
     if oi is not None:
-        if abs(oi) >= 1:
-            positives.append(f"OI 15dk %{oi:+.2f}: pozisyon değişimi (yönü tek başına belirlemez)")
+        notes.append(f"OI 15dk %{oi:+.2f} (yön belirtmez)")
     funding = _float(getattr(derivatives, "funding_rate", None))
     if funding is not None and abs(funding) >= 0.0005:
-        negatives.append(f"Funding %{funding * 100:+.3f}: kaldıraç yoğunluğu riski")
+        risks.append(f"Funding %{funding * 100:+.3f}: kaldıraç yoğunluğu")
 
-    bullish = price > ema20 > ema50 > ema200 and 52 <= rsi <= 70 and (
-        hour_flow is not None and hour_flow[5] is not None and hour_flow[5] >= 55
-    )
-    bearish = price < ema20 < ema50 < ema200 and 30 <= rsi <= 48 and (
-        hour_flow is not None and hour_flow[5] is not None and hour_flow[5] <= 45
-    )
-    state = "Yukarı eğilim / teyit gerekli" if bullish else (
-        "Aşağı eğilim / teyit gerekli" if bearish else "Kararsız / işlem için teyit yok"
-    )
     last = fifteen_minute[-20:]
     resistance = max(float(c.high) for c in last)
     support = min(float(c.low) for c in last)
     lines = [
-        "", "🧭 PİYASA KARAR DESTEĞİ (deneysel)",
-        f"Durum: {state}",
-        f"15dk RSI: {rsi:.1f} | ATR: {atr:.6g} ({atr / price * 100:.2f}%)",
+        "", "🧭 PİYASA GÖSTERGELERİ (yön sinyali değildir)",
+        f"15dk RSI: {rsi:.1f} | ATR: {atr:.6g} (%{atr / price * 100:.2f})",
         f"EMA20: {ema20:.6g} | EMA50: {ema50:.6g} | EMA200: {ema200:.6g}",
-        f"Son 20 kapanmış 15dk mum: destek ~{support:.6g} / direnç ~{resistance:.6g}",
-        "Yukarı senaryo: direnç üzerinde kapanış + hacim teyidi.",
-        "Aşağı senaryo: destek altında kapanış + satış hacmi teyidi.",
-        "Geçersizlik: kırılımın tekrar bant içine dönmesi.",
-        "İşlem kararı: BEKLE — giriş, stop ve hedef için ayrı backtest şart.",
-        "Yön olasılığı: kalibre edilmiş model yok; yüzde verilmez.",
-        "Destekleyen gözlemler: " + ("; ".join(positives) if positives else "yok"),
-        "Risk / karşı kanıt: " + ("; ".join(negatives) if negatives else "belirgin veri yok"),
-        "Not: Bu analiz finansal tavsiye veya otomatik al/sat emri değildir.",
+        f"Son 20 kapanmış 15dk mum: düşük {support:.6g} / yüksek {resistance:.6g}",
+        "Gözlemler: " + "; ".join(notes),
     ]
+    if risks:
+        lines.append("Riskler: " + "; ".join(risks))
+    lines.append("Yön kuralı henüz geçmiş veride doğrulanmadı.")
     return "\n".join(lines)
