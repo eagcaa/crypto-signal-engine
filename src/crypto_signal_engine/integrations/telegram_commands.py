@@ -24,6 +24,7 @@ class TelegramCommandPoller:
         on_analysis: Callable[[CoinAnalysis], Awaitable[None]] | None = None,
         stats_provider: Callable[[str | None], Awaitable[str]] | None = None,
         scorecard_provider: Callable[[str], Awaitable[str | None]] | None = None,
+        summary_provider: Callable[[str], Awaitable[str | None]] | None = None,
         timeout_seconds: float = 35.0,
     ) -> None:
         self._bot_token = bot_token.strip()
@@ -36,6 +37,7 @@ class TelegramCommandPoller:
         self._on_analysis = on_analysis
         self._stats_provider = stats_provider
         self._scorecard_provider = scorecard_provider
+        self._summary_provider = summary_provider
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._offset: int | None = None
 
@@ -127,6 +129,19 @@ class TelegramCommandPoller:
         request = self._parse_request(text)
         if request is None:
             return
+
+        detailed = text.strip().lower().startswith("/analyze ")
+        if not detailed and self._summary_provider is not None:
+            try:
+                summary = await self._summary_provider(request)
+                if summary:
+                    await self._send(chat_id, summary)
+                    return
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    "WATCH summary unavailable: "
+                    f"{type(exc).__name__}: {exc}"
+                )
 
         try:
             analysis = await self._analyzer.analyze(request)
