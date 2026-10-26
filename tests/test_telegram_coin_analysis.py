@@ -252,3 +252,17 @@ def test_stats_command_parser() -> None:
     assert TelegramCommandPoller._parse_stats_request("/stats@MyBot") is None
     assert TelegramCommandPoller._parse_stats_request("BTC") is False
     assert TelegramCommandPoller._parse_stats_request("/help") is False
+
+
+
+def test_long_telegram_message_is_split_below_limit() -> None:
+    text = "\n".join(f"line {index}: " + "x" * 100 for index in range(100))
+    chunks = TelegramCommandPoller._split_message(text, limit=500)
+
+    assert len(chunks) > 1
+    assert all(len(chunk) <= 500 for chunk in chunks)
+    assert "\n".join(chunks).replace("\n", "") == text.replace("\n", "")
+
+
+def test_short_telegram_message_is_not_split() -> None:
+    assert TelegramCommandPoller._split_message("hello", limit=500) == ["hello"]
