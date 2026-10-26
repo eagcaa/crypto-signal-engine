@@ -106,15 +106,12 @@ def _candle_flow(
 
 def _flow_windows(minute_candles, five_minute_candles):
     specs = (
-        ("24s", five_minute_candles, 288),
-        ("12s", five_minute_candles, 144),
-        ("6s", five_minute_candles, 72),
-        ("4s", five_minute_candles, 48),
-        ("1s", minute_candles, 60),
         ("15dk", minute_candles, 15),
-        ("5dk", minute_candles, 5),
-        ("3dk", minute_candles, 3),
-        ("1dk", minute_candles, 1),
+        ("30dk", minute_candles, 30),
+        ("1s", minute_candles, 60),
+        ("2s", minute_candles, 120),
+        ("4s", minute_candles, 240),
+        ("1g", five_minute_candles, 288),
     )
     return [
         (label, *_candle_flow(candles, count))
@@ -337,7 +334,8 @@ class CoinAnalyzer:
             lines.extend(
                 [
                     "",
-                    "Agresif alım / satım akışı (Binance Spot, mum verisi)",
+                    "Agresif taker akışı (Binance Spot mum verisi)",
+                    "Not: Binance uygulamasındaki Money Flow ile aynı metrik değildir.",
                 ]
             )
             for (
@@ -373,7 +371,6 @@ class CoinAnalyzer:
                 [
                     "",
                     "Son 1s yoğun fiyat bölgeleri (1dk mum bazlı yaklaşık)",
-                    "Not: Large/Medium/Small sınıflaması değildir.",
                 ]
             )
             if buy_zones:
