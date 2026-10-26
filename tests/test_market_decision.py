@@ -37,7 +37,7 @@ def test_report_refuses_uncalibrated_probability():
 
 
 def test_mixed_ema_is_not_positive_evidence():
-    prices = [100 + (i % 9) for i in range(250)]
+    prices = [100 + i * 0.1 for i in range(230)] + [123 - i * 0.3 for i in range(20)]
     candles = [candle(x) for x in prices]
     report = market_decision_report("BTCUSDT", [candles] * 4)
     assert "trend teyidi zayıf" in report
