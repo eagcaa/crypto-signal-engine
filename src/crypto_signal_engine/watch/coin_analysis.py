@@ -15,6 +15,7 @@ from crypto_signal_engine.collectors.binance import (
 from crypto_signal_engine.collectors.bybit import BybitDerivativesClient
 from crypto_signal_engine.config.settings import get_settings
 from crypto_signal_engine.forecast.range import PricePoint, estimate_live_range
+from crypto_signal_engine.watch.market_decision import market_decision_report
 
 
 def normalize_symbol(text: str) -> str:
@@ -571,6 +572,11 @@ class CoinAnalyzer:
             bybit_derivatives=bybit_derivatives,
             now=now,
         )
+        decision = market_decision_report(
+            symbol, candle_sets, derivatives, flow_rows, ranges
+        )
+        lines.append(decision)
+        summary += "\n" + decision
         return CoinAnalysis(
             symbol=symbol,
             generated_at=now,
