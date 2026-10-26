@@ -277,7 +277,7 @@ def test_short_telegram_message_is_not_split() -> None:
 
 
 @pytest.mark.asyncio
-async def test_coin_analysis_renders_nine_kline_flow_windows_and_price_zones() -> None:
+async def test_coin_analysis_renders_taker_flow_windows_and_price_zones() -> None:
     from crypto_signal_engine.watch.coin_analysis import CoinAnalyzer
 
     analyzer = CoinAnalyzer(
@@ -294,8 +294,9 @@ async def test_coin_analysis_renders_nine_kline_flow_windows_and_price_zones() -
 
     result = await analyzer.analyze("btc")
 
-    assert "Agresif alım / satım akışı (Binance Spot, mum verisi)" in result.text
-    for label in ("24s", "12s", "6s", "4s", "1s", "15dk", "5dk", "3dk", "1dk"):
+    assert "Agresif taker akışı (Binance Spot mum verisi)" in result.text
+    assert "Money Flow ile aynı metrik değildir" in result.text
+    for label in ("15dk", "30dk", "1s", "2s", "4s", "1g"):
         assert f"{label}:" in result.text
 
     assert (
@@ -306,11 +307,12 @@ async def test_coin_analysis_renders_nine_kline_flow_windows_and_price_zones() -
         "agresif satım 60.00 BTC ($6.0M)"
     ) in result.text
     assert (
-        "1dk: net 2.00 BTC ($200K) · alım %60 · agresif alım baskısı"
+        "1s: net 120.00 BTC ($12.0M) · alım %60 · agresif alım baskısı"
     ) in result.text
+    for removed in ("24s:", "12s:", "6s:", "5dk:", "3dk:", "1dk:"):
+        assert f"\n{removed}" not in result.text
     assert "agresif alım baskısı" in result.text
     assert "Son 1s yoğun fiyat bölgeleri (1dk mum bazlı yaklaşık)" in result.text
-    assert "Not: Large/Medium/Small sınıflaması değildir." in result.text
     assert "Net alıcı bölge:" in result.text
     assert "Net satıcı bölge:" in result.text
 
