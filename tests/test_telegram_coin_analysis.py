@@ -150,6 +150,7 @@ async def test_coin_analysis_renders_binance_and_bybit_derivatives() -> None:
             long_short="0.90",
         ),
         bybit_enabled=True,
+        flow_enabled=False,
     )
 
     result = await analyzer.analyze("btc")
@@ -200,6 +201,7 @@ async def test_coin_analysis_survives_bybit_unavailable() -> None:
             fail=True,
         ),
         bybit_enabled=True,
+        flow_enabled=False,
     )
 
     result = await analyzer.analyze("eth")
@@ -266,3 +268,65 @@ def test_long_telegram_message_is_split_below_limit() -> None:
 
 def test_short_telegram_message_is_not_split() -> None:
     assert TelegramCommandPoller._split_message("hello", limit=500) == ["hello"]
+
+
+
+class _FakeFlowSnapshot:
+    def __init__(
+        self,
+        *,
+        buy: str,
+        sell: str,
+        complete: bool = True,
+    ) -> None:
+        self.buy_usd = Decimal(buy)
+        self.sell_usd = Decimal(sell)
+        self.complete = complete
+
+    @property
+    def net_usd(self):
+        return self.buy_usd - self.sell_usd
+
+    @property
+    def buy_share_pct(self):
+        total = self.buy_usd + self.sell_usd
+        return float(self.buy_usd / total * Decimal("100")) if total else None
+
+
+class _FakeFlowClient:
+    async def fetch_pair(self, symbol: str, *, minutes: int = 15):
+        return (
+            _FakeFlowSnapshot(buy="2400000", sell="1600000"),
+            _FakeFlowSnapshot(buy="3100000", sell="3900000"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_coin_analysis_renders_gross_buy_sell_flow() -> None:
+    from crypto_signal_engine.watch.coin_analysis import CoinAnalyzer
+
+    analyzer = CoinAnalyzer(
+        candle_client=_FakeCandleClient(),
+        derivatives_client=_FakeDerivativesClient(
+            oi_5m="0.10",
+            oi_15m="0.20",
+            funding="0.0001",
+            long_short="1.00",
+        ),
+        bybit_enabled=False,
+        flow_client=_FakeFlowClient(),
+    )
+
+    result = await analyzer.analyze("btc")
+
+    assert "Son 15 dk alım / satım" in result.text
+    assert "Spot:" in result.text
+    assert "Alım: $2.4M" in result.text
+    assert "Satım: $1.6M" in result.text
+    assert "Net: $800K" in result.text
+    assert "Alım oranı: %60 — alım baskısı baskın" in result.text
+    assert "Vadeli:" in result.text
+    assert "Alım: $3.1M" in result.text
+    assert "Satım: $3.9M" in result.text
+    assert "Net: -$800K" in result.text
+    assert "Alım oranı: %44 — satım baskısı baskın" in result.text
