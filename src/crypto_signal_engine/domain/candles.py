@@ -14,4 +14,8 @@ class Candle:
     low: Decimal
     close: Decimal
     volume: Decimal
+    quote_volume: Decimal = Decimal("0")
+    taker_buy_base_volume: Decimal = Decimal("0")
+    taker_buy_quote_volume: Decimal = Decimal("0")
+    trade_count: int = 0
     closed: bool = True
