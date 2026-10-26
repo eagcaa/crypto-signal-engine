@@ -147,31 +147,42 @@ def _flow_zones(
         totals[0] += buy
         totals[1] += sell
 
-    def ranked(index: int):
-        rows = []
-        for bucket, totals in buckets.items():
-            low = bucket * width
-            high = (bucket + 1) * width
-            rows.append((low, high, totals[index]))
-        return sorted(rows, key=lambda row: row[2], reverse=True)[:top_n]
+    buyer_rows = []
+    seller_rows = []
+    for bucket, totals in buckets.items():
+        low = bucket * width
+        high = (bucket + 1) * width
+        net = totals[0] - totals[1]
+        if net > 0:
+            buyer_rows.append((low, high, net))
+        elif net < 0:
+            seller_rows.append((low, high, -net))
 
-    return ranked(0), ranked(1)
+    buyer_rows.sort(key=lambda row: row[2], reverse=True)
+    seller_rows.sort(key=lambda row: row[2], reverse=True)
+    return buyer_rows[:top_n], seller_rows[:top_n]
 
 
 def _format_zone(low: float, high: float, amount: Decimal) -> str:
     return f"{_price(low)}–{_price(high)} ({_usd(amount)})"
 
 
-def _coin_amount(value: Decimal, asset: str) -> str:
+def _coin_amount(value: Decimal, asset: str, current_price: float | None = None) -> str:
     amount = float(value)
-    if abs(amount) >= 100_000:
-        rendered = f"{amount:,.0f}"
-    elif abs(amount) >= 1_000:
-        rendered = f"{amount:,.1f}"
-    elif abs(amount) >= 1:
-        rendered = f"{amount:,.4f}"
+    price = current_price or 0.0
+    if price >= 1:
+        decimals = 2
+    elif price >= 0.1:
+        decimals = 1
     else:
-        rendered = f"{amount:.6f}"
+        decimals = 0
+
+    if abs(amount) >= 100_000:
+        decimals = 0
+    elif abs(amount) >= 1_000:
+        decimals = min(decimals, 1)
+
+    rendered = f"{amount:,.{decimals}f}"
     return f"{rendered} {asset}"
 
 
@@ -344,14 +355,18 @@ class CoinAnalyzer:
                 net_base = buy_base - sell_base
                 net_quote = buy_quote - sell_quote
                 lines.append(
-                    f"{label}: agresif alım {_coin_amount(buy_base, base_asset)} "
-                    f"({_usd(buy_quote)}) · "
-                    f"agresif satım {_coin_amount(sell_base, base_asset)} "
-                    f"({_usd(sell_quote)}) · "
-                    f"net {_coin_amount(net_base, base_asset)} "
-                    f"({_usd(net_quote)}) · alım %{buy_share:.0f} "
-                    f"({_flow_comment(buy_share)})"
+                    f"{label}: net {_coin_amount(net_base, base_asset, current_price)} "
+                    f"({_usd(net_quote)}) · alım %{buy_share:.0f} · "
+                    f"{_flow_comment(buy_share)}"
                 )
+                if label == "15dk":
+                    lines.append(
+                        "  Detay: agresif alım "
+                        f"{_coin_amount(buy_base, base_asset, current_price)} "
+                        f"({_usd(buy_quote)}) · agresif satım "
+                        f"{_coin_amount(sell_base, base_asset, current_price)} "
+                        f"({_usd(sell_quote)})"
+                    )
 
             buy_zones, sell_zones = _flow_zones(minute_candles, current_price)
             lines.extend(
@@ -363,7 +378,7 @@ class CoinAnalyzer:
             )
             if buy_zones:
                 lines.append(
-                    "Agresif alım: "
+                    "Net alıcı bölge: "
                     + " | ".join(
                         _format_zone(low, high, amount)
                         for low, high, amount in buy_zones
@@ -371,7 +386,7 @@ class CoinAnalyzer:
                 )
             if sell_zones:
                 lines.append(
-                    "Agresif satım: "
+                    "Net satıcı bölge: "
                     + " | ".join(
                         _format_zone(low, high, amount)
                         for low, high, amount in sell_zones
