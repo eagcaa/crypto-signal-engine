@@ -76,5 +76,13 @@ class BinanceSpotCandleClient:
             low=Decimal(str(row[3])),
             close=Decimal(str(row[4])),
             volume=Decimal(str(row[5])),
+            quote_volume=Decimal(str(row[7])) if len(row) > 7 else Decimal("0"),
+            trade_count=int(row[8]) if len(row) > 8 else 0,
+            taker_buy_base_volume=(
+                Decimal(str(row[9])) if len(row) > 9 else Decimal("0")
+            ),
+            taker_buy_quote_volume=(
+                Decimal(str(row[10])) if len(row) > 10 else Decimal("0")
+            ),
             closed=True,
         )
