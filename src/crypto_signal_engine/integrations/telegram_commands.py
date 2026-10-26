@@ -157,21 +157,49 @@ class TelegramCommandPoller:
                 f"{type(exc).__name__}: {exc}",
             )
 
+    @staticmethod
+    def _split_message(text: str, limit: int = 3800) -> list[str]:
+        """Split long Telegram messages without breaking normal lines."""
+        if len(text) <= limit:
+            return [text]
+
+        chunks: list[str] = []
+        remaining = text
+        while remaining:
+            if len(remaining) <= limit:
+                chunks.append(remaining)
+                break
+
+            cut = remaining.rfind("\n", 0, limit + 1)
+            if cut <= 0:
+                cut = remaining.rfind(" ", 0, limit + 1)
+            if cut <= 0:
+                cut = limit
+
+            chunk = remaining[:cut].rstrip()
+            if chunk:
+                chunks.append(chunk)
+            remaining = remaining[cut:].lstrip()
+
+        return chunks
+
     async def _send(self, chat_id: str, text: str) -> None:
+        chunks = self._split_message(text)
         async with aiohttp.ClientSession(timeout=self._timeout) as session:
-            async with session.post(
-                f"{self.BASE_URL}/bot{self._bot_token}/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": text,
-                    "disable_web_page_preview": True,
-                },
-            ) as response:
-                payload = await response.json(content_type=None)
-                if response.status >= 400:
-                    raise RuntimeError(
-                        f"Telegram HTTP {response.status}: {payload}"
-                    )
+            for chunk in chunks:
+                async with session.post(
+                    f"{self.BASE_URL}/bot{self._bot_token}/sendMessage",
+                    json={
+                        "chat_id": chat_id,
+                        "text": chunk,
+                        "disable_web_page_preview": True,
+                    },
+                ) as response:
+                    payload = await response.json(content_type=None)
+                    if response.status >= 400:
+                        raise RuntimeError(
+                            f"Telegram HTTP {response.status}: {payload}"
+                        )
 
     @staticmethod
     def _parse_request(text: str) -> str | None:
