@@ -30,6 +30,15 @@ def test_report_refuses_uncalibrated_probability():
     report = market_decision_report(
         "BTCUSDT", [candles, candles, candles, candles]
     )
-    assert "kalibre edilmiş model yok" in report
-    assert "BEKLE" in report
-    assert "destek" in report
+    assert "Yön kuralı henüz geçmiş veride doğrulanmadı." in report
+    assert "Yukarı eğilim" not in report
+    assert "Aşağı eğilim" not in report
+    assert "düşük" in report
+
+
+def test_mixed_ema_is_not_positive_evidence():
+    prices = [100 + (i % 9) for i in range(250)]
+    candles = [candle(x) for x in prices]
+    report = market_decision_report("BTCUSDT", [candles] * 4)
+    assert "trend teyidi zayıf" in report
+    assert "Yukarı eğilim" not in report
