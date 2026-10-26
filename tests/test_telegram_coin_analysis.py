@@ -102,6 +102,8 @@ class _FakeCandleClient:
                     close=Decimal(str(price)),
                     high=Decimal(str(price * 1.001)),
                     low=Decimal(str(price * 0.999)),
+                    quote_volume=Decimal("1000000"),
+                    taker_buy_quote_volume=Decimal("600000"),
                 )
             )
         return candles
@@ -271,38 +273,9 @@ def test_short_telegram_message_is_not_split() -> None:
 
 
 
-class _FakeFlowSnapshot:
-    def __init__(
-        self,
-        *,
-        buy: str,
-        sell: str,
-        complete: bool = True,
-    ) -> None:
-        self.buy_usd = Decimal(buy)
-        self.sell_usd = Decimal(sell)
-        self.complete = complete
-
-    @property
-    def net_usd(self):
-        return self.buy_usd - self.sell_usd
-
-    @property
-    def buy_share_pct(self):
-        total = self.buy_usd + self.sell_usd
-        return float(self.buy_usd / total * Decimal("100")) if total else None
-
-
-class _FakeFlowClient:
-    async def fetch_pair(self, symbol: str, *, minutes: int = 15):
-        return (
-            _FakeFlowSnapshot(buy="2400000", sell="1600000"),
-            _FakeFlowSnapshot(buy="3100000", sell="3900000"),
-        )
-
 
 @pytest.mark.asyncio
-async def test_coin_analysis_renders_gross_buy_sell_flow() -> None:
+async def test_coin_analysis_renders_nine_kline_flow_windows_and_price_zones() -> None:
     from crypto_signal_engine.watch.coin_analysis import CoinAnalyzer
 
     analyzer = CoinAnalyzer(
@@ -314,19 +287,43 @@ async def test_coin_analysis_renders_gross_buy_sell_flow() -> None:
             long_short="1.00",
         ),
         bybit_enabled=False,
-        flow_client=_FakeFlowClient(),
+        flow_enabled=True,
     )
 
     result = await analyzer.analyze("btc")
 
-    assert "Son 15 dk alım / satım" in result.text
-    assert "Spot:" in result.text
-    assert "Alım: $2.4M" in result.text
-    assert "Satım: $1.6M" in result.text
-    assert "Net: $800K" in result.text
-    assert "Alım oranı: %60 — alım baskısı baskın" in result.text
-    assert "Vadeli:" in result.text
-    assert "Alım: $3.1M" in result.text
-    assert "Satım: $3.9M" in result.text
-    assert "Net: -$800K" in result.text
-    assert "Alım oranı: %44 — satım baskısı baskın" in result.text
+    assert "Agresif alım / satım akışı (Binance Spot)" in result.text
+    for label in ("24s", "12s", "6s", "4s", "1s", "15dk", "5dk", "3dk", "1dk"):
+        assert f"{label}:" in result.text
+
+    assert "15dk: alım $9.0M · satım $6.0M · net $3.0M · alım %60" in result.text
+    assert "1dk: alım $600K · satım $400K · net $200K · alım %60" in result.text
+    assert "agresif alım baskısı" in result.text
+    assert "Son 1s yoğun fiyat bölgeleri (1dk mum bazlı yaklaşık)" in result.text
+    assert "Agresif alım:" in result.text
+    assert "Agresif satım:" in result.text
+
+
+def test_binance_kline_parser_captures_taker_buy_quote_volume() -> None:
+    from crypto_signal_engine.collectors.binance.candles import BinanceSpotCandleClient
+
+    row = [
+        1_700_000_000_000,
+        "100",
+        "110",
+        "90",
+        "105",
+        "12",
+        1_700_000_059_999,
+        "1250",
+        42,
+        "7",
+        "760",
+        "0",
+    ]
+    candle = BinanceSpotCandleClient._parse_row("BTCUSDT", "1m", row)
+
+    assert candle.quote_volume == Decimal("1250")
+    assert candle.taker_buy_base_volume == Decimal("7")
+    assert candle.taker_buy_quote_volume == Decimal("760")
+    assert candle.trade_count == 42
