@@ -10,7 +10,6 @@ from math import exp, log
 
 from crypto_signal_engine.collectors.binance import (
     BinanceDerivativesClient,
-    BinanceRecentFlowClient,
     BinanceSpotCandleClient,
 )
 from crypto_signal_engine.collectors.bybit import BybitDerivativesClient
@@ -62,10 +61,84 @@ def _flow_comment(buy_share: float | None) -> str:
     if buy_share is None:
         return "yeterli işlem yok"
     if buy_share >= 55:
-        return "alım baskısı baskın"
+        return "agresif alım baskısı"
     if buy_share <= 45:
-        return "satım baskısı baskın"
-    return "alım/satım dengeli"
+        return "agresif satım baskısı"
+    return "dengeli"
+
+
+def _candle_flow(candles, count: int) -> tuple[Decimal, Decimal, float | None]:
+    selected = candles[-count:] if count > 0 else []
+    buy = sum(
+        (Decimal(str(getattr(candle, "taker_buy_quote_volume", 0))) for candle in selected),
+        Decimal("0"),
+    )
+    quote = sum(
+        (Decimal(str(getattr(candle, "quote_volume", 0))) for candle in selected),
+        Decimal("0"),
+    )
+    sell = max(Decimal("0"), quote - buy)
+    total = buy + sell
+    buy_share = float(buy / total * Decimal("100")) if total > 0 else None
+    return buy, sell, buy_share
+
+
+def _flow_windows(minute_candles, five_minute_candles) -> list[tuple[str, Decimal, Decimal, float | None]]:
+    specs = (
+        ("24s", five_minute_candles, 288),
+        ("12s", five_minute_candles, 144),
+        ("6s", five_minute_candles, 72),
+        ("4s", five_minute_candles, 48),
+        ("1s", minute_candles, 60),
+        ("15dk", minute_candles, 15),
+        ("5dk", minute_candles, 5),
+        ("3dk", minute_candles, 3),
+        ("1dk", minute_candles, 1),
+    )
+    return [
+        (label, *_candle_flow(candles, count))
+        for label, candles, count in specs
+    ]
+
+
+def _flow_zones(
+    minute_candles,
+    current_price: float,
+    *,
+    lookback_minutes: int = 60,
+    bucket_pct: float = 0.25,
+    top_n: int = 3,
+) -> tuple[list[tuple[float, float, Decimal]], list[tuple[float, float, Decimal]]]:
+    if current_price <= 0:
+        return [], []
+    width = max(current_price * bucket_pct / 100.0, 1e-12)
+    buckets: dict[int, list[Decimal]] = {}
+
+    for candle in minute_candles[-lookback_minutes:]:
+        representative = (
+            float(candle.high) + float(candle.low) + float(candle.close)
+        ) / 3.0
+        bucket = int(representative // width)
+        buy = Decimal(str(getattr(candle, "taker_buy_quote_volume", 0)))
+        quote = Decimal(str(getattr(candle, "quote_volume", 0)))
+        sell = max(Decimal("0"), quote - buy)
+        totals = buckets.setdefault(bucket, [Decimal("0"), Decimal("0")])
+        totals[0] += buy
+        totals[1] += sell
+
+    def ranked(index: int):
+        rows = []
+        for bucket, totals in buckets.items():
+            low = bucket * width
+            high = (bucket + 1) * width
+            rows.append((low, high, totals[index]))
+        return sorted(rows, key=lambda row: row[2], reverse=True)[:top_n]
+
+    return ranked(0), ranked(1)
+
+
+def _format_zone(low: float, high: float, amount: Decimal) -> str:
+    return f"{_price(low)}–{_price(high)} ({_usd(amount)})"
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +170,6 @@ class CoinAnalyzer:
         candle_client: BinanceSpotCandleClient | None = None,
         derivatives_client: BinanceDerivativesClient | None = None,
         bybit_derivatives_client: BybitDerivativesClient | None = None,
-        flow_client: BinanceRecentFlowClient | None = None,
         bybit_enabled: bool | None = None,
         flow_enabled: bool = True,
     ) -> None:
@@ -107,7 +179,6 @@ class CoinAnalyzer:
         self._bybit_derivatives = (
             bybit_derivatives_client or BybitDerivativesClient()
         )
-        self._flow_client = flow_client or BinanceRecentFlowClient()
         self._flow_enabled = flow_enabled
         self._bybit_enabled = (
             settings.bybit_enabled if bybit_enabled is None else bybit_enabled
@@ -127,11 +198,6 @@ class CoinAnalyzer:
             for _, interval, limit in specs
         ]
         derivative_task = asyncio.create_task(self._safe_derivatives(symbol))
-        flow_task = (
-            asyncio.create_task(self._flow_client.fetch_pair(symbol, minutes=15))
-            if self._flow_enabled
-            else None
-        )
         bybit_task = (
             asyncio.create_task(self._safe_bybit_derivatives(symbol))
             if self._bybit_enabled
@@ -139,7 +205,6 @@ class CoinAnalyzer:
         )
         candle_sets = await asyncio.gather(*candle_tasks)
         derivatives = await derivative_task
-        recent_flow = await flow_task if flow_task is not None else (None, None)
         bybit_derivatives = await bybit_task if bybit_task is not None else None
 
         if not candle_sets or not candle_sets[0]:
@@ -221,30 +286,41 @@ class CoinAnalyzer:
         )
 
         if self._flow_enabled:
-            spot_flow, futures_flow = recent_flow
-            lines.extend(["", "Son 15 dk alım / satım"])
-            for label, flow in (("Spot", spot_flow), ("Vadeli", futures_flow)):
-                if flow is None:
-                    lines.append(f"{label}: veri alınamadı")
+            minute_candles = candle_sets[0]
+            five_minute_candles = candle_sets[1]
+            lines.extend(["", "Agresif alım / satım akışı (Binance Spot)"])
+            for label, buy, sell, buy_share in _flow_windows(
+                minute_candles,
+                five_minute_candles,
+            ):
+                total = buy + sell
+                if total <= 0:
+                    lines.append(f"{label}: veri yok")
                     continue
-                buy_share = flow.buy_share_pct
-                suffix = "" if flow.complete else " (kısmi veri)"
-                lines.extend(
-                    [
-                        f"{label}{suffix}:",
-                        f"  Alım: {_usd(flow.buy_usd)}",
-                        f"  Satım: {_usd(flow.sell_usd)}",
-                        f"  Net: {_usd(flow.net_usd)}",
-                        (
-                            "  Alım oranı: "
-                            + (
-                                "n/a"
-                                if buy_share is None
-                                else f"%{buy_share:.0f}"
-                            )
-                            + f" — {_flow_comment(buy_share)}"
-                        ),
-                    ]
+                net = buy - sell
+                lines.append(
+                    f"{label}: alım {_usd(buy)} · satım {_usd(sell)} · "
+                    f"net {_usd(net)} · alım %{buy_share:.0f} "
+                    f"({_flow_comment(buy_share)})"
+                )
+
+            buy_zones, sell_zones = _flow_zones(minute_candles, current_price)
+            lines.extend(["", "Son 1s yoğun fiyat bölgeleri (1dk mum bazlı yaklaşık)"])
+            if buy_zones:
+                lines.append(
+                    "Agresif alım: "
+                    + " | ".join(
+                        _format_zone(low, high, amount)
+                        for low, high, amount in buy_zones
+                    )
+                )
+            if sell_zones:
+                lines.append(
+                    "Agresif satım: "
+                    + " | ".join(
+                        _format_zone(low, high, amount)
+                        for low, high, amount in sell_zones
+                    )
                 )
 
         lines.extend(["", "Vadeli piyasa"])
