@@ -375,3 +375,82 @@ def test_flow_zones_rank_net_buyers_and_sellers_separately() -> None:
     assert buyers[0][2] == Decimal("800")
     assert sellers[0][2] == Decimal("800")
     assert buyers[0][:2] != sellers[0][:2]
+
+
+
+@pytest.mark.asyncio
+async def test_plain_ticker_uses_compact_summary_before_long_analysis() -> None:
+    sent: list[str] = []
+    analyzed: list[str] = []
+
+    class Analyzer:
+        async def analyze(self, request: str):
+            analyzed.append(request)
+            return SimpleNamespace(symbol="BTCUSDT", text="LONG", forecasts=())
+
+    async def summary_provider(request: str):
+        return "SHORT" if request.upper() == "BTC" else None
+
+    poller = TelegramCommandPoller(
+        bot_token="token",
+        allowed_chat_id="111",
+        analyzer=Analyzer(),
+        summary_provider=summary_provider,
+    )
+
+    async def fake_send(chat_id: str, text: str):
+        sent.append(text)
+
+    poller._send = fake_send  # type: ignore[method-assign]
+    await poller._handle(
+        {
+            "update_id": 1,
+            "message": {
+                "chat": {"id": 111},
+                "from": {"id": 111},
+                "text": "BTC",
+            },
+        }
+    )
+
+    assert sent == ["SHORT"]
+    assert analyzed == []
+
+
+@pytest.mark.asyncio
+async def test_analyze_command_keeps_detailed_analysis_path() -> None:
+    sent: list[str] = []
+    analyzed: list[str] = []
+
+    class Analyzer:
+        async def analyze(self, request: str):
+            analyzed.append(request)
+            return SimpleNamespace(symbol="BTCUSDT", text="LONG", forecasts=())
+
+    async def summary_provider(request: str):
+        return "SHORT"
+
+    poller = TelegramCommandPoller(
+        bot_token="token",
+        allowed_chat_id="111",
+        analyzer=Analyzer(),
+        summary_provider=summary_provider,
+    )
+
+    async def fake_send(chat_id: str, text: str):
+        sent.append(text)
+
+    poller._send = fake_send  # type: ignore[method-assign]
+    await poller._handle(
+        {
+            "update_id": 2,
+            "message": {
+                "chat": {"id": 111},
+                "from": {"id": 111},
+                "text": "/analyze BTC",
+            },
+        }
+    )
+
+    assert sent == ["LONG"]
+    assert analyzed == ["BTC"]
