@@ -29,9 +29,9 @@ class PricePrediction:
 
 
 def _feature_vector(candles: list[Candle], i: int) -> list[float]:
-    close = [float(c.close) for c in candles]
-    p = close[i]
-    returns = [close[j] / close[j - 1] - 1 for j in range(i - 19, i + 1)]
+    close = [float(c.close) for c in candles[i - 30:i + 1]]
+    p = close[-1]
+    returns = [close[j] / close[j - 1] - 1 for j in range(11, 31)]
     mean = sum(returns) / len(returns)
     volatility = sqrt(sum((r - mean) ** 2 for r in returns) / len(returns))
     vols = [float(c.volume) for c in candles[i - 20:i]]
@@ -39,10 +39,10 @@ def _feature_vector(candles: list[Candle], i: int) -> list[float]:
     latest = candles[i]
     spread = float(latest.high - latest.low)
     return [
-        (p / close[i - 1] - 1) * 100,
-        (p / close[i - 5] - 1) * 100,
-        (p / close[i - 15] - 1) * 100,
-        (p / close[i - 30] - 1) * 100,
+        (p / close[-2] - 1) * 100,
+        (p / close[-6] - 1) * 100,
+        (p / close[-16] - 1) * 100,
+        (p / close[0] - 1) * 100,
         volatility * 100,
         (float(latest.volume) / avg_vol - 1) if avg_vol > 0 else 0,
         (float(latest.close - latest.open) / spread) if spread > 0 else 0,
