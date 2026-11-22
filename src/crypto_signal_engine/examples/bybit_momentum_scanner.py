@@ -222,39 +222,63 @@ async def trade_pressure(session, symbol):
     return (buy / (buy + sell) * 100 if buy + sell else None, len(trades))
 
 def directional_view(candidate, buy_share):
-    """Conservative directional heuristic, not a validated trade recommendation."""
+    """Evidence-weighted direction; no fabricated confidence or live orders."""
     price = candidate["price"]
     atr = price * candidate["atr_pct"] / 100
+    oi = candidate["oi_change_pct"]
+    points = 0
+    reasons = []
+    def add(condition, weight, positive, negative):
+        nonlocal points
+        if condition is None:
+            return
+        points += weight if condition else -weight
+        reasons.append(positive if condition else negative)
+
+    # Compare both sides symmetrically. Small changes are neutral.
+    for key, threshold, weight, label in (
+        ("ret5", 0.12, 2, "5dk"),
+        ("ret15", 0.20, 2, "15dk"),
+    ):
+        value = candidate[key]
+        if abs(value) >= threshold:
+            add(value > 0, weight, f"{label} yukari", f"{label} asagi")
+    if buy_share is not None and abs(buy_share - 50) >= 5:
+        add(buy_share > 50, 2, f"alis %{buy_share:.0f}",
+            f"satis %{100-buy_share:.0f}")
+    if candidate["volume_ratio"] >= 1.2:
+        if candidate["close_location"] >= 0.65:
+            points += 1
+            reasons.append("hacimli ust kapanis")
+        elif candidate["close_location"] <= 0.35:
+            points -= 1
+            reasons.append("hacimli alt kapanis")
+    if oi is not None and abs(oi) >= 0.3:
+        reasons.append(f"OI {oi:+.2f}% (yon teyidi degil)")
+    if candidate["rsi"] >= 80:
+        reasons.append("RSI yuksek")
+    elif candidate["rsi"] <= 20:
+        reasons.append("RSI dusuk")
+    if points >= 3:
+        direction = "LONG"
+    elif points <= -3:
+        direction = "SHORT"
+    else:
+        direction = "BEKLE"
+    if direction == "BEKLE" or atr <= 0:
+        return direction, None, None, ", ".join(reasons) or "Yon verisi yetersiz"
     pattern = candidate["pattern"] or {}
     support = pattern.get("triangle_support")
     resistance = pattern.get("triangle_resistance")
-    bullish = (
-        candidate["ret5"] > 0.15 and candidate["ret15"] > 0.20
-        and candidate["volume_ratio"] >= 1.2
-        and buy_share is not None and buy_share >= 58
-        and candidate["close_location"] >= 0.55
-    )
-    bearish = (
-        candidate["ret5"] < -0.15 and candidate["ret15"] < -0.20
-        and candidate["volume_ratio"] >= 1.2
-        and buy_share is not None and buy_share <= 42
-        and candidate["close_location"] <= 0.45
-    )
-    if bullish and candidate["rsi"] < 80:
-        direction = "LONG"
+    if direction == "LONG":
         stop = min(price - 1.5 * atr, support) if support else price - 1.5 * atr
         targets = (price + atr, price + 2 * atr)
-        reason = f"ivme pozitif, hacim {candidate['volume_ratio']:.2f}x, alis %{buy_share:.1f}"
-    elif bearish and candidate["rsi"] > 20:
-        direction = "SHORT"
+    else:
         stop = max(price + 1.5 * atr, resistance) if resistance else price + 1.5 * atr
         targets = (price - atr, price - 2 * atr)
-        reason = f"ivme negatif, hacim {candidate['volume_ratio']:.2f}x, alis %{buy_share:.1f}"
-    else:
-        return "BEKLE", None, None, "Yeterli ve uyumlu yon teyidi yok"
-    if atr <= 0 or min(targets) <= 0:
-        return "BEKLE", None, None, "Hedef hesaplanamadi"
-    return direction, stop, targets, reason
+    if min(targets) <= 0 or stop <= 0:
+        return "BEKLE", None, None, "Hedef/stop hesaplanamadi"
+    return direction, stop, targets, ", ".join(reasons)
 
 
 async def send_telegram(session, message):
@@ -322,6 +346,11 @@ async def run(args):
                     lines.append(f"   Hedef1={targets[0]:.8g} | Hedef2={targets[1]:.8g} | Stop={stop:.8g} USDT [ATR SENARYOSU]")
                 else:
                     lines.append("   Hedef/Stop=YOK (BEKLE)")
+                share_label = f"%{share:.1f}" if share is not None else "veri yok"
+                lines.append(
+                    f"   5dk={candidate['ret5']:+.2f}% | 15dk={candidate['ret15']:+.2f}% "
+                    f"| hacim={candidate['volume_ratio']:.2f}x | alis={share_label} "
+                    f"| RSI={candidate['rsi']:.1f}")
                 lines.append(f"   Neden: {reason}")
                 continue
             oi = candidate["oi_change_pct"]
