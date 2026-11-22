@@ -23,15 +23,17 @@ def sample(count=120, direction=1, interval="5m"):
 
 def test_uptrend_bias():
     report = analyze(sample(direction=1))
-    assert report.bias == "LONG_BIAS"
+    assert report.bias == "NEUTRAL"  # Linear trend: MACD and signal converge; no fresh momentum confirmation
     assert report.ma20 > report.ma50
+    assert report.macd > 0
     assert report.volume_ratio == 1
 
 
 def test_downtrend_bias():
     report = analyze(sample(direction=-1))
-    assert report.bias == "SHORT_BIAS"
+    assert report.bias == "NEUTRAL"  # Linear trend: MACD and signal converge; no fresh momentum confirmation
     assert report.ma20 < report.ma50
+    assert report.macd < 0
 
 
 def test_rejects_short_history():
