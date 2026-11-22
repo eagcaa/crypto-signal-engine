@@ -3,6 +3,7 @@
 PYTHONPATH=src python -m crypto_signal_engine.examples.bybit_indicator_scan
 """
 import asyncio
+import argparse
 
 from crypto_signal_engine.collectors.bybit.candles import BybitLinearCandleClient
 from crypto_signal_engine.collectors.bybit.perp_orderbook import BybitPerpOrderBookClient
@@ -10,12 +11,32 @@ from datetime import UTC, datetime
 from crypto_signal_engine.signals.indicator_report import analyze
 from crypto_signal_engine.signals.direction_forecast import forecast
 from crypto_signal_engine.signals.combined_forecast import combine_forecast
+from crypto_signal_engine.signals.forecast_journal import connect, record, settle, summary
 
 
 async def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--track', action='store_true', help='Persist predictions and settle earlier forecasts')
+    parser.add_argument('--summary', action='store_true', help='Print saved forecast accuracy and exit')
+    parser.add_argument('--db', default='data/bybit_forecasts.sqlite3')
+    args = parser.parse_args()
+    conn = connect(args.db) if args.track or args.summary else None
+    if args.summary:
+        for symbol, tf, horizon, confirmation, total, correct, wrong, flat in summary(conn):
+            decisive = correct + wrong
+            accuracy = f'{100 * correct / decisive:.1f}%' if decisive else 'N/A'
+            print(f'{symbol} {tf} +{horizon}m {confirmation}: {correct}/{decisive} correct ({accuracy}), flat={flat}')
+        conn.close()
+        return
     client = BybitLinearCandleClient()
     book_client = BybitPerpOrderBookClient()
     for symbol in ("BTCUSDT", "ETHUSDT", "SOLUSDT"):
+        if conn is not None:
+            try:
+                history = await client.fetch_closed(symbol, interval="1m", limit=999)
+                print(f"{symbol} journal: settled {settle(conn, symbol, history)} earlier outcomes")
+            except Exception as exc:
+                print(f"{symbol} journal settlement error: {type(exc).__name__}: {exc}")
         book = None
         try:
             book = await book_client.fetch(symbol)
@@ -45,6 +66,17 @@ async def main():
                 combined = combine_forecast(prediction, book)
                 print(f"  SONUC: {labels[combined.direction]} | orderbook={combined.confirmation}")
                 print(f"  {combined.explanation}")
+                if conn is not None:
+                    candle = candles[-1]
+                    age = (datetime.now(UTC) - candle.close_time).total_seconds()
+                    if 0 <= age <= 90:
+                        saved = record(conn, symbol=symbol, timeframe=interval,
+                                       observed_at=candle.close_time, price=candle.close,
+                                       direction=combined.direction,
+                                       confirmation=combined.confirmation)
+                        print(f"  JOURNAL: {saved} new forecasts saved")
+                    else:
+                        print(f"  JOURNAL: candle age {age:.0f}s; not recorded")
             except Exception as exc:
                 print(f"{symbol} {interval}: DATA ERROR {type(exc).__name__}: {exc}")
 
