@@ -5,7 +5,9 @@ Telegram: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID (optional)
 """
 import argparse
 import asyncio
+import json
 import os
+from pathlib import Path
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -221,6 +223,78 @@ async def run(args):
         print(message)
         if args.telegram and alerts:
             await send_telegram(session, message)
+        return {"at": now.isoformat(), "candidates": [
+            {"symbol": candidate["symbol"], "price": candidate["price"],
+             "score": candidate["score"], "ret5": candidate["ret5"],
+             "ret15": candidate["ret15"], "volume_ratio": candidate["volume_ratio"],
+             "oi_change_pct": candidate["oi_change_pct"],
+             "breakout": candidate["breakout"]}
+            for candidate in ranked]}
+
+
+def record_watch_cycle(path, snapshot):
+    """Append observations and settle previous 5m/15m outcomes.
+
+    Each outcome uses the first subsequent scan at/after its horizon,
+    so evaluation delay is recorded and never mistaken for exact timing.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pending_path = path.with_name(path.stem + "_pending.json")
+    pending = json.loads(pending_path.read_text(encoding="utf-8")) if pending_path.exists() else []
+    now = datetime.fromisoformat(snapshot["at"])
+    prices = {c["symbol"]: c["price"] for c in snapshot["candidates"]}
+    events = []
+    remaining = []
+    for entry in pending:
+        due = datetime.fromisoformat(entry["due"])
+        if now < due or entry["symbol"] not in prices:
+            remaining.append(entry)
+            continue
+        actual = prices[entry["symbol"]]
+        events.append({
+            "type": "outcome", "at": snapshot["at"],
+            "signal_at": entry["signal_at"], "symbol": entry["symbol"],
+            "horizon_minutes": entry["horizon_minutes"],
+            "start_price": entry["start_price"], "actual_price": actual,
+            "realized_pct": round((actual / entry["start_price"] - 1) * 100, 5),
+            "evaluation_delay_seconds": round((now - due).total_seconds()),
+            "score": entry["score"]})
+    for candidate in snapshot["candidates"]:
+        # Record all observed coins; no price-model filter.
+        events.append({"type": "observation", "at": snapshot["at"], **candidate})
+        for horizon in (5, 15):
+            pending_key = (snapshot["at"], candidate["symbol"], horizon)
+            if not any((p["signal_at"], p["symbol"], p["horizon_minutes"]) == pending_key
+                       for p in remaining):
+                remaining.append({
+                    "signal_at": snapshot["at"], "symbol": candidate["symbol"],
+                    "horizon_minutes": horizon, "score": candidate["score"],
+                    "start_price": candidate["price"],
+                    "due": (now + timedelta(minutes=horizon)).isoformat()})
+    with path.open("a", encoding="utf-8") as output:
+        for event in events:
+            output.write(json.dumps(event, ensure_ascii=False) + "\\n")
+    # Replace pending atomically to avoid truncation on interrupted writes.
+    temp = pending_path.with_suffix(".tmp")
+    temp.write_text(json.dumps(remaining, ensure_ascii=False), encoding="utf-8")
+    temp.replace(pending_path)
+    outcomes = [e for e in events if e["type"] == "outcome"]
+    print(f"Kayit: {path} | gozlem={len(snapshot['candidates'])} | "
+          f"olculen_sonuc={len(outcomes)} | bekleyen={len(remaining)}")
+
+
+async def watch(args):
+    while True:
+        try:
+            snapshot = await run(args)
+            record_watch_cycle(args.history, snapshot)
+        except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError, ValueError,
+                OSError, KeyError) as exc:
+            print(f"Tarama hatasi (sonraki dongude yeniden denenecek): {exc}")
+        if not args.watch:
+            break
+        await asyncio.sleep(args.interval)
 
 
 def main():
@@ -230,11 +304,18 @@ def main():
     parser.add_argument("--top", type=int, default=5)
     parser.add_argument("--min-score", type=int, default=6)
     parser.add_argument("--telegram", action="store_true")
+    parser.add_argument("--watch", action="store_true", help="Repeat scan and record outcomes")
+    parser.add_argument("--interval", type=int, default=60, help="Seconds between scans")
+    parser.add_argument("--history", default="data/bybit_radar_history.jsonl")
     args = parser.parse_args()
     if not (1 <= args.max_symbols <= 500 and 1 <= args.top <= 50
-            and 0 <= args.min_score <= 10 and args.min_turnover >= 0):
+            and 0 <= args.min_score <= 10 and args.min_turnover >= 0
+            and args.interval >= 30):
         parser.error("Invalid scanner parameters")
-    asyncio.run(run(args))
+    try:
+        asyncio.run(watch(args))
+    except KeyboardInterrupt:
+        print("Radar durduruldu.")
 
 
 if __name__ == "__main__":
