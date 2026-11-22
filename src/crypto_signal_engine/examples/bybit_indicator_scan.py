@@ -12,13 +12,13 @@ from crypto_signal_engine.signals.indicator_report import analyze
 from crypto_signal_engine.signals.direction_forecast import forecast
 from crypto_signal_engine.signals.combined_forecast import combine_forecast
 from crypto_signal_engine.signals.forecast_journal import connect, record, settle, summary
-from crypto_signal_engine.signals.price_scenario import scenarios
+from crypto_signal_engine.signals.historical_price_forecast import predict_prices
 
 
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--track', action='store_true', help='Persist predictions and settle earlier forecasts')
-    parser.add_argument('--price-targets', action='store_true', help='Show uncalibrated 5m/15m price scenarios from closed 1m candles')
+    parser.add_argument('--price-targets', action='store_true', help='Show historical 5m/15m point forecasts and rolling validation')
     parser.add_argument('--summary', action='store_true', help='Print saved forecast accuracy and exit')
     parser.add_argument('--db', default='data/bybit_forecasts.sqlite3')
     args = parser.parse_args()
@@ -35,13 +35,14 @@ async def main():
     for symbol in ("BTCUSDT", "ETHUSDT", "SOLUSDT"):
         if args.price_targets:
             try:
-                one_minute = await client.fetch_closed(symbol, interval="1m", limit=120)
-                for target in scenarios(one_minute):
+                one_minute = await client.fetch_closed(symbol, interval="1m", limit=800)
+                for target in predict_prices(one_minute):
+                    status = "PASS" if target.beats_naive else "FAIL"
                     print(f"{symbol} +{target.horizon_minutes}m: base={target.current:.4f} "
                           f"estimate={target.estimate:.4f} "
-                          f"range=[{target.lower:.4f}, {target.upper:.4f}] "
-                          f"change={target.expected_change_pct:+.3f}% "
-                          f"asof={target.observed_at} (uncalibrated scenario)")
+                          f"change={target.change_pct:+.3f}% asof={target.observed_at} "
+                          f"validation={status} model_MAE={target.model_mae_pct:.4f}% "
+                          f"naive_MAE={target.naive_mae_pct:.4f}% n={target.validation_count}")
             except Exception as exc:
                 print(f"{symbol} PRICE TARGET ERROR: {type(exc).__name__}: {exc}")
         if conn is not None:
