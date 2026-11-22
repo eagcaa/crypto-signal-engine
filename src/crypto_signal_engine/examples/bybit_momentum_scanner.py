@@ -73,7 +73,21 @@ def score_candidate(symbol, rows, oi_change_pct, turnover24h, now):
     ret15 = (prices[-1] / prices[-16] - 1) * 100
     previous_avg = sum(volumes[-21:-1]) / 20
     volume_ratio = volumes[-1] / previous_avg if previous_avg > 0 else 0
-    high20 = max(float(r[2]) for r in candles[-21:-1])
+    highs = [float(r[2]) for r in candles]
+    lows = [float(r[3]) for r in candles]
+    high20 = max(highs[-21:-1])
+    ranges = [max(highs[i] - lows[i], abs(highs[i] - prices[i-1]),
+                  abs(lows[i] - prices[i-1])) for i in range(1, len(prices))]
+    atr_pct = sum(ranges[-14:]) / 14 / prices[-1] * 100
+    old_atr = sum(ranges[-28:-14]) / 14 / prices[-15] * 100
+    volatility_expansion = atr_pct / old_atr if old_atr > 0 else None
+    changes = [prices[i] - prices[i-1] for i in range(1, len(prices))]
+    gain = sum(max(x, 0) for x in changes[-14:])
+    loss = sum(max(-x, 0) for x in changes[-14:])
+    rsi = 100 * gain / (gain + loss) if gain + loss else 50
+    candle_range = highs[-1] - lows[-1]
+    close_location = ((prices[-1] - lows[-1]) / candle_range
+                      if candle_range else 0.5)
     breakout = prices[-1] > high20
     # Positive momentum + volume + OI confirmation. No claim of probability.
     score = (2 * (ret5 > .15) + 2 * (ret15 > .25)
@@ -84,6 +98,8 @@ def score_candidate(symbol, rows, oi_change_pct, turnover24h, now):
         "ret15": ret15, "volume_ratio": volume_ratio,
         "oi_change_pct": oi_change_pct, "breakout": breakout,
         "score": score, "turnover24h": float(turnover24h),
+        "atr_pct": atr_pct, "volatility_expansion": volatility_expansion,
+        "rsi": rsi, "close_location": close_location,
         "observed_at": datetime.fromtimestamp(
             int(candles[-1][0]) / 1000, UTC).isoformat(),
     }
@@ -150,6 +166,18 @@ async def price_targets(session, symbol, now):
     return predict_prices(candles)
 
 
+async def trade_pressure(session, symbol):
+    """Aggressive buy share among latest 500 trades; not complete order flow."""
+    result = await get(session, "/v5/market/recent-trade", {
+        "category": "linear", "symbol": symbol, "limit": "500"})
+    trades = result.get("list", [])
+    buy = sum(float(t["size"]) * float(t["price"]) for t in trades
+              if t.get("side") == "Buy")
+    sell = sum(float(t["size"]) * float(t["price"]) for t in trades
+               if t.get("side") == "Sell")
+    return (buy / (buy + sell) * 100 if buy + sell else None, len(trades))
+
+
 async def send_telegram(session, message):
     token, chat_id = os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
@@ -205,6 +233,19 @@ async def run(args):
                 f"| hacim={candidate['volume_ratio']:.2f}x "
                 f"| OI5dk={oi_text} | kirilim={'EVET' if candidate['breakout'] else 'HAYIR'}")
             lines.append(f"   Gerekce: {', '.join(reasons) if reasons else 'ZAYIF'}")
+            expansion = candidate["volatility_expansion"]
+            expansion_text = f"{expansion:.2f}x" if expansion is not None else "N/A"
+            lines.append(
+                f"   Grafik: ATR14={candidate['atr_pct']:.3f}% "
+                f"| volatilite_genisleme={expansion_text} "
+                f"| RSI14={candidate['rsi']:.1f} "
+                f"| mum_kapanis_konumu={candidate['close_location']:.0%}")
+            try:
+                share, count = await trade_pressure(session, candidate["symbol"])
+                share_text = f"{share:.1f}%" if share is not None else "N/A"
+                lines.append(f"   Agresif_alis_payi={share_text} | islem_ornegi={count}")
+            except (RuntimeError, ValueError, KeyError, TypeError) as exc:
+                lines.append(f"   Agresif_alis_payi=veri_yok ({exc})")
             try:
                 predictions = await price_targets(session, candidate["symbol"], now)
                 for prediction in predictions:
@@ -228,7 +269,11 @@ async def run(args):
              "score": candidate["score"], "ret5": candidate["ret5"],
              "ret15": candidate["ret15"], "volume_ratio": candidate["volume_ratio"],
              "oi_change_pct": candidate["oi_change_pct"],
-             "breakout": candidate["breakout"]}
+             "breakout": candidate["breakout"],
+             "atr_pct": candidate["atr_pct"],
+             "volatility_expansion": candidate["volatility_expansion"],
+             "rsi": candidate["rsi"],
+             "close_location": candidate["close_location"]}
             for candidate in ranked]}
 
 
@@ -274,7 +319,7 @@ def record_watch_cycle(path, snapshot):
                     "due": (now + timedelta(minutes=horizon)).isoformat()})
     with path.open("a", encoding="utf-8") as output:
         for event in events:
-            output.write(json.dumps(event, ensure_ascii=False) + "\\n")
+            output.write(json.dumps(event, ensure_ascii=False) + "\n")
     # Replace pending atomically to avoid truncation on interrupted writes.
     temp = pending_path.with_suffix(".tmp")
     temp.write_text(json.dumps(remaining, ensure_ascii=False), encoding="utf-8")
