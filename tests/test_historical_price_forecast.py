@@ -7,7 +7,7 @@ from crypto_signal_engine.domain.candles import Candle
 from crypto_signal_engine.signals.historical_price_forecast import predict_prices
 
 
-def make_candles(count=400):
+def make_candles(count=500):
     start = datetime(2026, 1, 1, tzinfo=UTC)
     candles = []
     for i in range(count):
@@ -29,7 +29,7 @@ def test_predict_prices_returns_point_and_validation():
 
 
 def test_rejects_insufficient_history():
-    with pytest.raises(ValueError, match="300"):
+    with pytest.raises(ValueError, match="400"):
         predict_prices(make_candles(100))
 
 
