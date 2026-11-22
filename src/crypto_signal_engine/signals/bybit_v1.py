@@ -104,8 +104,15 @@ def evaluate(
         leverage = 3 if stop_pct >= D("1") else 5
         return Signal(symbol, strategy, side, reason, price, stop, target, leverage, notional)
 
-    trend = make("trend", breakout and volume_ok and one_minute_confirm,
-                 "5m breakout, 1.3x volume, 1m confirmation")
+    trend_missing = []
+    if not breakout:
+        trend_missing.append("5m breakout not confirmed")
+    if not volume_ok:
+        trend_missing.append("5m volume below 1.3x average")
+    if not one_minute_confirm:
+        trend_missing.append("1m direction not confirmed")
+    trend = make("trend", not trend_missing,
+                 "; ".join(trend_missing) if trend_missing else "Breakout, volume and 1m confirmed")
     # Retest requires a prior confirmed breakout and current test of its level.
     older = candles_5m[-22:-2]
     prior = candles_5m[-2]
@@ -116,6 +123,13 @@ def evaluate(
         last.low <= level + tolerance and last.close > level if side == "LONG"
         else last.high >= level - tolerance and last.close < level
     )
-    retest = make("retest", prior_break and retested and one_minute_confirm,
-                  "Previous 5m breakout followed by level retest and 1m confirmation")
+    retest_missing = []
+    if not prior_break:
+        retest_missing.append("previous 5m breakout not confirmed")
+    if not retested:
+        retest_missing.append("level retest not confirmed")
+    if not one_minute_confirm:
+        retest_missing.append("1m direction not confirmed")
+    retest = make("retest", not retest_missing,
+                  "; ".join(retest_missing) if retest_missing else "Breakout, retest and 1m confirmed")
     return [trend, retest]
