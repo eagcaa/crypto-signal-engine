@@ -77,9 +77,6 @@ def score_candidate(symbol, rows, oi_change_pct, turnover24h, now):
     score = (2 * (ret5 > .15) + 2 * (ret15 > .25)
              + 2 * (volume_ratio >= 1.5) + 2 * breakout
              + 2 * (oi_change_pct is not None and oi_change_pct > .3))
-    # Do not label a sharp short-term reversal as a bullish candidate.
-    if ret5 <= 0 or ret15 <= 0:
-        return None
     return {
         "symbol": symbol, "price": prices[-1], "ret5": ret5,
         "ret15": ret15, "volume_ratio": volume_ratio,
@@ -178,58 +175,51 @@ async def run(args):
             scan_symbol(session, semaphore, ticker, now) for ticker in tickers])
         ranked = sorted((c for c in candidates if c is not None),
                         key=lambda c: (c["score"], c["ret5"]), reverse=True)
-        # Only publish candidates supported by both market momentum and a
-        # positive, baseline-beating numeric 5-minute forecast.
-        shortlist = [
-            candidate for candidate in ranked
-            if candidate["score"] >= args.min_score
-            and candidate["volume_ratio"] >= 1.5
-            and (candidate["breakout"] or
-                 (candidate["oi_change_pct"] is not None
-                  and candidate["oi_change_pct"] > 0.3))
-        ][:args.max_symbols]
-        confirmed = []
-        for candidate in shortlist:
-            try:
-                predictions = await price_targets(session, candidate["symbol"], now)
-            except (ValueError, RuntimeError, KeyError, ZeroDivisionError) as exc:
-                print(f"SKIP {candidate['symbol']}: forecast unavailable: {exc}")
-                continue
-            five = next((p for p in predictions if p.horizon_minutes == 5), None)
-            fifteen = next((p for p in predictions if p.horizon_minutes == 15), None)
-            if five is None or not five.beats_naive or five.change_pct <= 0:
-                continue
-            if fifteen is not None and fifteen.beats_naive and fifteen.change_pct < 0:
-                continue
-            confirmed.append((candidate, predictions))
-            if len(confirmed) >= args.top:
-                break
-
-        lines = [f"BYBIT ONAYLI YUKSELIS ADAYLARI | {now:%Y-%m-%d %H:%M} UTC"]
-        if not confirmed:
-            lines.append("Momentum ve pozitif fiyat tahmini birlikte dogrulanmadi; sinyal yok.")
-        for i, (candidate, predictions) in enumerate(confirmed, 1):
+        # Discovery and forecasting are separate: a weak regression model
+        # must not hide an early-moving coin from the watchlist.
+        watchlist = ranked[:args.top]
+        lines = [f"BYBIT ERKEN HAREKET RADARI | {now:%Y-%m-%d %H:%M} UTC"]
+        if not watchlist:
+            lines.append("Yeterli kapali mum verisi bulunan coin yok.")
+        alerts = []
+        for i, candidate in enumerate(watchlist, 1):
             oi = candidate["oi_change_pct"]
             oi_text = f"{oi:+.2f}%" if oi is not None else "N/A"
+            reasons = []
+            if candidate["volume_ratio"] >= 1.5:
+                reasons.append("HACIM_ARTISI")
+            if oi is not None and oi > 0.3:
+                reasons.append("OI_ARTISI")
+            if candidate["breakout"]:
+                reasons.append("TEPE_KIRILIMI")
+            if candidate["ret5"] > 0.15:
+                reasons.append("5DK_IVME")
+            if candidate["ret15"] > 0.25:
+                reasons.append("15DK_IVME")
             lines.append(
-                f"{i}. {candidate['symbol']} | score={candidate['score']}/10 "
-                f"| price={candidate['price']:.8g} USDT "
-                f"| 5m={candidate['ret5']:+.2f}% 15m={candidate['ret15']:+.2f}% "
-                f"| volume={candidate['volume_ratio']:.2f}x "
-                f"| OI5m={oi_text} "
-                f"| breakout={'YES' if candidate['breakout'] else 'NO'}")
-            for prediction in predictions:
-                source = "MODEL" if prediction.beats_naive else "BASELINE_NO_EDGE"
-                lines.append(
-                    f"  +{prediction.horizon_minutes}m hedef="
-                    f"{prediction.estimate:.8f} USDT "
-                    f"({prediction.change_pct:+.3f}%) source={source} "
-                    f"model_MAE={prediction.model_mae_pct:.4f}% "
-                    f"naive_MAE={prediction.naive_mae_pct:.4f}%")
-        lines.append("Hedefler tahmindir; garanti veya alim emri degildir.")
+                f"{i}. {candidate['symbol']} | fiyat={candidate['price']:.8g} USDT "
+                f"| radar={candidate['score']}/10 | 5dk={candidate['ret5']:+.2f}% "
+                f"| 15dk={candidate['ret15']:+.2f}% "
+                f"| hacim={candidate['volume_ratio']:.2f}x "
+                f"| OI5dk={oi_text} | kirilim={'EVET' if candidate['breakout'] else 'HAYIR'}")
+            lines.append(f"   Gerekce: {', '.join(reasons) if reasons else 'ZAYIF'}")
+            try:
+                predictions = await price_targets(session, candidate["symbol"], now)
+                for prediction in predictions:
+                    source = "MODEL" if prediction.beats_naive else "BASELINE_NO_EDGE"
+                    lines.append(
+                        f"   +{prediction.horizon_minutes}dk tahmini="
+                        f"{prediction.estimate:.8f} USDT "
+                        f"({prediction.change_pct:+.3f}%) [{source}]")
+            except (ValueError, RuntimeError, KeyError, ZeroDivisionError) as exc:
+                lines.append(f"   Fiyat tahmini hesaplanamadi: {exc}")
+            # Alert on radar evidence, not on a model's unproven directional gate.
+            if candidate["score"] >= args.min_score:
+                alerts.append(candidate["symbol"])
+        lines.append("Radar siralamasi erken hareket arastirmasidir; yukselis garantisi veya alim emri degildir.")
         message = "\n".join(lines)
         print(message)
-        if args.telegram and confirmed:
+        if args.telegram and alerts:
             await send_telegram(session, message)
 
 
@@ -237,7 +227,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--min-turnover", type=float, default=5_000_000)
     parser.add_argument("--max-symbols", type=int, default=150)
-    parser.add_argument("--top", type=int, default=10)
+    parser.add_argument("--top", type=int, default=5)
     parser.add_argument("--min-score", type=int, default=6)
     parser.add_argument("--telegram", action="store_true")
     args = parser.parse_args()
