@@ -19,7 +19,7 @@ async def scan() -> None:
                 for interval in ("1m", "5m", "15m")
             ))
             # Closed timeframes must align to prevent stale cross-timeframe confirmation.
-            decisions = evaluate(symbol, *candles, equity=Decimal("1000"))
+            anchor = candles[2][-1].close_time\n            aligned = [[c for c in series if c.close_time <= anchor] for series in candles]\n            decisions = evaluate(symbol, *aligned, equity=Decimal("1000"))
             for signal in decisions:
                 print(
                     f"{signal.symbol} {signal.strategy}: {signal.side} "
