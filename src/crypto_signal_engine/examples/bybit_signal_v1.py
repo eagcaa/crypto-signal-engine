@@ -203,16 +203,32 @@ async def market_flow(session, symbol):
             "category": "linear", "symbol": symbol, "limit": "1000"}),
         get(session, "/v5/market/orderbook", {
             "category": "linear", "symbol": symbol, "limit": "50"}))
-    buy = sell = 0.0
+    records = []
     for trade in trades.get("list", []):
+        timestamp = int(trade["time"])
         notional = float(trade["price"]) * float(trade["size"])
-        if trade["side"] == "Buy":
-            buy += notional
-        elif trade["side"] == "Sell":
-            sell += notional
+        records.append((timestamp, trade["side"], notional))
+    if not records:
+        raise ValueError("Recent trade volume unavailable")
+    newest = max(x[0] for x in records)
+    oldest = min(x[0] for x in records)
+    buy = sum(x[2] for x in records if x[1] == "Buy")
+    sell = sum(x[2] for x in records if x[1] == "Sell")
     total = buy + sell
     if total <= 0:
         raise ValueError("Recent trade volume unavailable")
+    windows = {}
+    for minutes in (1, 3, 5, 15):
+        cutoff = newest - minutes * 60_000
+        # Recent-trade API is capped at 1000; avoid claiming full windows
+        # if the oldest available trade is newer than the window start.
+        complete = oldest <= cutoff
+        sample = [x for x in records if x[0] >= cutoff]
+        volume = sum(x[2] for x in sample)
+        windows[minutes] = (
+            100 * sum(x[2] for x in sample if x[1] == "Buy") / volume
+            if complete and volume > 0 else None
+        )
     bids = [(float(price), float(qty)) for price, qty in book.get("b", [])]
     asks = [(float(price), float(qty)) for price, qty in book.get("a", [])]
     if not bids or not asks:
@@ -228,7 +244,37 @@ async def market_flow(session, symbol):
         "sell_pct": 100 * sell / total,
         "bid_pct": 100 * bid_usdt / (bid_usdt + ask_usdt),
         "ask_pct": 100 * ask_usdt / (bid_usdt + ask_usdt),
+        "windows": windows,
+        "trade_age_seconds": max(0, (datetime.now(UTC).timestamp() * 1000 - newest) / 1000),
+        "trade_coverage_seconds": (newest - oldest) / 1000,
     }
+
+
+def adjusted_forecast(prediction, estimate, live_price, frames, flow):
+    """Experimental scenario using live order flow; NOT backtested or calibrated."""
+    horizon = prediction.horizon_minutes
+    baseline_pct = (estimate / float(prediction.current) - 1) * 100
+    f1 = frames["1"]
+    # Price momentum and flow affect direction, bounded by measured volatility.
+    recent_pct = (f1["price"] / f1["previous"]["close"] - 1) * 100
+    flow_pct = (flow["buy_pct"] - 50) / 50
+    book_pct = (flow["bid_pct"] - 50) / 50
+    # Use the shortest complete trade window, if available.
+    available = [(minutes, pct) for minutes, pct in flow["windows"].items()
+                 if pct is not None]
+    if available:
+        _, buy_pct = min(available)
+        flow_pct = (buy_pct - 50) / 50
+    atr_pct = f1["atr"] / f1["price"] * 100
+    # Heuristic overlay is intentionally capped; no implied accuracy.
+    horizon_scale = min((horizon / 5) ** 0.5, 3.2)
+    adjustment = horizon_scale * (0.35 * recent_pct
+                                 + 0.45 * atr_pct * flow_pct
+                                 + 0.15 * atr_pct * book_pct)
+    adjustment = max(-2 * atr_pct * horizon_scale,
+                     min(2 * atr_pct * horizon_scale, adjustment))
+    projected_pct = baseline_pct + adjustment
+    return live_price * (1 + projected_pct / 100), projected_pct
 
 
 def early_view(frames, flow, forecasts):
@@ -276,6 +322,7 @@ async def scan_symbol(session, symbol, now, args):
     result = evaluate(frames, spread, args.equity, args.risk_pct,
                       args.cost_pct, args.max_spread_pct)
     result["frames"] = frames
+    result["live_price"] = float(item["lastPrice"])
     return result
 
 
@@ -286,7 +333,8 @@ async def run(args):
         for symbol in SYMBOLS:
             try:
                 result = await scan_symbol(session, symbol, now, args)
-                print(f"\n{symbol} | {result['direction']} | fiyat={result['price']:.8g}")
+                print(f"\n{symbol} | {result['direction']} | son mum={result['price']:.8g} "
+                      f"| CANLI lastPrice={result['live_price']:.8g}")
                 print("  Stratejiler: " + " | ".join(
                     f"{key}={value}" for key, value in result["strategies"].items()))
                 if result["direction"] != "BEKLE":
@@ -300,6 +348,11 @@ async def run(args):
                           f"| agresif satis=%{flow['sell_pct']:.1f} "
                           f"| emir defteri yakin alis=%{flow['bid_pct']:.1f} "
                           f"| satis=%{flow['ask_pct']:.1f}")
+                    print(f"  Son islem gecikmesi={flow['trade_age_seconds']:.1f}sn "
+                          f"| ornek kapsam={flow['trade_coverage_seconds']:.0f}sn")
+                    print("  Zaman bazli agresif alis: " + " | ".join(
+                        f"{minutes}dk=" + (f"%{pct:.1f}" if pct is not None else "VERI EKSIK")
+                        for minutes, pct in flow["windows"].items()))
                 except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError,
                         TypeError, RuntimeError, IndexError, ZeroDivisionError) as exc:
                     flow = None
@@ -314,6 +367,12 @@ async def run(args):
                               f"| degisim={change:+.3f}% | yon={tendency} | {label} "
                               f"| model hata={float(forecast.model_mae_pct):.3f}% "
                               f"| baz hata={float(forecast.naive_mae_pct):.3f}%")
+                        if flow is not None:
+                            scenario, scenario_pct = adjusted_forecast(
+                                forecast, estimate, result["live_price"], result["frames"], flow)
+                            print(f"    Canli akis senaryosu (DOGRULANMAMIS)="
+                                  f"{scenario:.8g} USDT | degisim={scenario_pct:+.3f}% "
+                                  f"| referans lastPrice={result['live_price']:.8g}")
                     if flow is not None:
                         label, score, evidence = early_view(result["frames"], flow, forecasts)
                         print(f"  Erken piyasa gorunumu: {label} | puan={score:+d}/8")
@@ -324,7 +383,7 @@ async def run(args):
             except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError,
                     TypeError, RuntimeError, IndexError, ZeroDivisionError) as exc:
                 print(f"\n{symbol} | BEKLE | veri hatasi: {exc}")
-    print("\nHedefler varsayimsal maliyetlerle hesaplanir; backtest edilmemistir. Emir gonderilmez.")
+    print("\nCanli akis senaryosu sezgiseldir, backtest edilmemistir; islem sinyali degildir. Emir gonderilmez.")
 
 
 def main():
