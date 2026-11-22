@@ -6,6 +6,7 @@ import asyncio
 
 from crypto_signal_engine.collectors.bybit.candles import BybitLinearCandleClient
 from crypto_signal_engine.signals.indicator_report import analyze
+from crypto_signal_engine.signals.direction_forecast import forecast
 
 
 async def main():
@@ -21,6 +22,10 @@ async def main():
                 print(f"  KDJ K={report.k:.2f} D={report.d:.2f} J={report.j:.2f} VOL={report.volume_ratio:.2f}x")
                 print(f"  previous-candle pivot={report.pivot:.4f} S1={report.support1:.4f} R1={report.resistance1:.4f}")
                 print(f"  {report.explanation}")
+                prediction = forecast(report)
+                labels = {"RISE_EXPECTED": "YUKSELIS BEKLENTISI", "FALL_EXPECTED": "DUSUS BEKLENTISI", "UNCERTAIN": "YON BELIRSIZ"}
+                print(f"  TAHMIN: {labels[prediction.direction]} | guc={prediction.strength}")
+                print(f"  {prediction.explanation}")
             except Exception as exc:
                 print(f"{symbol} {interval}: DATA ERROR {type(exc).__name__}: {exc}")
 
