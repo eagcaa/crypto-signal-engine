@@ -188,7 +188,7 @@ async def raw_forecasts(session, symbol, now):
                 low=Decimal(row[3]), close=Decimal(row[4]),
                 volume=Decimal(row[5]), quote_volume=Decimal(row[6])))
     candles = sorted({c.open_time: c for c in candles}.values(), key=lambda c: c.open_time)
-    validated = predict_prices(candles)
+    validated = predict_prices(candles, horizons=(5, 15, 30, 50))
     last = len(candles) - 1
     return [
         (prediction, _estimate(candles, last, _fit(candles, prediction.horizon_minutes, last)))
@@ -320,7 +320,7 @@ async def run(args):
                         print("  Kanit: " + "; ".join(evidence))
                 except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, RuntimeError,
                         KeyError, ZeroDivisionError, IndexError, TypeError) as exc:
-                    print(f"  5/15dk fiyat tahmini hesaplanamadi: {exc}")
+                    print(f"  5/15/30/50dk fiyat tahmini hesaplanamadi: {exc}")
             except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError,
                     TypeError, RuntimeError, IndexError, ZeroDivisionError) as exc:
                 print(f"\n{symbol} | BEKLE | veri hatasi: {exc}")
