@@ -9,7 +9,11 @@ from statistics import mean
 
 import aiohttp
 
-from crypto_signal_engine.examples.bybit_momentum_scanner import get, price_targets
+from crypto_signal_engine.examples.bybit_momentum_scanner import get
+from crypto_signal_engine.domain.candles import Candle
+from crypto_signal_engine.signals.historical_price_forecast import predict_prices, _fit, _estimate
+from datetime import timedelta
+from decimal import Decimal
 
 SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
 INTERVALS = ("1", "3", "5", "15")
@@ -160,6 +164,38 @@ async def fetch_frame(session, symbol, interval, now):
     return summarize(rows)
 
 
+async def raw_forecasts(session, symbol, now):
+    """Return actual model estimates even when out-of-sample validation fails."""
+    end = now.replace(second=0, microsecond=0)
+    candles = []
+    for page in range(2):
+        page_end = end - timedelta(minutes=page * 400)
+        page_start = page_end - timedelta(minutes=400)
+        result = await get(session, "/v5/market/kline", {
+            "category": "linear", "symbol": symbol, "interval": "1",
+            "start": int(page_start.timestamp() * 1000),
+            "end": int((page_end - timedelta(milliseconds=1)).timestamp() * 1000),
+            "limit": "400",
+        })
+        for row in result.get("list", []):
+            opened = datetime.fromtimestamp(int(row[0]) / 1000, UTC)
+            if not page_start <= opened < page_end:
+                continue
+            candles.append(Candle(
+                symbol=symbol, interval="1m", open_time=opened,
+                close_time=opened + timedelta(minutes=1),
+                open=Decimal(row[1]), high=Decimal(row[2]),
+                low=Decimal(row[3]), close=Decimal(row[4]),
+                volume=Decimal(row[5]), quote_volume=Decimal(row[6])))
+    candles = sorted({c.open_time: c for c in candles}.values(), key=lambda c: c.open_time)
+    validated = predict_prices(candles)
+    last = len(candles) - 1
+    return [
+        (prediction, _estimate(candles, last, _fit(candles, prediction.horizon_minutes, last)))
+        for prediction in validated
+    ]
+
+
 async def scan_symbol(session, symbol, now, args):
     frames = dict(zip(INTERVALS, await asyncio.gather(*(
         fetch_frame(session, symbol, interval, now) for interval in INTERVALS))))
@@ -188,11 +224,13 @@ async def run(args):
                           f"| teminat={result['margin']:.2f} USDT | hedef net ROI~%10")
                 print("  Neden: " + "; ".join(result["reasons"]))
                 try:
-                    forecasts = await price_targets(session, symbol, now)
-                    for forecast in forecasts:
-                        label = "MODEL" if forecast.beats_naive else "BAZ FIYAT (MODEL GUVENILIR DEGIL)"
-                        print(f"  {forecast.horizon_minutes}dk tahmini={float(forecast.estimate):.8g} USDT "
-                              f"| degisim={float(forecast.change_pct):+.3f}% | {label} "
+                    forecasts = await raw_forecasts(session, symbol, now)
+                    for forecast, estimate in forecasts:
+                        change = (estimate / float(forecast.current) - 1) * 100
+                        label = "MODEL BAZDAN IYI" if forecast.beats_naive else "MODEL ZAYIF"
+                        tendency = "YUKARI" if change > 0 else "ASAGI" if change < 0 else "YATAY"
+                        print(f"  {forecast.horizon_minutes}dk model tahmini={estimate:.8g} USDT "
+                              f"| degisim={change:+.3f}% | yon={tendency} | {label} "
                               f"| model hata={float(forecast.model_mae_pct):.3f}% "
                               f"| baz hata={float(forecast.naive_mae_pct):.3f}%")
                 except (ValueError, RuntimeError, KeyError, ZeroDivisionError) as exc:
