@@ -89,6 +89,7 @@ def score_candidate(symbol, rows, oi_change_pct, turnover24h, now):
     close_location = ((prices[-1] - lows[-1]) / candle_range
                       if candle_range else 0.5)
     breakout = prices[-1] > high20
+    pattern = triangle_pattern(candles)
     # Positive momentum + volume + OI confirmation. No claim of probability.
     score = (2 * (ret5 > .15) + 2 * (ret15 > .25)
              + 2 * (volume_ratio >= 1.5) + 2 * breakout
@@ -100,8 +101,50 @@ def score_candidate(symbol, rows, oi_change_pct, turnover24h, now):
         "score": score, "turnover24h": float(turnover24h),
         "atr_pct": atr_pct, "volatility_expansion": volatility_expansion,
         "rsi": rsi, "close_location": close_location,
+        "pattern": pattern,
         "observed_at": datetime.fromtimestamp(
             int(candles[-1][0]) / 1000, UTC).isoformat(),
+    }
+
+
+def triangle_pattern(candles):
+    """Heuristic converging swing boundaries on 30 closed 1m candles.
+
+    Returns descriptive evidence, not a chart drawing or trading signal.
+    """
+    if len(candles) < 30:
+        return None
+    rows = candles[-30:]
+    highs = [float(x[2]) for x in rows]
+    lows = [float(x[3]) for x in rows]
+    closes = [float(x[4]) for x in rows]
+    if min(lows) <= 0:
+        return None
+
+    # Compare high/low envelopes of two non-overlapping 10m blocks.
+    early_high, late_high = max(highs[:10]), max(highs[10:20])
+    early_low, late_low = min(lows[:10]), min(lows[10:20])
+    early_width = early_high - early_low
+    late_width = late_high - late_low
+    if early_width <= 0:
+        return None
+    narrowing = late_width / early_width
+    descending_highs = late_high < early_high
+    ascending_lows = late_low > early_low
+    converging = descending_highs and ascending_lows and narrowing < 0.85
+    # Breakout requires the most recent closed candle above pre-breakout
+    # resistance, with its close beyond the prior 20m upper envelope.
+    resistance = max(highs[-21:-1])
+    support = min(lows[-21:-1])
+    breakout = closes[-1] > resistance
+    return {
+        "triangle_converging": converging,
+        "triangle_width_ratio": round(narrowing, 3),
+        "triangle_resistance": resistance,
+        "triangle_support": support,
+        "triangle_breakout": bool(converging and breakout),
+        "triangle_status": ("KIRILIM" if converging and breakout
+                            else "SIKISMA" if converging else "YOK"),
     }
 
 
@@ -240,6 +283,13 @@ async def run(args):
                 f"| volatilite_genisleme={expansion_text} "
                 f"| RSI14={candidate['rsi']:.1f} "
                 f"| mum_kapanis_konumu={candidate['close_location']:.0%}")
+            pattern = candidate["pattern"]
+            if pattern:
+                lines.append(
+                    f"   Formasyon: {pattern['triangle_status']} "
+                    f"| direnc={pattern['triangle_resistance']:.8g} "
+                    f"| destek={pattern['triangle_support']:.8g} "
+                    f"| bant_orani={pattern['triangle_width_ratio']:.2f}x")
             try:
                 share, count = await trade_pressure(session, candidate["symbol"])
                 share_text = f"{share:.1f}%" if share is not None else "N/A"
@@ -273,7 +323,8 @@ async def run(args):
              "atr_pct": candidate["atr_pct"],
              "volatility_expansion": candidate["volatility_expansion"],
              "rsi": candidate["rsi"],
-             "close_location": candidate["close_location"]}
+             "close_location": candidate["close_location"],
+             "pattern": candidate["pattern"]}
             for candidate in ranked]}
 
 
