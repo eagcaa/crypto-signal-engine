@@ -38,8 +38,9 @@ async def main():
                 one_minute = await client.fetch_closed(symbol, interval="1m", limit=800)
                 for target in predict_prices(one_minute):
                     status = "PASS" if target.beats_naive else "FAIL"
+                    source = "MODEL" if target.beats_naive else "BASELINE_NO_EDGE"
                     print(f"{symbol} +{target.horizon_minutes}m: base={target.current:.4f} "
-                          f"estimate={target.estimate:.4f} "
+                          f"estimate={target.estimate:.4f} source={source} "
                           f"change={target.change_pct:+.3f}% asof={target.observed_at} "
                           f"validation={status} model_MAE={target.model_mae_pct:.4f}% "
                           f"naive_MAE={target.naive_mae_pct:.4f}% n={target.validation_count}")
