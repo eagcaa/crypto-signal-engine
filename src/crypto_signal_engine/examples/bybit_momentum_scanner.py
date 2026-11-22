@@ -9,6 +9,9 @@ import os
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from crypto_signal_engine.domain.candles import Candle
+from crypto_signal_engine.signals.historical_price_forecast import predict_prices
+
 import aiohttp
 
 BASE = "https://api.bybit.com"
@@ -118,6 +121,31 @@ async def scan_symbol(session, semaphore, ticker, now):
             print(f"SKIP {symbol}: {exc}")
             return None
 
+async def price_targets(session, symbol, now):
+    """Return model-gated 5m and 15m USDT point targets for a ranked coin."""
+    end = now.replace(second=0, microsecond=0)
+    candles = []
+    for page in range(2):
+        page_end = end - timedelta(minutes=page * 400)
+        page_start = page_end - timedelta(minutes=400)
+        result = await get(session, "/v5/market/kline", {
+            "category": "linear", "symbol": symbol, "interval": "1",
+            "start": int(page_start.timestamp() * 1000),
+            "end": int((page_end - timedelta(milliseconds=1)).timestamp() * 1000),
+            "limit": "400",
+        })
+        for row in result.get("list", []):
+            opened = datetime.fromtimestamp(int(row[0]) / 1000, UTC)
+            if not page_start <= opened < page_end:
+                continue
+            candles.append(Candle(
+                symbol=symbol, interval="1m", open_time=opened,
+                close_time=opened + timedelta(minutes=1),
+                open=D(row[1]), high=D(row[2]), low=D(row[3]),
+                close=D(row[4]), volume=D(row[5]), quote_volume=D(row[6])))
+    candles = sorted({c.open_time: c for c in candles}.values(), key=lambda c: c.open_time)
+    return predict_prices(candles)
+
 
 async def send_telegram(session, message):
     token, chat_id = os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
@@ -158,7 +186,20 @@ async def run(args):
                 f"| 5m={c['ret5']:+.2f}% 15m={c['ret15']:+.2f}% "
                 f"| volume={c['volume_ratio']:.2f}x | OI5m={oi_text} "
                 f"| breakout={'YES' if c['breakout'] else 'NO'}")
-        lines.append("Tarama sinyali; fiyat hedefi veya alim emri degildir.")
+        for candidate in selected:
+            try:
+                predictions = await price_targets(session, candidate["symbol"], now)
+                for prediction in predictions:
+                    source = "MODEL" if prediction.beats_naive else "BASELINE_NO_EDGE"
+                    lines.append(
+                        f"  {candidate['symbol']} +{prediction.horizon_minutes}m "
+                        f"hedef={prediction.estimate:.6f} USDT "
+                        f"({prediction.change_pct:+.3f}%) source={source} "
+                        f"model_MAE={prediction.model_mae_pct:.4f}% "
+                        f"naive_MAE={prediction.naive_mae_pct:.4f}%")
+            except (ValueError, RuntimeError, KeyError) as exc:
+                lines.append(f"  {candidate['symbol']} hedef hesaplanamadi: {exc}")
+        lines.append("Hedefler tahmindir; garanti veya alim emri degildir.")
         message = "\n".join(lines)
         print(message)
         if args.telegram and selected:
