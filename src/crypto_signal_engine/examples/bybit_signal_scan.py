@@ -26,7 +26,7 @@ async def scan() -> None:
                 print(
                     f"{signal.symbol} {signal.strategy}: {signal.side} "
                     f"entry={signal.entry} SL={signal.stop} TP={signal.take_profit} "
-                    f"leverage={signal.leverage}x notional={signal.notional} "
+                    f"leverage={str(signal.leverage) + 'x' if signal.leverage is not None else '-'} notional={signal.notional} "
                     f"reason={signal.reason}"
                 )
         except Exception as exc:
