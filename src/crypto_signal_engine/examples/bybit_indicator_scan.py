@@ -5,13 +5,27 @@ PYTHONPATH=src python -m crypto_signal_engine.examples.bybit_indicator_scan
 import asyncio
 
 from crypto_signal_engine.collectors.bybit.candles import BybitLinearCandleClient
+from crypto_signal_engine.collectors.bybit.perp_orderbook import BybitPerpOrderBookClient
+from datetime import UTC, datetime
 from crypto_signal_engine.signals.indicator_report import analyze
 from crypto_signal_engine.signals.direction_forecast import forecast
 
 
 async def main():
     client = BybitLinearCandleClient()
+    book_client = BybitPerpOrderBookClient()
     for symbol in ("BTCUSDT", "ETHUSDT", "SOLUSDT"):
+        try:
+            book = await book_client.fetch(symbol)
+            age = (datetime.now(UTC) - book.timestamp).total_seconds()
+            if age < -5 or age > 30:
+                print(f"{symbol} ORDERBOOK: STALE ({age:.1f}s), ignored")
+            else:
+                print(f"{symbol} ORDERBOOK: {book.pressure} imbalance={book.imbalance:+.2%} "
+                      f"bidUSDT={book.bid_notional:.0f} askUSDT={book.ask_notional:.0f} "
+                      f"spread={book.spread_bps:.2f}bps age={age:.1f}s")
+        except Exception as exc:
+            print(f"{symbol} ORDERBOOK: unavailable {type(exc).__name__}: {exc}")
         for interval in ("1m", "3m", "5m", "15m"):
             try:
                 candles = await client.fetch_closed(symbol, interval=interval, limit=120)
