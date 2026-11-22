@@ -1,0 +1,210 @@
+"""Bybit BTC/ETH/SOL multi-timeframe signal research. Read-only: never places orders.
+
+Run: PYTHONPATH=src python -m crypto_signal_engine.examples.bybit_signal_v1
+"""
+import argparse
+import asyncio
+from datetime import UTC, datetime
+from statistics import mean
+
+import aiohttp
+
+from crypto_signal_engine.examples.bybit_momentum_scanner import get
+
+SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
+INTERVALS = ("1", "3", "5", "15")
+
+
+def ema(values, period):
+    alpha = 2 / (period + 1)
+    result = values[0]
+    for value in values[1:]:
+        result = alpha * value + (1 - alpha) * result
+    return result
+
+
+def rsi(closes, period=14):
+    changes = [b - a for a, b in zip(closes, closes[1:])]
+    gains = sum(max(x, 0) for x in changes[-period:])
+    losses = sum(max(-x, 0) for x in changes[-period:])
+    return 100 * gains / (gains + losses) if gains + losses else 50.0
+
+
+def atr(rows, period=14):
+    ranges = []
+    for before, current in zip(rows, rows[1:]):
+        previous_close = before["close"]
+        ranges.append(max(current["high"] - current["low"],
+                          abs(current["high"] - previous_close),
+                          abs(current["low"] - previous_close)))
+    return mean(ranges[-period:])
+
+
+def summarize(rows):
+    if len(rows) < 60:
+        raise ValueError("At least 60 contiguous closed candles required")
+    if any(b["start"] - a["start"] != rows[0]["step"]
+           for a, b in zip(rows, rows[1:])):
+        raise ValueError("Missing candles in history")
+    closes = [r["close"] for r in rows]
+    volumes = [r["turnover"] for r in rows]
+    average = mean(volumes[-21:-1])
+    return {
+        "price": closes[-1],
+        "ema20": ema(closes[-60:], 20),
+        "ema50": ema(closes[-60:], 50),
+        "rsi": rsi(closes),
+        "atr": atr(rows),
+        "volume_ratio": volumes[-1] / average if average > 0 else 0,
+        "high20": max(r["high"] for r in rows[-21:-1]),
+        "low20": min(r["low"] for r in rows[-21:-1]),
+        "previous_high20": max(r["high"] for r in rows[-22:-2]),
+        "previous_low20": min(r["low"] for r in rows[-22:-2]),
+        "last": rows[-1],
+        "previous": rows[-2],
+    }
+
+
+def evaluate(frames, spread_pct, equity, risk_pct, cost_pct, max_spread_pct):
+    """Separate strategy evidence from leverage and sizing; no execution."""
+    f1, f3, f5, f15 = (frames[x] for x in INTERVALS)
+    price = f1["price"]
+    up = f15["price"] > f15["ema20"] > f15["ema50"]
+    down = f15["price"] < f15["ema20"] < f15["ema50"]
+    momentum_up = f3["price"] > f3["ema20"] and f3["rsi"] >= 52
+    momentum_down = f3["price"] < f3["ema20"] and f3["rsi"] <= 48
+    entry_up = f1["price"] > f1["ema20"] and f1["last"]["close"] > f1["last"]["open"]
+    entry_down = f1["price"] < f1["ema20"] and f1["last"]["close"] < f1["last"]["open"]
+    volume = f5["volume_ratio"] >= 1.3
+    trend_long = up and f5["price"] > f5["ema20"] and momentum_up and entry_up and volume
+    trend_short = down and f5["price"] < f5["ema20"] and momentum_down and entry_down and volume
+
+    # Breakout confirmed on previous 5m close, then latest closed 5m
+    # candle retests the former boundary without closing back through it.
+    previous = f5["previous"]
+    last = f5["last"]
+    retest_long = (up and previous["close"] > f5["previous_high20"]
+                   and last["low"] <= f5["previous_high20"]
+                   and last["close"] > f5["previous_high20"]
+                   and momentum_up and entry_up and volume)
+    retest_short = (down and previous["close"] < f5["previous_low20"]
+                    and last["high"] >= f5["previous_low20"]
+                    and last["close"] < f5["previous_low20"]
+                    and momentum_down and entry_down and volume)
+    strategies = {
+        "TREND": "LONG" if trend_long else "SHORT" if trend_short else "BEKLE",
+        "RETEST": "LONG" if retest_long else "SHORT" if retest_short else "BEKLE",
+    }
+    direction = strategies["RETEST"] if strategies["RETEST"] != "BEKLE" else strategies["TREND"]
+    reasons = [
+        f"15m trend={'YUKARI' if up else 'ASAGI' if down else 'KARISIK'}",
+        f"5m hacim={f5['volume_ratio']:.2f}x",
+        f"3m RSI={f3['rsi']:.1f}",
+        f"1m teyit={'LONG' if entry_up else 'SHORT' if entry_down else 'YOK'}",
+    ]
+    if spread_pct is None or spread_pct > max_spread_pct:
+        reasons.append("spread uygun degil veya veri yok")
+        direction = "BEKLE"
+    if direction == "BEKLE":
+        return dict(direction=direction, strategies=strategies, reasons=reasons,
+                    price=price, leverage=None, entry=None, stop=None, target=None,
+                    margin=None, roi=None)
+    support = min(f5["low20"], price - 1.5 * f5["atr"])
+    resistance = max(f5["high20"], price + 1.5 * f5["atr"])
+    stop = support if direction == "LONG" else resistance
+    distance = abs(price - stop) / price
+    if not 0 < distance <= 0.04:
+        reasons.append("teknik stop mesafesi uygun degil")
+        direction = "BEKLE"
+    # The leverage choice is risk-based, not score-based.
+    leverage = 5 if distance <= 0.012 and spread_pct <= 0.04 else 3
+    # cost_pct represents total entry+exit costs as % of notional, not margin.
+    # ROI on margin = leverage * (underlying return - round-trip cost).
+    required_move = 0.10 / leverage + cost_pct / 100
+    target = price * (1 + required_move) if direction == "LONG" else price * (1 - required_move)
+    reward_risk = required_move / (distance + cost_pct / 100)
+    if target <= 0 or reward_risk < 1.5:
+        reasons.append(f"hedef/stop orani yetersiz ({reward_risk:.2f})")
+        direction = "BEKLE"
+    if direction == "BEKLE":
+        return dict(direction=direction, strategies=strategies, reasons=reasons,
+                    price=price, leverage=None, entry=None, stop=None, target=None,
+                    margin=None, roi=None)
+    risk_usdt = equity * risk_pct / 100
+    notional = risk_usdt / (distance + cost_pct / 100)
+    margin = notional / leverage
+    if margin > equity * 0.25:
+        margin = equity * 0.25
+        reasons.append("teminat sermayenin %25'i ile sinirlandi")
+    reasons.append(f"hedef/stop={reward_risk:.2f}")
+    return dict(direction=direction, strategies=strategies, reasons=reasons,
+                price=price, leverage=leverage, entry=price, stop=stop,
+                target=target, margin=margin, roi=10.0)
+
+
+async def fetch_frame(session, symbol, interval, now):
+    result = await get(session, "/v5/market/kline", {
+        "category": "linear", "symbol": symbol, "interval": interval, "limit": "100"})
+    step = int(interval) * 60_000
+    cutoff = int(now.timestamp() * 1000) // step * step
+    rows = []
+    for raw in result.get("list", []):
+        start = int(raw[0])
+        if start >= cutoff:
+            continue
+        rows.append({"start": start, "step": step,
+                     "open": float(raw[1]), "high": float(raw[2]),
+                     "low": float(raw[3]), "close": float(raw[4]),
+                     "turnover": float(raw[6])})
+    rows.sort(key=lambda row: row["start"])
+    return summarize(rows)
+
+
+async def scan_symbol(session, symbol, now, args):
+    frames = dict(zip(INTERVALS, await asyncio.gather(*(
+        fetch_frame(session, symbol, interval, now) for interval in INTERVALS))))
+    ticker = await get(session, "/v5/market/tickers", {
+        "category": "linear", "symbol": symbol})
+    item = ticker["list"][0]
+    bid, ask = float(item["bid1Price"]), float(item["ask1Price"])
+    spread = (ask - bid) / ((ask + bid) / 2) * 100 if bid > 0 and ask >= bid else None
+    return evaluate(frames, spread, args.equity, args.risk_pct,
+                    args.cost_pct, args.max_spread_pct)
+
+
+async def run(args):
+    now = datetime.now(UTC)
+    print(f"BYBIT AI SIGNAL BOT V1 | {now:%Y-%m-%d %H:%M} UTC | SADECE SINYAL")
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=25)) as session:
+        for symbol in SYMBOLS:
+            try:
+                result = await scan_symbol(session, symbol, now, args)
+                print(f"\n{symbol} | {result['direction']} | fiyat={result['price']:.8g}")
+                print("  Stratejiler: " + " | ".join(
+                    f"{key}={value}" for key, value in result["strategies"].items()))
+                if result["direction"] != "BEKLE":
+                    print(f"  Giris={result['entry']:.8g} | TP={result['target']:.8g} "
+                          f"| SL={result['stop']:.8g} | {result['leverage']}x "
+                          f"| teminat={result['margin']:.2f} USDT | hedef net ROI~%10")
+                print("  Neden: " + "; ".join(result["reasons"]))
+            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError,
+                    TypeError, RuntimeError, IndexError, ZeroDivisionError) as exc:
+                print(f"\n{symbol} | BEKLE | veri hatasi: {exc}")
+    print("\nHedefler varsayimsal maliyetlerle hesaplanir; backtest edilmemistir. Emir gonderilmez.")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--equity", type=float, default=1000, help="Example account equity USDT")
+    parser.add_argument("--risk-pct", type=float, default=1.0, help="Equity risk per signal (%)")
+    parser.add_argument("--cost-pct", type=float, default=0.15,
+                        help="Estimated round-trip fees+slippage as % of notional")
+    parser.add_argument("--max-spread-pct", type=float, default=0.10)
+    args = parser.parse_args()
+    if args.equity <= 0 or not 0 < args.risk_pct <= 2 or not 0 <= args.cost_pct <= 2:
+        parser.error("Invalid risk parameters")
+    asyncio.run(run(args))
+
+
+if __name__ == "__main__":
+    main()
