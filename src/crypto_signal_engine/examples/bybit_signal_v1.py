@@ -196,6 +196,75 @@ async def raw_forecasts(session, symbol, now):
     ]
 
 
+async def market_flow(session, symbol):
+    """Snapshot of recent taker trades and visible order-book liquidity."""
+    trades, book = await asyncio.gather(
+        get(session, "/v5/market/recent-trade", {
+            "category": "linear", "symbol": symbol, "limit": "1000"}),
+        get(session, "/v5/market/orderbook", {
+            "category": "linear", "symbol": symbol, "limit": "50"}))
+    buy = sell = 0.0
+    for trade in trades.get("list", []):
+        notional = float(trade["price"]) * float(trade["size"])
+        if trade["side"] == "Buy":
+            buy += notional
+        elif trade["side"] == "Sell":
+            sell += notional
+    total = buy + sell
+    if total <= 0:
+        raise ValueError("Recent trade volume unavailable")
+    bids = [(float(price), float(qty)) for price, qty in book.get("b", [])]
+    asks = [(float(price), float(qty)) for price, qty in book.get("a", [])]
+    if not bids or not asks:
+        raise ValueError("Order book unavailable")
+    mid = (bids[0][0] + asks[0][0]) / 2
+    # Only near-mid liquidity; deeper orders are not treated as immediate pressure.
+    bid_usdt = sum(price * qty for price, qty in bids if price >= mid * 0.995)
+    ask_usdt = sum(price * qty for price, qty in asks if price <= mid * 1.005)
+    if bid_usdt + ask_usdt <= 0:
+        raise ValueError("Order book near-mid liquidity unavailable")
+    return {
+        "buy_pct": 100 * buy / total,
+        "sell_pct": 100 * sell / total,
+        "bid_pct": 100 * bid_usdt / (bid_usdt + ask_usdt),
+        "ask_pct": 100 * ask_usdt / (bid_usdt + ask_usdt),
+    }
+
+
+def early_view(frames, flow, forecasts):
+    """Directional research view, not an order-entry recommendation."""
+    f1, f3, f5, f15 = (frames[x] for x in INTERVALS)
+    score = 0
+    reasons = []
+    trend = 1 if f15["price"] > f15["ema20"] > f15["ema50"] else (
+        -1 if f15["price"] < f15["ema20"] < f15["ema50"] else 0)
+    score += 2 * trend
+    reasons.append(f"15dk trend={trend:+d}")
+    momentum = 1 if f3["rsi"] >= 55 else -1 if f3["rsi"] <= 45 else 0
+    score += momentum
+    reasons.append(f"3dk RSI={f3['rsi']:.1f}")
+    candle = 1 if f1["last"]["close"] > f1["last"]["open"] else (
+        -1 if f1["last"]["close"] < f1["last"]["open"] else 0)
+    score += candle
+    reasons.append(f"son 1dk mum={candle:+d}")
+    trade_side = 1 if flow["buy_pct"] >= 55 else -1 if flow["sell_pct"] >= 55 else 0
+    score += 2 * trade_side
+    reasons.append(f"agresif alis=%{flow['buy_pct']:.1f}")
+    book_side = 1 if flow["bid_pct"] >= 55 else -1 if flow["ask_pct"] >= 55 else 0
+    score += book_side
+    reasons.append(f"yakin emir defteri alis=%{flow['bid_pct']:.1f}")
+    # Model is a weak directional input, never the sole deciding factor.
+    forecast_changes = [(estimate / float(pred.current) - 1) * 100
+                        for pred, estimate in forecasts]
+    forecast_side = 1 if all(x > 0 for x in forecast_changes) else (
+        -1 if all(x < 0 for x in forecast_changes) else 0)
+    score += forecast_side
+    reasons.append(f"model yon={forecast_side:+d}")
+    label = "ERKEN LONG ADAYI" if score >= 3 else (
+        "ERKEN SHORT ADAYI" if score <= -3 else "KARISIK / BEKLE")
+    return label, score, reasons
+
+
 async def scan_symbol(session, symbol, now, args):
     frames = dict(zip(INTERVALS, await asyncio.gather(*(
         fetch_frame(session, symbol, interval, now) for interval in INTERVALS))))
@@ -204,8 +273,10 @@ async def scan_symbol(session, symbol, now, args):
     item = ticker["list"][0]
     bid, ask = float(item["bid1Price"]), float(item["ask1Price"])
     spread = (ask - bid) / ((ask + bid) / 2) * 100 if bid > 0 and ask >= bid else None
-    return evaluate(frames, spread, args.equity, args.risk_pct,
-                    args.cost_pct, args.max_spread_pct)
+    result = evaluate(frames, spread, args.equity, args.risk_pct,
+                      args.cost_pct, args.max_spread_pct)
+    result["frames"] = frames
+    return result
 
 
 async def run(args):
@@ -224,6 +295,16 @@ async def run(args):
                           f"| teminat={result['margin']:.2f} USDT | hedef net ROI~%10")
                 print("  Neden: " + "; ".join(result["reasons"]))
                 try:
+                    flow = await market_flow(session, symbol)
+                    print(f"  Islemler: agresif alis=%{flow['buy_pct']:.1f} "
+                          f"| agresif satis=%{flow['sell_pct']:.1f} "
+                          f"| emir defteri yakin alis=%{flow['bid_pct']:.1f} "
+                          f"| satis=%{flow['ask_pct']:.1f}")
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError,
+                        TypeError, RuntimeError, IndexError, ZeroDivisionError) as exc:
+                    flow = None
+                    print(f"  Alis/satis verisi alinamadi: {exc}")
+                try:
                     forecasts = await raw_forecasts(session, symbol, now)
                     for forecast, estimate in forecasts:
                         change = (estimate / float(forecast.current) - 1) * 100
@@ -233,7 +314,12 @@ async def run(args):
                               f"| degisim={change:+.3f}% | yon={tendency} | {label} "
                               f"| model hata={float(forecast.model_mae_pct):.3f}% "
                               f"| baz hata={float(forecast.naive_mae_pct):.3f}%")
-                except (ValueError, RuntimeError, KeyError, ZeroDivisionError) as exc:
+                    if flow is not None:
+                        label, score, evidence = early_view(result["frames"], flow, forecasts)
+                        print(f"  Erken piyasa gorunumu: {label} | puan={score:+d}/8")
+                        print("  Kanit: " + "; ".join(evidence))
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, RuntimeError,
+                        KeyError, ZeroDivisionError, IndexError, TypeError) as exc:
                     print(f"  5/15dk fiyat tahmini hesaplanamadi: {exc}")
             except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError,
                     TypeError, RuntimeError, IndexError, ZeroDivisionError) as exc:
