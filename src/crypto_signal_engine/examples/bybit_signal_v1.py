@@ -9,7 +9,7 @@ from statistics import mean
 
 import aiohttp
 
-from crypto_signal_engine.examples.bybit_momentum_scanner import get
+from crypto_signal_engine.examples.bybit_momentum_scanner import get, price_targets
 
 SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
 INTERVALS = ("1", "3", "5", "15")
@@ -187,6 +187,16 @@ async def run(args):
                           f"| SL={result['stop']:.8g} | {result['leverage']}x "
                           f"| teminat={result['margin']:.2f} USDT | hedef net ROI~%10")
                 print("  Neden: " + "; ".join(result["reasons"]))
+                try:
+                    forecasts = await price_targets(session, symbol, now)
+                    for forecast in forecasts:
+                        label = "MODEL" if forecast.beats_naive else "BAZ FIYAT (MODEL GUVENILIR DEGIL)"
+                        print(f"  {forecast.horizon_minutes}dk tahmini={float(forecast.estimate):.8g} USDT "
+                              f"| degisim={float(forecast.change_pct):+.3f}% | {label} "
+                              f"| model hata={float(forecast.model_mae_pct):.3f}% "
+                              f"| baz hata={float(forecast.naive_mae_pct):.3f}%")
+                except (ValueError, RuntimeError, KeyError, ZeroDivisionError) as exc:
+                    print(f"  5/15dk fiyat tahmini hesaplanamadi: {exc}")
             except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError,
                     TypeError, RuntimeError, IndexError, ZeroDivisionError) as exc:
                 print(f"\n{symbol} | BEKLE | veri hatasi: {exc}")
