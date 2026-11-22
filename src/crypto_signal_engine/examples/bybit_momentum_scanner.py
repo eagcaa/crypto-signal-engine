@@ -178,35 +178,58 @@ async def run(args):
             scan_symbol(session, semaphore, ticker, now) for ticker in tickers])
         ranked = sorted((c for c in candidates if c is not None),
                         key=lambda c: (c["score"], c["ret5"]), reverse=True)
-        selected = [c for c in ranked if c["score"] >= args.min_score][:args.top]
-        lines = [f"BYBIT YUKSELIS ADAYLARI | {now:%Y-%m-%d %H:%M} UTC"]
-        if not selected:
-            lines.append("Esik ustunde aday yok; sinyal uretilemiyor.")
-        for i, c in enumerate(selected, 1):
-            oi_text = (f"{c['oi_change_pct']:+.2f}%" if c["oi_change_pct"] is not None
-                       else "N/A")
-            lines.append(
-                f"{i}. {c['symbol']} | score={c['score']}/10 | price={c['price']:.6g} "
-                f"| 5m={c['ret5']:+.2f}% 15m={c['ret15']:+.2f}% "
-                f"| volume={c['volume_ratio']:.2f}x | OI5m={oi_text} "
-                f"| breakout={'YES' if c['breakout'] else 'NO'}")
-        for candidate in selected:
+        # Only publish candidates supported by both market momentum and a
+        # positive, baseline-beating numeric 5-minute forecast.
+        shortlist = [
+            candidate for candidate in ranked
+            if candidate["score"] >= args.min_score
+            and candidate["volume_ratio"] >= 1.5
+            and (candidate["breakout"] or
+                 (candidate["oi_change_pct"] is not None
+                  and candidate["oi_change_pct"] > 0.3))
+        ][:args.max_symbols]
+        confirmed = []
+        for candidate in shortlist:
             try:
                 predictions = await price_targets(session, candidate["symbol"], now)
-                for prediction in predictions:
-                    source = "MODEL" if prediction.beats_naive else "BASELINE_NO_EDGE"
-                    lines.append(
-                        f"  {candidate['symbol']} +{prediction.horizon_minutes}m "
-                        f"hedef={prediction.estimate:.6f} USDT "
-                        f"({prediction.change_pct:+.3f}%) source={source} "
-                        f"model_MAE={prediction.model_mae_pct:.4f}% "
-                        f"naive_MAE={prediction.naive_mae_pct:.4f}%")
-            except (ValueError, RuntimeError, KeyError) as exc:
-                lines.append(f"  {candidate['symbol']} hedef hesaplanamadi: {exc}")
+            except (ValueError, RuntimeError, KeyError, ZeroDivisionError) as exc:
+                print(f"SKIP {candidate['symbol']}: forecast unavailable: {exc}")
+                continue
+            five = next((p for p in predictions if p.horizon_minutes == 5), None)
+            fifteen = next((p for p in predictions if p.horizon_minutes == 15), None)
+            if five is None or not five.beats_naive or five.change_pct <= 0:
+                continue
+            if fifteen is not None and fifteen.beats_naive and fifteen.change_pct < 0:
+                continue
+            confirmed.append((candidate, predictions))
+            if len(confirmed) >= args.top:
+                break
+
+        lines = [f"BYBIT ONAYLI YUKSELIS ADAYLARI | {now:%Y-%m-%d %H:%M} UTC"]
+        if not confirmed:
+            lines.append("Momentum ve pozitif fiyat tahmini birlikte dogrulanmadi; sinyal yok.")
+        for i, (candidate, predictions) in enumerate(confirmed, 1):
+            oi = candidate["oi_change_pct"]
+            oi_text = f"{oi:+.2f}%" if oi is not None else "N/A"
+            lines.append(
+                f"{i}. {candidate['symbol']} | score={candidate['score']}/10 "
+                f"| price={candidate['price']:.8g} USDT "
+                f"| 5m={candidate['ret5']:+.2f}% 15m={candidate['ret15']:+.2f}% "
+                f"| volume={candidate['volume_ratio']:.2f}x "
+                f"| OI5m={oi_text} "
+                f"| breakout={'YES' if candidate['breakout'] else 'NO'}")
+            for prediction in predictions:
+                source = "MODEL" if prediction.beats_naive else "BASELINE_NO_EDGE"
+                lines.append(
+                    f"  +{prediction.horizon_minutes}m hedef="
+                    f"{prediction.estimate:.8f} USDT "
+                    f"({prediction.change_pct:+.3f}%) source={source} "
+                    f"model_MAE={prediction.model_mae_pct:.4f}% "
+                    f"naive_MAE={prediction.naive_mae_pct:.4f}%")
         lines.append("Hedefler tahmindir; garanti veya alim emri degildir.")
         message = "\n".join(lines)
         print(message)
-        if args.telegram and selected:
+        if args.telegram and confirmed:
             await send_telegram(session, message)
 
 
