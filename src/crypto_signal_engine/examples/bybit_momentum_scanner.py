@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from crypto_signal_engine.domain.candles import Candle
+from crypto_signal_engine.examples.market_watch import auto_forecast_settings
 from crypto_signal_engine.signals.historical_price_forecast import predict_prices
 
 import aiohttp
@@ -220,6 +221,41 @@ async def trade_pressure(session, symbol):
                if t.get("side") == "Sell")
     return (buy / (buy + sell) * 100 if buy + sell else None, len(trades))
 
+def directional_view(candidate, buy_share):
+    """Conservative directional heuristic, not a validated trade recommendation."""
+    price = candidate["price"]
+    atr = price * candidate["atr_pct"] / 100
+    pattern = candidate["pattern"] or {}
+    support = pattern.get("triangle_support")
+    resistance = pattern.get("triangle_resistance")
+    bullish = (
+        candidate["ret5"] > 0.15 and candidate["ret15"] > 0.20
+        and candidate["volume_ratio"] >= 1.2
+        and buy_share is not None and buy_share >= 58
+        and candidate["close_location"] >= 0.55
+    )
+    bearish = (
+        candidate["ret5"] < -0.15 and candidate["ret15"] < -0.20
+        and candidate["volume_ratio"] >= 1.2
+        and buy_share is not None and buy_share <= 42
+        and candidate["close_location"] <= 0.45
+    )
+    if bullish and candidate["rsi"] < 80:
+        direction = "LONG"
+        stop = min(price - 1.5 * atr, support) if support else price - 1.5 * atr
+        targets = (price + atr, price + 2 * atr)
+        reason = f"ivme pozitif, hacim {candidate['volume_ratio']:.2f}x, alis %{buy_share:.1f}"
+    elif bearish and candidate["rsi"] > 20:
+        direction = "SHORT"
+        stop = max(price + 1.5 * atr, resistance) if resistance else price + 1.5 * atr
+        targets = (price - atr, price - 2 * atr)
+        reason = f"ivme negatif, hacim {candidate['volume_ratio']:.2f}x, alis %{buy_share:.1f}"
+    else:
+        return "BEKLE", None, None, "Yeterli ve uyumlu yon teyidi yok"
+    if atr <= 0 or min(targets) <= 0:
+        return "BEKLE", None, None, "Hedef hesaplanamadi"
+    return direction, stop, targets, reason
+
 
 async def send_telegram(session, message):
     token, chat_id = os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
@@ -239,8 +275,22 @@ async def run(args):
     async with aiohttp.ClientSession(timeout=timeout) as session:
         instruments = await get_instruments(session)
         ticker_data = await get(session, "/v5/market/tickers", {"category": "linear"})
-        tickers = select_symbols(instruments, ticker_data["list"],
-                                 args.min_turnover, args.max_symbols)
+        if args.market:
+            tickers = select_symbols(instruments, ticker_data["list"],
+                                     args.min_turnover, args.max_symbols)
+        else:
+            configured, _ = auto_forecast_settings()
+            configured_set = set(configured)
+            tickers = [t for t in ticker_data["list"]
+                       if t.get("symbol") in configured_set]
+            listed = {i["symbol"] for i in instruments
+                      if i.get("status") == "Trading"
+                      and i.get("contractType") == "LinearPerpetual"}
+            tickers = [t for t in tickers if t["symbol"] in listed]
+            tickers.sort(key=lambda t: configured.index(t["symbol"]))
+            missing = configured_set - {t["symbol"] for t in tickers}
+            if missing:
+                print("Bybit perpetual bulunamadi: " + ", ".join(sorted(missing)))
         print(f"Scanning {len(tickers)} liquid USDT perpetual symbols...")
         now = datetime.now(UTC)
         semaphore = asyncio.Semaphore(6)
@@ -250,12 +300,30 @@ async def run(args):
                         key=lambda c: (c["score"], c["ret5"]), reverse=True)
         # Discovery and forecasting are separate: a weak regression model
         # must not hide an early-moving coin from the watchlist.
-        watchlist = ranked[:args.top]
-        lines = [f"BYBIT ERKEN HAREKET RADARI | {now:%Y-%m-%d %H:%M} UTC"]
+        watchlist = ranked[:args.top] if args.market else [
+            c for t in tickers for c in ranked if c["symbol"] == t["symbol"]]
+        if not args.market:
+            lines_header = "BYBIT CONFIG COIN YON ANALIZI"
+        else:
+            lines_header = "BYBIT ERKEN HAREKET RADARI"
+        lines = [f"{lines_header} | {now:%Y-%m-%d %H:%M} UTC"]
         if not watchlist:
             lines.append("Yeterli kapali mum verisi bulunan coin yok.")
         alerts = []
         for i, candidate in enumerate(watchlist, 1):
+            if not args.market:
+                try:
+                    share, _ = await trade_pressure(session, candidate["symbol"])
+                except (RuntimeError, ValueError, KeyError, TypeError):
+                    share = None
+                direction, stop, targets, reason = directional_view(candidate, share)
+                lines.append(f"{i}. {candidate['symbol']} | {direction} | fiyat={candidate['price']:.8g} USDT")
+                if targets is not None:
+                    lines.append(f"   Hedef1={targets[0]:.8g} | Hedef2={targets[1]:.8g} | Stop={stop:.8g} USDT [ATR SENARYOSU]")
+                else:
+                    lines.append("   Hedef/Stop=YOK (BEKLE)")
+                lines.append(f"   Neden: {reason}")
+                continue
             oi = candidate["oi_change_pct"]
             oi_text = f"{oi:+.2f}%" if oi is not None else "N/A"
             reasons = []
@@ -309,7 +377,7 @@ async def run(args):
             # Alert on radar evidence, not on a model's unproven directional gate.
             if candidate["score"] >= args.min_score:
                 alerts.append(candidate["symbol"])
-        lines.append("Radar siralamasi erken hareket arastirmasidir; yukselis garantisi veya alim emri degildir.")
+        lines.append("Yon ve ATR seviyeleri kural bazli senaryodur; dogrulanmis tahmin veya emir degildir.")
         message = "\n".join(lines)
         print(message)
         if args.telegram and alerts:
@@ -398,6 +466,7 @@ def main():
     parser.add_argument("--min-turnover", type=float, default=5_000_000)
     parser.add_argument("--max-symbols", type=int, default=150)
     parser.add_argument("--top", type=int, default=5)
+    parser.add_argument("--market", action="store_true", help="Scan broad market instead of configured coins")
     parser.add_argument("--min-score", type=int, default=6)
     parser.add_argument("--telegram", action="store_true")
     parser.add_argument("--watch", action="store_true", help="Repeat scan and record outcomes")
