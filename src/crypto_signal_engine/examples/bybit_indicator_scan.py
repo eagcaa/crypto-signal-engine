@@ -9,12 +9,14 @@ from crypto_signal_engine.collectors.bybit.perp_orderbook import BybitPerpOrderB
 from datetime import UTC, datetime
 from crypto_signal_engine.signals.indicator_report import analyze
 from crypto_signal_engine.signals.direction_forecast import forecast
+from crypto_signal_engine.signals.combined_forecast import combine_forecast
 
 
 async def main():
     client = BybitLinearCandleClient()
     book_client = BybitPerpOrderBookClient()
     for symbol in ("BTCUSDT", "ETHUSDT", "SOLUSDT"):
+        book = None
         try:
             book = await book_client.fetch(symbol)
             age = (datetime.now(UTC) - book.timestamp).total_seconds()
@@ -40,6 +42,9 @@ async def main():
                 labels = {"RISE_EXPECTED": "YUKSELIS BEKLENTISI", "FALL_EXPECTED": "DUSUS BEKLENTISI", "UNCERTAIN": "YON BELIRSIZ"}
                 print(f"  TAHMIN: {labels[prediction.direction]} | guc={prediction.strength}")
                 print(f"  {prediction.explanation}")
+                combined = combine_forecast(prediction, book)
+                print(f"  SONUC: {labels[combined.direction]} | orderbook={combined.confirmation}")
+                print(f"  {combined.explanation}")
             except Exception as exc:
                 print(f"{symbol} {interval}: DATA ERROR {type(exc).__name__}: {exc}")
 
