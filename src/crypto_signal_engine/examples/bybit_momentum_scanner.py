@@ -40,7 +40,12 @@ def select_symbols(instruments, tickers, min_turnover, max_symbols):
         (t for t in tickers if t.get("symbol") in eligible
          and D(str(t.get("turnover24h") or "0")) >= D(str(min_turnover))),
         key=lambda t: D(str(t["turnover24h"])), reverse=True)
-    return ranked[:max_symbols]
+    selected = ranked[:max_symbols]
+    # Always include ETC when it meets the same liquidity and listing filters.
+    etc = next((t for t in ranked if t["symbol"] == "ETCUSDT"), None)
+    if etc and all(t["symbol"] != "ETCUSDT" for t in selected):
+        selected = selected[:-1] + [etc]
+    return selected
 
 
 def score_candidate(symbol, rows, oi_change_pct, turnover24h, now):
