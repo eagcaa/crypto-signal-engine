@@ -422,11 +422,15 @@ async def run(args, db=None):
                               f"{key}={value}" for key, value in details["parts"].items()))
                     if details["reasons"]:
                         print("    Engeller: " + "; ".join(details["reasons"]))
-                if result["direction"] in ("LONG", "SHORT"):
-                    decision = scores[result["direction"]]
+                final_direction = result["direction"]
+                if final_direction in ("LONG", "SHORT"):
+                    decision = scores[final_direction]
                     if decision["status"] != "GUCLU ADAY":
-                        print(f"  UYARI: Teknik {result['direction']} sinyali "
+                        print(f"  UYARI: Teknik {final_direction} sinyali "
                               f"puan/akis filtresini gecmedi; ISLEM ADAYI DEGIL.")
+                        final_direction = "BEKLE"
+                print(f"  NIHAI SINYAL={final_direction} | "
+                      f"teknik={result['direction']} | puan ve islem akisi kontrol edildi")
                 try:
                     forecasts = await raw_forecasts(session, symbol, now)
                     observed_at = datetime.now(UTC)
