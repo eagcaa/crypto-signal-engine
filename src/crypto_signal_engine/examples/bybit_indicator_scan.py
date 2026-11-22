@@ -12,11 +12,13 @@ from crypto_signal_engine.signals.indicator_report import analyze
 from crypto_signal_engine.signals.direction_forecast import forecast
 from crypto_signal_engine.signals.combined_forecast import combine_forecast
 from crypto_signal_engine.signals.forecast_journal import connect, record, settle, summary
+from crypto_signal_engine.signals.price_scenario import scenarios
 
 
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--track', action='store_true', help='Persist predictions and settle earlier forecasts')
+    parser.add_argument('--price-targets', action='store_true', help='Show uncalibrated 5m/15m price scenarios from closed 1m candles')
     parser.add_argument('--summary', action='store_true', help='Print saved forecast accuracy and exit')
     parser.add_argument('--db', default='data/bybit_forecasts.sqlite3')
     args = parser.parse_args()
@@ -31,6 +33,17 @@ async def main():
     client = BybitLinearCandleClient()
     book_client = BybitPerpOrderBookClient()
     for symbol in ("BTCUSDT", "ETHUSDT", "SOLUSDT"):
+        if args.price_targets:
+            try:
+                one_minute = await client.fetch_closed(symbol, interval="1m", limit=120)
+                for target in scenarios(one_minute):
+                    print(f"{symbol} +{target.horizon_minutes}m: base={target.current:.4f} "
+                          f"estimate={target.estimate:.4f} "
+                          f"range=[{target.lower:.4f}, {target.upper:.4f}] "
+                          f"change={target.expected_change_pct:+.3f}% "
+                          f"asof={target.observed_at} (uncalibrated scenario)")
+            except Exception as exc:
+                print(f"{symbol} PRICE TARGET ERROR: {type(exc).__name__}: {exc}")
         if conn is not None:
             try:
                 history = await client.fetch_closed(symbol, interval="1m", limit=999)
