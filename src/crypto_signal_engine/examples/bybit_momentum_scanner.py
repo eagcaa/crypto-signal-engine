@@ -77,7 +77,11 @@ def score_candidate(symbol, rows, oi_change_pct, turnover24h, now):
     score = (2 * (ret5 > .15) + 2 * (ret15 > .25)
              + 2 * (volume_ratio >= 1.5) + 2 * breakout
              + 2 * (oi_change_pct is not None and oi_change_pct > .3))
-    # Do not label a sharp short-term reversal as a bullish candidate.\n    if ret5 <= 0 or ret15 <= 0:\n        return None\n    return {\n        "symbol": symbol, "price": prices[-1], "ret5": ret5,
+    # Do not label a sharp short-term reversal as a bullish candidate.
+    if ret5 <= 0 or ret15 <= 0:
+        return None
+    return {
+        "symbol": symbol, "price": prices[-1], "ret5": ret5,
         "ret15": ret15, "volume_ratio": volume_ratio,
         "oi_change_pct": oi_change_pct, "breakout": breakout,
         "score": score, "turnover24h": float(turnover24h),
