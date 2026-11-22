@@ -252,6 +252,60 @@ async def market_flow(session, symbol):
     }
 
 
+def score_signals(frames, flow, spread_pct, max_spread_pct):
+    """Separate, explainable LONG/SHORT scores; heuristic, not calibrated probabilities."""
+    f1, f3, f5, f15 = (frames[x] for x in INTERVALS)
+    scores = {}
+    for side in ("LONG", "SHORT"):
+        sign = 1 if side == "LONG" else -1
+        trend = (f15["price"] > f15["ema20"] > f15["ema50"] if sign > 0
+                 else f15["price"] < f15["ema20"] < f15["ema50"])
+        structure = (f5["price"] > f5["ema20"] if sign > 0
+                     else f5["price"] < f5["ema20"])
+        breakout = (f5["price"] > f5["high20"] if sign > 0
+                    else f5["price"] < f5["low20"])
+        momentum = (f3["price"] > f3["ema20"] and f3["rsi"] >= 52 if sign > 0
+                    else f3["price"] < f3["ema20"] and f3["rsi"] <= 48)
+        volume = f5["volume_ratio"] >= 1.3
+        entry = (f1["price"] > f1["ema20"] and
+                 f1["last"]["close"] > f1["last"]["open"] if sign > 0 else
+                 f1["price"] < f1["ema20"] and
+                 f1["last"]["close"] < f1["last"]["open"])
+        spread_ok = spread_pct is not None and 0 <= spread_pct <= max_spread_pct
+        volatility_ok = 0 < f5["atr"] / f5["price"] <= 0.04
+        parts = {
+            "15m_trend": 25 if trend else 0,
+            "5m_structure": 25 if structure or breakout else 0,
+            "3m_momentum": (12 if momentum else 0) + (8 if volume else 0),
+            "1m_entry": 15 if entry else 0,
+            "risk": (8 if spread_ok else 0) + (7 if volatility_ok else 0),
+        }
+        score = sum(parts.values())
+        # Last minute is most relevant to entry; full recent-trade sample
+        # can be less than 2 minutes on liquid markets.
+        one_min = flow["windows"].get(1) if flow is not None else None
+        recent = (one_min if one_min is not None else
+                  flow["buy_pct"] if flow is not None else None)
+        opposing = (recent is not None and
+                    ((side == "LONG" and recent <= 35) or
+                     (side == "SHORT" and recent >= 65)))
+        stale = flow is None or flow["trade_age_seconds"] > 10
+        # Do not promote a technical signal when fresh taker flow strongly opposes it.
+        blocked = opposing or stale or not spread_ok
+        reasons = []
+        if opposing:
+            reasons.append(f"ters agresif islem baskisi (alis %{recent:.1f})")
+        if stale:
+            reasons.append("canli islem verisi eksik veya eski")
+        if not spread_ok:
+            reasons.append("spread uygun degil")
+        status = ("BEKLE" if blocked or score < 65 else
+                  "GUCLU ADAY" if score >= 80 else "IZLEME")
+        scores[side] = {"score": score, "parts": parts,
+                        "blocked": blocked, "status": status, "reasons": reasons}
+    return scores
+
+
 def adjusted_forecast(prediction, estimate, live_price, frames, flow):
     """Experimental scenario using live order flow; NOT backtested or calibrated."""
     horizon = prediction.horizon_minutes
@@ -325,6 +379,7 @@ async def scan_symbol(session, symbol, now, args):
                       args.cost_pct, args.max_spread_pct)
     result["frames"] = frames
     result["live_price"] = float(item["lastPrice"])
+    result["spread_pct"] = spread
     return result
 
 
@@ -359,6 +414,19 @@ async def run(args, db=None):
                         TypeError, RuntimeError, IndexError, ZeroDivisionError) as exc:
                     flow = None
                     print(f"  Alis/satis verisi alinamadi: {exc}")
+                scores = score_signals(result["frames"], flow, result["spread_pct"],
+                                       args.max_spread_pct)
+                for side, details in scores.items():
+                    print(f"  {side} PUAN={details['score']}/100 | {details['status']} "
+                          f"| " + ", ".join(
+                              f"{key}={value}" for key, value in details["parts"].items()))
+                    if details["reasons"]:
+                        print("    Engeller: " + "; ".join(details["reasons"]))
+                if result["direction"] in ("LONG", "SHORT"):
+                    decision = scores[result["direction"]]
+                    if decision["status"] != "GUCLU ADAY":
+                        print(f"  UYARI: Teknik {result['direction']} sinyali "
+                              f"puan/akis filtresini gecmedi; ISLEM ADAYI DEGIL.")
                 try:
                     forecasts = await raw_forecasts(session, symbol, now)
                     observed_at = datetime.now(UTC)
