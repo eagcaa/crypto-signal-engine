@@ -4,6 +4,8 @@ Run: PYTHONPATH=src python -m crypto_signal_engine.examples.bybit_signal_v1
 """
 import argparse
 import asyncio
+
+from crypto_signal_engine.examples.bybit_prediction_tracker import connect, record, settle, report
 from datetime import UTC, datetime
 from statistics import mean
 
@@ -326,7 +328,7 @@ async def scan_symbol(session, symbol, now, args):
     return result
 
 
-async def run(args):
+async def run(args, db=None):
     now = datetime.now(UTC)
     print(f"BYBIT AI SIGNAL BOT V1 | {now:%Y-%m-%d %H:%M} UTC | SADECE SINYAL")
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=25)) as session:
@@ -359,6 +361,7 @@ async def run(args):
                     print(f"  Alis/satis verisi alinamadi: {exc}")
                 try:
                     forecasts = await raw_forecasts(session, symbol, now)
+                    observed_at = datetime.now(UTC)
                     for forecast, estimate in forecasts:
                         change = (estimate / float(forecast.current) - 1) * 100
                         label = "MODEL BAZDAN IYI" if forecast.beats_naive else "MODEL ZAYIF"
@@ -367,9 +370,18 @@ async def run(args):
                               f"| degisim={change:+.3f}% | yon={tendency} | {label} "
                               f"| model hata={float(forecast.model_mae_pct):.3f}% "
                               f"| baz hata={float(forecast.naive_mae_pct):.3f}%")
+                        if db is not None:
+                            record(db, symbol, observed_at, forecast.horizon_minutes,
+                                   "ridge", result["live_price"],
+                                   result["live_price"] * (estimate / float(forecast.current)))
+                            record(db, symbol, observed_at, forecast.horizon_minutes,
+                                   "unchanged", result["live_price"], result["live_price"])
                         if flow is not None:
                             scenario, scenario_pct = adjusted_forecast(
                                 forecast, estimate, result["live_price"], result["frames"], flow)
+                            if db is not None:
+                                record(db, symbol, observed_at, forecast.horizon_minutes,
+                                       "flow_heuristic", result["live_price"], scenario)
                             print(f"    Canli akis senaryosu (DOGRULANMAMIS)="
                                   f"{scenario:.8g} USDT | degisim={scenario_pct:+.3f}% "
                                   f"| referans lastPrice={result['live_price']:.8g}")
@@ -383,6 +395,14 @@ async def run(args):
             except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError,
                     TypeError, RuntimeError, IndexError, ZeroDivisionError) as exc:
                 print(f"\n{symbol} | BEKLE | veri hatasi: {exc}")
+        if db is not None:
+            try:
+                count = await settle(db, session, get)
+                print(f"\nDogrulanan yeni tahmin: {count}")
+                print(report(db))
+            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError,
+                    TypeError, RuntimeError, IndexError) as exc:
+                print(f"\nTahmin dogrulama hatasi: {exc}")
     print("\nCanli akis senaryosu sezgiseldir, backtest edilmemistir; islem sinyali degildir. Emir gonderilmez.")
 
 
@@ -393,10 +413,29 @@ def main():
     parser.add_argument("--cost-pct", type=float, default=0.15,
                         help="Estimated round-trip fees+slippage as % of notional")
     parser.add_argument("--max-spread-pct", type=float, default=0.10)
+    parser.add_argument("--watch", action="store_true",
+                        help="Her dakika analiz yap, tahminleri kaydet ve dogrula")
+    parser.add_argument("--interval-seconds", type=int, default=60)
+    parser.add_argument("--tracker-db", default="data/bybit_predictions.sqlite3")
     args = parser.parse_args()
     if args.equity <= 0 or not 0 < args.risk_pct <= 2 or not 0 <= args.cost_pct <= 2:
         parser.error("Invalid risk parameters")
-    asyncio.run(run(args))
+    if args.interval_seconds < 30:
+        parser.error("interval-seconds must be >= 30")
+    async def execute():
+        db = connect(args.tracker_db)
+        try:
+            while True:
+                await run(args, db)
+                if not args.watch:
+                    break
+                await asyncio.sleep(args.interval_seconds)
+        finally:
+            db.close()
+    try:
+        asyncio.run(execute())
+    except KeyboardInterrupt:
+        print("\nIzleme durduruldu; tahminler veritabaninda saklandi.")
 
 
 if __name__ == "__main__":
