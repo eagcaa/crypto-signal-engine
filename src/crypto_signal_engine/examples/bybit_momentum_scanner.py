@@ -74,8 +74,7 @@ def score_candidate(symbol, rows, oi_change_pct, turnover24h, now):
     score = (2 * (ret5 > .15) + 2 * (ret15 > .25)
              + 2 * (volume_ratio >= 1.5) + 2 * breakout
              + 2 * (oi_change_pct is not None and oi_change_pct > .3))
-    return {
-        "symbol": symbol, "price": prices[-1], "ret5": ret5,
+    # Do not label a sharp short-term reversal as a bullish candidate.\n    if ret5 <= 0 or ret15 <= 0:\n        return None\n    return {\n        "symbol": symbol, "price": prices[-1], "ret5": ret5,
         "ret15": ret15, "volume_ratio": volume_ratio,
         "oi_change_pct": oi_change_pct, "breakout": breakout,
         "score": score, "turnover24h": float(turnover24h),
@@ -123,13 +122,14 @@ async def scan_symbol(session, semaphore, ticker, now):
 async def send_telegram(session, message):
     token, chat_id = os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
-        return
+        raise RuntimeError("Telegram not configured: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID")
     async with session.post(
         f"https://api.telegram.org/bot{token}/sendMessage",
         json={"chat_id": chat_id, "text": message}) as response:
         payload = await response.json(content_type=None)
         if not payload.get("ok"):
             raise RuntimeError(f"Telegram HTTP {response.status}: {payload.get('description')}")
+    print("Telegram: message delivered successfully")
 
 
 async def run(args):
